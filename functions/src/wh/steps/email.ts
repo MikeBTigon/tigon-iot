@@ -101,6 +101,10 @@ export function smtpSetup(integration: WhIntegration, secrets: Record<string, st
   } else if (provider === 'gmail') {
     host = 'smtp.gmail.com';
     port = port || 465;
+    // Google shows app passwords as "abcd efgh ijkl mnop"; the spaces aren't part of it.
+    pass = pass.replace(/\s+/g, '');
+    // Gmail logs in as the sending address.
+    user = str(c.fromEmail) || user;
   }
   port = port || 587;
   const secure = typeof c.secure === 'boolean' ? c.secure : port === 465;
