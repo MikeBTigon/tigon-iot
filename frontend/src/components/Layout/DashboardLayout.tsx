@@ -23,6 +23,7 @@ import {
   Devices as DevicesIcon,
   Settings as SettingsIcon,
   Download as DownloadIcon,
+  Storefront as StorefrontIcon,
   Logout as LogoutIcon,
   AccountCircle,
 } from '@mui/icons-material';
@@ -69,6 +70,40 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
     { text: 'Download App', icon: <DownloadIcon />, path: '/download' },
   ];
 
+  // Parallel module: Facebook Marketplace posting (Tigon MP Assistant).
+  const marketplaceItems = [
+    { text: 'MP Assistant', icon: <StorefrontIcon />, path: '/mp' },
+  ];
+
+  const isSelected = (path: string) =>
+    path === '/mp' ? location.pathname === '/mp' || location.pathname.startsWith('/mp/') : location.pathname === path;
+
+  const renderNavItems = (items: typeof menuItems) =>
+    items.map((item) => (
+      <ListItem key={item.text} disablePadding>
+        <ListItemButton
+          selected={isSelected(item.path)}
+          onClick={() => {
+            navigate(item.path);
+            setMobileOpen(false);
+          }}
+          sx={{
+            '&.Mui-selected': {
+              backgroundColor: 'primary.light',
+              '&:hover': {
+                backgroundColor: 'primary.light',
+              },
+            },
+          }}
+        >
+          <ListItemIcon sx={{ color: isSelected(item.path) ? 'primary.main' : 'inherit' }}>
+            {item.icon}
+          </ListItemIcon>
+          <ListItemText primary={item.text} />
+        </ListItemButton>
+      </ListItem>
+    ));
+
   const drawer = (
     <div>
       <Toolbar>
@@ -78,30 +113,14 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
       </Toolbar>
       <Divider />
       <List>
-        {menuItems.map((item) => (
-          <ListItem key={item.text} disablePadding>
-            <ListItemButton
-              selected={location.pathname === item.path}
-              onClick={() => {
-                navigate(item.path);
-                setMobileOpen(false);
-              }}
-              sx={{
-                '&.Mui-selected': {
-                  backgroundColor: 'primary.light',
-                  '&:hover': {
-                    backgroundColor: 'primary.light',
-                  },
-                },
-              }}
-            >
-              <ListItemIcon sx={{ color: location.pathname === item.path ? 'primary.main' : 'inherit' }}>
-                {item.icon}
-              </ListItemIcon>
-              <ListItemText primary={item.text} />
-            </ListItemButton>
-          </ListItem>
-        ))}
+        {renderNavItems(menuItems)}
+      </List>
+      <Divider />
+      <Typography variant="overline" color="text.secondary" sx={{ px: 2, pt: 1, display: 'block' }}>
+        Marketplace
+      </Typography>
+      <List sx={{ pt: 0 }}>
+        {renderNavItems(marketplaceItems)}
       </List>
     </div>
   );

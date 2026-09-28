@@ -21,6 +21,7 @@ import { db } from '../config/firebase';
 import { useAuth } from '../context/AuthContext';
 import DashboardLayout from '../components/Layout/DashboardLayout';
 import { formatDistanceToNow } from 'date-fns';
+import MpDashboardCard from '../mp/components/MpDashboardCard';
 
 interface Notification {
   id: string;
@@ -142,6 +143,8 @@ const Dashboard: React.FC = () => {
             </Card>
           </Grid>
         </Grid>
+
+        <MpDashboardCard />
 
         <Paper sx={{ p: 3 }}>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>

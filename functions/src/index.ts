@@ -202,3 +202,4 @@ export const updateLastLogin = onRequest(async (req, res) => {
     res.status(401).json({error: 'Invalid token'});
   }
 });
+export {mpSyncInventory, mpSyncNow} from './mpAssistant';
