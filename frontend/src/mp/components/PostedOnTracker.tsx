@@ -1,12 +1,13 @@
 import React, { useMemo, useState } from 'react';
-import { Box, Button, Checkbox, Chip, FormControlLabel, Paper, Typography, Alert } from '@mui/material';
+import { Box, Button, Checkbox, FormControlLabel, Paper, Typography, Alert } from '@mui/material';
 import { useMp } from '../MpDataContext';
 import { groupAccounts, timeAgo } from '../cartUtils';
 import type { MpCart } from '../types';
 
 /** Multi-select checklist of Facebook accounts; "Done" commits all changes at once. */
 const PostedOnTracker: React.FC<{ cart: MpCart }> = ({ cart }) => {
-  const { accounts, isAdmin, setPostedAccounts, userName } = useMp();
+  const { accounts, profile, setPostedAccounts, userName } = useMp();
+  const canPost = !!profile;
   const [pending, setPending] = useState<Record<string, boolean>>({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -45,7 +46,7 @@ const PostedOnTracker: React.FC<{ cart: MpCart }> = ({ cart }) => {
     <Paper sx={{ p: 2 }}>
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1, gap: 1, flexWrap: 'wrap' }}>
         <Typography variant="h6" color="primary">Posted on ({count})</Typography>
-        {isAdmin && (
+        {canPost && (
           <Box sx={{ display: 'flex', gap: 1 }}>
             {dirty && <Button size="small" onClick={() => setPending({})} disabled={saving}>Cancel</Button>}
             <Button size="small" variant="contained" disabled={!dirty || saving} onClick={commit}>
@@ -65,7 +66,7 @@ const PostedOnTracker: React.FC<{ cart: MpCart }> = ({ cart }) => {
               return (
                 <FormControlLabel
                   key={a.id}
-                  disabled={!isAdmin}
+                  disabled={!canPost}
                   control={<Checkbox size="small" checked={isChecked(a.id)} onChange={() => toggle(a.id)} />}
                   label={
                     <Box>
@@ -81,7 +82,6 @@ const PostedOnTracker: React.FC<{ cart: MpCart }> = ({ cart }) => {
           </Box>
         </Box>
       ))}
-      {!isAdmin && <Chip size="small" label="View only — sales role" />}
     </Paper>
   );
 };

@@ -22,6 +22,10 @@ import { useAuth } from '../context/AuthContext';
 import DashboardLayout from '../components/Layout/DashboardLayout';
 import { formatDistanceToNow } from 'date-fns';
 import MpDashboardCard from '../mp/components/MpDashboardCard';
+import PhoneAlertsCard from '../native/PhoneAlertsCard';
+import { PersonAdd as PersonAddIcon } from '@mui/icons-material';
+import { useMp } from '../mp/MpDataContext';
+import NewLeadDialog, { type LeadSourceNotification } from '../mp/crm/NewLeadDialog';
 
 interface Notification {
   id: string;
@@ -30,6 +34,9 @@ interface Notification {
   timestamp: any;
   isHandled: boolean;
   createdAt: any;
+  /** Worker phone's device doc id, when the notification carries one. */
+  deviceId?: string;
+  sourceDeviceId?: string;
 }
 
 const Dashboard: React.FC = () => {
@@ -37,6 +44,9 @@ const Dashboard: React.FC = () => {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({ total: 0, unhandled: 0, handled: 0 });
+  // "Make lead" (MP Assistant CRM) — only for users with an MP profile.
+  const { profile: mpProfile } = useMp();
+  const [leadFrom, setLeadFrom] = useState<LeadSourceNotification | null>(null);
 
   useEffect(() => {
     if (!currentUser) return;
@@ -144,6 +154,7 @@ const Dashboard: React.FC = () => {
           </Grid>
         </Grid>
 
+        <PhoneAlertsCard />
         <MpDashboardCard />
 
         <Paper sx={{ p: 3 }}>
@@ -202,23 +213,36 @@ const Dashboard: React.FC = () => {
                         {getTimeAgo(notif.createdAt)}
                       </Typography>
                     </Box>
-                    {!notif.isHandled && (
-                      <Button
-                        size="small"
-                        variant="outlined"
-                        color="success"
-                        startIcon={<CheckCircleIcon />}
-                        onClick={() => handleMarkAsHandled(notif.id)}
-                      >
-                        Mark Handled
-                      </Button>
-                    )}
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, alignItems: 'flex-end' }}>
+                      {!notif.isHandled && (
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          color="success"
+                          startIcon={<CheckCircleIcon />}
+                          onClick={() => handleMarkAsHandled(notif.id)}
+                        >
+                          Mark Handled
+                        </Button>
+                      )}
+                      {mpProfile && (
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          startIcon={<PersonAddIcon />}
+                          onClick={() => setLeadFrom(notif)}
+                        >
+                          Make lead
+                        </Button>
+                      )}
+                    </Box>
                   </Box>
                 </Paper>
               ))}
             </Box>
           )}
         </Paper>
+        <NewLeadDialog notification={leadFrom} onClose={() => setLeadFrom(null)} />
       </Box>
     </DashboardLayout>
   );

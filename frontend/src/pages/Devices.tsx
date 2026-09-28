@@ -29,6 +29,10 @@ import { collection, query, where, onSnapshot, deleteDoc, doc, updateDoc } from 
 import { db } from '../config/firebase';
 import { useAuth } from '../context/AuthContext';
 import DashboardLayout from '../components/Layout/DashboardLayout';
+import PhoneAlertsCard from '../native/PhoneAlertsCard';
+import PairPhoneDialog from '../devices/PairPhoneDialog';
+import TeamDevicesPanel from '../devices/TeamDevicesPanel';
+import { isOnline, seenLabel } from '../devices/deviceStatus';
 import { formatDistanceToNow } from 'date-fns';
 
 interface Device {
@@ -37,6 +41,8 @@ interface Device {
   deviceType: 'master' | 'worker';
   isActive: boolean;
   lastActive: any;
+  lastSeen?: number;
+  status?: string;
   fcmToken?: string;
   appVersion?: string;
 }
@@ -48,6 +54,7 @@ const Devices: React.FC = () => {
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
   const [newDeviceName, setNewDeviceName] = useState('');
+  const [pairOpen, setPairOpen] = useState(false);
 
   useEffect(() => {
     if (!currentUser) return;
@@ -130,6 +137,7 @@ const Devices: React.FC = () => {
 
   return (
     <DashboardLayout>
+      <PhoneAlertsCard />
       <Box>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
           <Typography variant="h4" color="primary">
@@ -138,9 +146,9 @@ const Devices: React.FC = () => {
           <Button
             variant="contained"
             startIcon={<AddIcon />}
-            onClick={() => alert('To add a device, install the TIGON IOT app and login')}
+            onClick={() => setPairOpen(true)}
           >
-            Add Device
+            Pair a phone
           </Button>
         </Box>
 
@@ -202,14 +210,14 @@ const Devices: React.FC = () => {
                       </TableCell>
                       <TableCell>
                         <Chip
-                          label={device.isActive ? 'Active' : 'Inactive'}
-                          color={getStatusColor(device.lastActive)}
+                          label={device.status === 'revoked' ? 'Revoked' : device.isActive ? 'Alerts on' : 'Alerts off'}
+                          color={device.status === 'revoked' ? 'error' : device.lastSeen ? (isOnline(device) ? 'success' : 'default') : getStatusColor(device.lastActive)}
                           size="small"
                         />
                       </TableCell>
                       <TableCell>
                         <Typography variant="body2" color="text.secondary">
-                          {getTimeAgo(device.lastActive)}
+                          {device.lastSeen ? seenLabel(device) : getTimeAgo(device.lastActive)}
                         </Typography>
                       </TableCell>
                       <TableCell>
@@ -240,6 +248,9 @@ const Devices: React.FC = () => {
             </TableContainer>
           )}
         </Paper>
+
+        <TeamDevicesPanel />
+        <PairPhoneDialog open={pairOpen} onClose={() => setPairOpen(false)} />
 
         <Dialog open={editDialogOpen} onClose={() => setEditDialogOpen(false)}>
           <DialogTitle>Edit Device Name</DialogTitle>

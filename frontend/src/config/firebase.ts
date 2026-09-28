@@ -1,6 +1,12 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
+import {
+  initializeFirestore,
+  memoryLocalCache,
+  persistentLocalCache,
+  persistentMultipleTabManager,
+  type Firestore,
+} from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import { getFunctions } from 'firebase/functions';
 
@@ -18,8 +24,26 @@ const app = initializeApp(firebaseConfig);
 
 // Initialize services
 export const auth = getAuth(app);
-export const db = getFirestore(app);
+export const db = createDb();
 export const storage = getStorage(app);
 export const functions = getFunctions(app);
+
+/**
+ * Firestore with an offline cache (IndexedDB, shared by all open tabs): reads come from the cache when
+ * offline and writes are queued and sent when the connection comes back. Falls back to a memory cache
+ * where IndexedDB isn't available (some private-browsing modes).
+ */
+function createDb(): Firestore {
+  if (typeof indexedDB !== 'undefined') {
+    try {
+      return initializeFirestore(app, {
+        localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+      });
+    } catch (e) {
+      console.warn('Offline cache unavailable, using memory cache', e);
+    }
+  }
+  return initializeFirestore(app, { localCache: memoryLocalCache() });
+}
 
 export default app;

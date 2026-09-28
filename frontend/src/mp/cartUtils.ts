@@ -43,6 +43,9 @@ export function cartFromDoc(docId: string, data: Partial<MpCartDoc>): MpCart {
     savedAt: Number(data.savedAt) || 0,
     postedBy: data.postedBy || {},
     postedAccounts: data.postedAccounts || {},
+    source: data.source,
+    createdBy: data.createdBy,
+    soldLocally: data.soldLocally === true,
   };
 }
 

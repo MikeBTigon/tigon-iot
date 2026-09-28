@@ -26,15 +26,16 @@ service cloud.firestore {
     
     // Devices collection
     match /devices/{deviceId} {
+      // MP managers/admins can see and manage (rename, reassign, revoke) every phone.
       allow read: if isAuthenticated() && 
-                     resource.data.userId == request.auth.uid;
+                     (resource.data.userId == request.auth.uid || isMpManager());
       allow create: if isAuthenticated() && 
                        request.resource.data.userId == request.auth.uid &&
                        isValidEmail();
       allow update: if isAuthenticated() && 
-                       resource.data.userId == request.auth.uid;
+                       (resource.data.userId == request.auth.uid || isMpManager());
       allow delete: if isAuthenticated() && 
-                       resource.data.userId == request.auth.uid;
+                       (resource.data.userId == request.auth.uid || isMpAdmin());
     }
     
     // Notifications collection
@@ -71,6 +72,15 @@ service cloud.firestore {
       return isValidEmail() && exists(mpProfilePath());
     }
 
+    function isMpManager() {
+      return isMpMember() && get(mpProfilePath()).data.role in ['admin', 'manager'];
+    }
+
+    function mpRequireApproval() {
+      return exists(/databases/$(database)/documents/mp_settings/general) &&
+             get(/databases/$(database)/documents/mp_settings/general).data.get('requireApproval', false) == true;
+    }
+
     function isMpAdmin() {
       return isMpMember() && get(mpProfilePath()).data.role == 'admin';
     }
@@ -100,12 +110,141 @@ service cloud.firestore {
     match /mp_carts/{cartId} {
       allow read: if isMpMember();
       allow write: if isMpAdmin();
+      // Anyone on the team can record where they posted a cart, or mark it sold.
+      allow update: if isMpMember() &&
+                       request.resource.data.diff(resource.data).affectedKeys()
+                         .hasOnly(['postedBy', 'postedAccounts', 'soldLocally', 'soldAt', 'soldBy']);
+      // Listings created in the app (snap-to-list, CSV import) by team members.
+      allow create: if isMpMember() && request.resource.data.source == 'manual' &&
+                       request.resource.data.createdBy == request.auth.uid;
+      allow update, delete: if isMpMember() && resource.data.source == 'manual' &&
+                               (resource.data.createdBy == request.auth.uid || isMpManager());
     }
 
     // Sync status (written by functions only).
     match /mp_meta/{docId} {
       allow read: if isMpMember();
       allow write: if false;
+    }
+
+    // Posting queue: managers assign carts to people/phones; the assignee works the item.
+    match /mp_queue/{itemId} {
+      allow read: if isMpMember();
+      // When approval is required, members' items start as 'pending_approval' and only a manager can release them.
+      allow create: if isMpManager() ||
+                       (isMpMember() && request.resource.data.assignedUserId == request.auth.uid &&
+                        request.resource.data.createdBy == request.auth.uid &&
+                        (!mpRequireApproval() || request.resource.data.status == 'pending_approval'));
+      allow update: if isMpManager() ||
+                       (isMpMember() && resource.data.assignedUserId == request.auth.uid &&
+                        request.resource.data.assignedUserId == request.auth.uid &&
+                        (resource.data.status != 'pending_approval' ||
+                         request.resource.data.status in ['pending_approval', 'cancelled']) &&
+                        // With approval on, members can't put an item back in line themselves.
+                        (!mpRequireApproval() || request.resource.data.status != 'queued' ||
+                         resource.data.status == 'queued'));
+      allow delete: if isMpManager();
+    }
+
+    // Analytics events (append-only) and per-device daily activity.
+    match /mp_events/{eventId} {
+      allow read: if isMpManager() || (isMpMember() && resource.data.userId == request.auth.uid);
+      allow create: if isMpMember() && request.resource.data.userId == request.auth.uid;
+    }
+    match /mp_device_days/{dayId} {
+      allow read: if isMpManager() || (isMpMember() && resource.data.userId == request.auth.uid);
+      allow create, update: if isMpMember() && request.resource.data.userId == request.auth.uid;
+    }
+
+    // Alerts are created by functions; managers can acknowledge them.
+    match /mp_alerts/{alertId} {
+      allow read: if isMpManager();
+      allow update: if isMpManager() &&
+                       request.resource.data.diff(resource.data).affectedKeys()
+                         .hasOnly(['acknowledgedBy', 'acknowledgedAt']);
+    }
+
+    // Audit log: append-only, admins read.
+    match /mp_audit/{entryId} {
+      allow read: if isMpAdmin();
+      allow create: if isMpMember() && request.resource.data.actorUid == request.auth.uid;
+    }
+
+    // Pairing codes are only ever touched by Cloud Functions.
+    match /mp_pairing/{codeId} {
+      allow read, write: if false;
+    }
+
+    // ---- Growth release --------------------------------------------------
+
+    // Team settings (approval workflow, logo, relist days).
+    match /mp_settings/{docId} {
+      allow read: if isMpMember();
+      allow write: if isMpAdmin();
+    }
+
+    // Listing and reply templates: shared ones readable by all, owners/managers edit.
+    match /mp_templates/{id} {
+      allow read: if isMpMember();
+      allow create: if isMpMember() && request.resource.data.createdBy == request.auth.uid;
+      allow update, delete: if isMpMember() && (resource.data.createdBy == request.auth.uid || isMpManager());
+    }
+
+    // Import connectors; credentials are in mp_integration_secrets and only functions read them.
+    match /mp_integrations/{id} {
+      allow read: if isMpManager();
+      allow write: if isMpAdmin();
+    }
+    match /mp_integration_secrets/{id} {
+      allow read: if false;
+      allow create, update, delete: if isMpAdmin();
+    }
+
+    // Tracked short links (clicks are counted by the mpLink function).
+    match /mp_links/{code} {
+      allow read: if isMpMember();
+      allow create: if isMpMember() && request.resource.data.userId == request.auth.uid &&
+                       request.resource.data.clicks == 0;
+      allow delete: if isMpManager();
+    }
+    match /mp_clicks/{id} {
+      allow read: if isMpManager() || (isMpMember() && resource.data.userId == request.auth.uid);
+    }
+
+    // Public mini-storefronts (served publicly by the mpStorefrontApi function).
+    match /mp_storefronts/{slug} {
+      allow read: if isMpMember();
+      allow create: if isMpMember() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isMpMember() && (resource.data.userId == request.auth.uid || isMpManager()) &&
+                               request.resource.data.userId == resource.data.userId;
+    }
+
+    // Leads: owners and managers.
+    match /mp_leads/{id} {
+      allow read: if isMpManager() || (isMpMember() && resource.data.ownerUid == request.auth.uid);
+      allow create: if isMpMember() && (request.resource.data.ownerUid == request.auth.uid || isMpManager());
+      allow update: if isMpManager() ||
+                       (isMpMember() && resource.data.ownerUid == request.auth.uid &&
+                        request.resource.data.ownerUid == request.auth.uid);
+      allow delete: if isMpManager();
+    }
+
+    // Customers (opt-in consent tracked per channel), shared by the team.
+    match /mp_customers/{id} {
+      allow read, create, update: if isMpMember();
+      allow delete: if isMpManager();
+    }
+
+    // Goals set by managers.
+    match /mp_goals/{id} {
+      allow read: if isMpMember();
+      allow write: if isMpManager();
+    }
+
+    // Brand asset library.
+    match /mp_assets/{id} {
+      allow read: if isMpMember();
+      allow write: if isMpManager();
     }
 
     // Facebook posting accounts.

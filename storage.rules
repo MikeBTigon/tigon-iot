@@ -1,10 +1,33 @@
 rules_version = '2';
 
-// Craft rules based on data in your Firestore database
-// allow write: if firestore.get(
-//    /databases/(default)/documents/users/$(request.auth.uid)).data.isAdmin;
+// Only signed-in @tigongolfcarts.com users can reach files, except through tokenized
+// download URLs, which storefronts and shares use for listing photos.
+// (No Firestore lookups here, so deploys need no cross-service IAM grant; which files are
+// shown in the brand library is controlled by the manager-only mp_assets collection.)
 service firebase.storage {
   match /b/{bucket}/o {
+    function isValidEmail() {
+      return request.auth != null && request.auth.token.email.matches('.*@tigongolfcarts[.]com$');
+    }
+    function isImageOrVideo() {
+      return request.resource.contentType.matches('image/.*') || request.resource.contentType.matches('video/.*');
+    }
+
+    // Listing photos and generated media, per user: mp_media/{uid}/...
+    match /mp_media/{uid}/{allPaths=**} {
+      allow read: if isValidEmail();
+      allow create, update: if isValidEmail() && request.auth.uid == uid &&
+                               request.resource.size < 25 * 1024 * 1024 && isImageOrVideo();
+      allow delete: if isValidEmail() && request.auth.uid == uid;
+    }
+
+    // Shared brand library (logos, fonts, photos).
+    match /mp_assets/{allPaths=**} {
+      allow read: if isValidEmail();
+      allow create, update: if isValidEmail() && request.resource.size < 50 * 1024 * 1024;
+      allow delete: if isValidEmail();
+    }
+
     match /{allPaths=**} {
       allow read, write: if false;
     }

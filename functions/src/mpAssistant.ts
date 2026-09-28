@@ -143,7 +143,7 @@ export async function syncInventory(trigger: string): Promise<SyncResult> {
       inStock.push(c);
     }
 
-    const existing = await db.collection(CARTS).select('payloadHash', 'serial', 'dmsId').get();
+    const existing = await db.collection(CARTS).select('payloadHash', 'serial', 'dmsId', 'source').get();
     const existingById = new Map(existing.docs.map((d) => [d.id, d]));
 
     const imageCache = new Map<string, boolean>();
@@ -189,12 +189,16 @@ export async function syncInventory(trigger: string): Promise<SyncResult> {
     const ids = new Set(inStock.map(cartId));
     const serials = new Set(inStock.map((c) => str(c.serialNo)).filter(Boolean));
     const stale = existing.docs.filter((d) => {
+      // Listings created in the app or imported from other systems are never removed by the DMS sync.
+      const source = str(d.get('source'));
+      if (source === 'manual' || source.startsWith('import:')) return false;
       const serial = str(d.get('serial'));
       return !ids.has(d.id) && !ids.has(str(d.get('dmsId'))) && !(serial && serials.has(serial));
     });
     let removedSold = 0;
     let warning: string | undefined;
-    if (inStock.length === 0 || (existing.size > 20 && stale.length > existing.size * 0.5)) {
+    const dmsCount = existing.docs.filter((d) => !/^(manual|import:)/.test(str(d.get('source')))).length;
+    if (inStock.length === 0 || (dmsCount > 20 && stale.length > dmsCount * 0.5)) {
       warning = `Skipped removing ${stale.length} carts: DMS returned ${inStock.length} in-stock carts, which looks incomplete.`;
     } else {
       for (const d of stale) {

@@ -17,7 +17,37 @@ export const COLLECTIONS = {
   carts: 'mp_carts',
   accounts: 'mp_accounts',
   users: 'mp_users',
+  queue: 'mp_queue',
+  events: 'mp_events',
+  deviceDays: 'mp_device_days',
+  alerts: 'mp_alerts',
+  audit: 'mp_audit',
+  templates: 'mp_templates',
+  integrations: 'mp_integrations',
+  integrationSecrets: 'mp_integration_secrets',
+  links: 'mp_links',
+  clicks: 'mp_clicks',
+  storefronts: 'mp_storefronts',
+  leads: 'mp_leads',
+  customers: 'mp_customers',
+  goals: 'mp_goals',
+  assets: 'mp_assets',
+  settings: 'mp_settings',
 } as const;
+
+/** Public site origin used in short links, storefronts, QR codes. */
+export const PUBLIC_ORIGIN = 'https://tigon-iot.web.app';
+export const shortLinkUrl = (code: string) => `${PUBLIC_ORIGIN}/l/${code}`;
+export const storefrontUrl = (slug: string) => `${PUBLIC_ORIGIN}/s/${slug}`;
+
+/** A phone counts as online if its last heartbeat is newer than this. */
+export const ONLINE_WINDOW_MS = 10 * 60 * 1000;
+/** Heartbeat interval while the app is open. */
+export const HEARTBEAT_MS = 5 * 60 * 1000;
+
+export const ROLE_LABELS: Record<string, string> = { admin: 'Admin', manager: 'Manager', sales: 'Member' };
+
+export const MARKETPLACE_CREATE_URL = 'https://www.facebook.com/marketplace/create/vehicle';
 
 export const LOCATION_ORDER = [
   'T1', 'T2', 'T3', 'T3.5', 'T4', 'T5', 'T6', 'T7', 'T8', 'T9', 'T10',

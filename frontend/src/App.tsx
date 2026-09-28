@@ -1,8 +1,6 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { ThemeProvider } from '@mui/material/styles';
-import CssBaseline from '@mui/material/CssBaseline';
 import { AuthProvider, useAuth } from './context/AuthContext';
-import { theme } from './theme/theme';
+import ThemeModeProvider from './ui/ThemeModeProvider';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
@@ -10,7 +8,8 @@ import Devices from './pages/Devices';
 import Settings from './pages/Settings';
 import Download from './pages/Download';
 import { MpDataProvider } from './mp/MpDataContext';
-import { mpRoutes } from './mp/routes';
+import { mpRoutes, publicRoutes } from './mp/routes';
+import NativeBridge from './native/NativeBridge';
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { currentUser } = useAuth();
@@ -35,6 +34,7 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 function AppContent() {
   return (
     <Router>
+      <NativeBridge />
       <Routes>
   <Route path="/login" element={<Login />} />
   <Route path="/register" element={<Register />} />
@@ -71,6 +71,7 @@ function AppContent() {
   }
 />
   {mpRoutes((el) => <ProtectedRoute>{el}</ProtectedRoute>)}
+  {publicRoutes()}
   <Route path="/" element={<Navigate to="/dashboard" />} />
 </Routes>
     </Router>
@@ -79,14 +80,14 @@ function AppContent() {
 
 function App() {
   return (
-    <ThemeProvider theme={theme}>
-      <CssBaseline />
-      <AuthProvider>
-        <MpDataProvider>
+    <AuthProvider>
+      <MpDataProvider>
+        {/* Theme (light/dark, large text) and language follow the user's saved preferences. */}
+        <ThemeModeProvider>
           <AppContent />
-        </MpDataProvider>
-      </AuthProvider>
-    </ThemeProvider>
+        </ThemeModeProvider>
+      </MpDataProvider>
+    </AuthProvider>
   );
 }
 

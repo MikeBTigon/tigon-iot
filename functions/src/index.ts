@@ -203,3 +203,11 @@ export const updateLastLogin = onRequest(async (req, res) => {
   }
 });
 export {mpSyncInventory, mpSyncNow} from './mpAssistant';
+export {mpCreatePairingCode, mpPairDevice, mpSendQueueItem, mpDispatchQueue, mpMonitor} from './mpOps';
+export {mpAiListing} from './mpAi';
+
+// Growth release
+export * from './mpCreate';
+export * from './mpShare';
+export * from './mpCrm';
+export * from './mpTeam';

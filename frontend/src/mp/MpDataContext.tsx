@@ -178,7 +178,7 @@ export const MpDataProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           const next = new Map(prev);
           for (const d of snap.docs) {
             const c = cartFromDoc(d.id, d.data() as MpCartDoc);
-            if (c.inStock) next.set(d.id, c);
+            if (c.inStock && !c.soldLocally) next.set(d.id, c);
           }
           return next;
         });
@@ -212,7 +212,7 @@ export const MpDataProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setCartMap((prev) => {
       const next = new Map(prev);
       const c = snap.exists() ? cartFromDoc(docId, snap.data() as MpCartDoc) : null;
-      if (c?.inStock) next.set(docId, c);
+      if (c?.inStock && !c.soldLocally) next.set(docId, c);
       else next.delete(docId);
       return next;
     });

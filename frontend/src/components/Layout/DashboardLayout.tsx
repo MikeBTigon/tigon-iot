@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Box,
@@ -13,10 +13,14 @@ import {
   ListItemButton,
   ListItemIcon,
   ListItemText,
+  ListSubheader,
   Avatar,
   Menu,
   MenuItem,
+  Switch,
+  Tooltip,
 } from '@mui/material';
+import { alpha } from '@mui/material/styles';
 import {
   Menu as MenuIcon,
   Dashboard as DashboardIcon,
@@ -26,8 +30,26 @@ import {
   Storefront as StorefrontIcon,
   Logout as LogoutIcon,
   AccountCircle,
+  AddAPhoto,
+  ListAlt,
+  PersonSearch,
+  Search as SearchIcon,
+  DarkMode,
+  LightMode,
+  TextIncrease,
+  Translate,
+  Check,
+  HelpOutline,
 } from '@mui/icons-material';
 import { useAuth } from '../../context/AuthContext';
+import { isNativeApp } from '../../native/platform';
+import { disablePhoneAlerts } from '../../native/phoneAlerts';
+import { LANGUAGES, useLanguage, useT } from '../../i18n';
+import { useThemeMode } from '../../ui/themeModeContext';
+import { useSetLanguage } from '../../ui/useSetLanguage';
+import { activeNavPath } from '../../ui/navUtils';
+import GlobalSearch from '../../ui/GlobalSearch';
+import OfflineBanner from '../../ui/OfflineBanner';
 
 const drawerWidth = 240;
 
@@ -35,12 +57,39 @@ interface DashboardLayoutProps {
   children: React.ReactNode;
 }
 
+interface NavEntry {
+  text: string;
+  icon: React.ReactNode;
+  path: string;
+}
+
+/** Marketplace shortcuts that get their own sidebar entry (the rest of /mp/* highlights "MP Assistant"). */
+const MP_SHORTCUTS = ['/mp/new', '/mp/queue', '/mp/leads'];
+
 const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
+  const t = useT();
+  const lang = useLanguage();
+  const setLanguage = useSetLanguage();
+  const { resolved, setMode, largeText, setLargeText } = useThemeMode();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+  const [langAnchor, setLangAnchor] = useState<null | HTMLElement>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
   const { currentUser, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+
+  // Ctrl+K / Cmd+K opens global search.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setSearchOpen(true);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   const handleDrawerToggle = () => {
     setMobileOpen(!mobileOpen);
@@ -56,6 +105,8 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
 
   const handleLogout = async () => {
     try {
+      // A signed-out phone must stop receiving this user's alerts.
+      if (isNativeApp() && currentUser) await disablePhoneAlerts(currentUser.uid).catch(() => undefined);
       await logout();
       navigate('/login');
     } catch (error) {
@@ -63,49 +114,64 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
     }
   };
 
-  const menuItems = [
-    { text: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard' },
-    { text: 'Devices', icon: <DevicesIcon />, path: '/devices' },
-    { text: 'Settings', icon: <SettingsIcon />, path: '/settings' },
-    { text: 'Download App', icon: <DownloadIcon />, path: '/download' },
+  const menuItems: NavEntry[] = [
+    { text: t('layout.dashboard'), icon: <DashboardIcon />, path: '/dashboard' },
+    { text: t('layout.devices'), icon: <DevicesIcon />, path: '/devices' },
+    { text: t('layout.settings'), icon: <SettingsIcon />, path: '/settings' },
+    { text: t('layout.download'), icon: <DownloadIcon />, path: '/download' },
   ];
 
-  // Parallel module: Facebook Marketplace posting (Tigon MP Assistant).
-  const marketplaceItems = [
-    { text: 'MP Assistant', icon: <StorefrontIcon />, path: '/mp' },
+  // Parallel module: Facebook Marketplace posting (Tigon MP Assistant) + its most-used pages.
+  const marketplaceItems: NavEntry[] = [
+    { text: t('layout.mpAssistant'), icon: <StorefrontIcon />, path: '/mp' },
+    { text: t('nav.new'), icon: <AddAPhoto />, path: '/mp/new' },
+    { text: t('nav.queue'), icon: <ListAlt />, path: '/mp/queue' },
+    { text: t('nav.leads'), icon: <PersonSearch />, path: '/mp/leads' },
+    { text: t('nav.help'), icon: <HelpOutline />, path: '/mp/help' },
   ];
 
-  const isSelected = (path: string) =>
-    path === '/mp' ? location.pathname === '/mp' || location.pathname.startsWith('/mp/') : location.pathname === path;
+  const activeMp = activeNavPath(location.pathname);
+  const isSelected = (path: string) => {
+    if (path === '/mp') {
+      return (location.pathname === '/mp' || location.pathname.startsWith('/mp/'))
+        && !MP_SHORTCUTS.includes(activeMp) && activeMp !== '/mp/help';
+    }
+    if (path.startsWith('/mp/')) return activeMp === path;
+    return location.pathname === path;
+  };
 
-  const renderNavItems = (items: typeof menuItems) =>
-    items.map((item) => (
-      <ListItem key={item.text} disablePadding>
-        <ListItemButton
-          selected={isSelected(item.path)}
-          onClick={() => {
-            navigate(item.path);
-            setMobileOpen(false);
-          }}
-          sx={{
-            '&.Mui-selected': {
-              backgroundColor: 'primary.light',
-              '&:hover': {
-                backgroundColor: 'primary.light',
+  const renderNavItems = (items: NavEntry[]) =>
+    items.map((item) => {
+      const selected = isSelected(item.path);
+      return (
+        <ListItem key={item.path} disablePadding>
+          <ListItemButton
+            selected={selected}
+            aria-current={selected ? 'page' : undefined}
+            onClick={() => {
+              navigate(item.path);
+              setMobileOpen(false);
+            }}
+            sx={{
+              '&.Mui-selected': {
+                backgroundColor: (th) => alpha(th.palette.primary.main, 0.14),
+                '&:hover': {
+                  backgroundColor: (th) => alpha(th.palette.primary.main, 0.22),
+                },
               },
-            },
-          }}
-        >
-          <ListItemIcon sx={{ color: isSelected(item.path) ? 'primary.main' : 'inherit' }}>
-            {item.icon}
-          </ListItemIcon>
-          <ListItemText primary={item.text} />
-        </ListItemButton>
-      </ListItem>
-    ));
+            }}
+          >
+            <ListItemIcon sx={{ color: selected ? 'primary.main' : 'inherit' }}>
+              {item.icon}
+            </ListItemIcon>
+            <ListItemText primary={item.text} slotProps={{ primary: { sx: { fontWeight: selected ? 600 : 400 } } }} />
+          </ListItemButton>
+        </ListItem>
+      );
+    });
 
   const drawer = (
-    <div>
+    <nav aria-label={t('layout.mainNav')}>
       <Toolbar>
         <Typography variant="h6" noWrap component="div" color="primary" sx={{ fontWeight: 600 }}>
           TIGON IOT
@@ -116,14 +182,24 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
         {renderNavItems(menuItems)}
       </List>
       <Divider />
-      <Typography variant="overline" color="text.secondary" sx={{ px: 2, pt: 1, display: 'block' }}>
-        Marketplace
-      </Typography>
-      <List sx={{ pt: 0 }}>
+      <List
+        sx={{ pt: 0 }}
+        subheader={
+          <ListSubheader component="div" sx={{ lineHeight: '32px', pt: 1, textTransform: 'uppercase', fontSize: '0.75rem', letterSpacing: 1 }}>
+            {t('layout.marketplace')}
+          </ListSubheader>
+        }
+      >
         {renderNavItems(marketplaceItems)}
       </List>
-    </div>
+    </nav>
   );
+
+  const pickLanguage = (code: (typeof LANGUAGES)[number]['code']) => {
+    setLanguage(code);
+    setLangAnchor(null);
+    setAnchorEl(null);
+  };
 
   return (
     <Box sx={{ display: 'flex' }}>
@@ -132,6 +208,10 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
         sx={{
           width: { sm: `calc(100% - ${drawerWidth}px)` },
           ml: { sm: `${drawerWidth}px` },
+          // Phone apps draw under the status bar / notch; these insets are 0 in a browser.
+          pt: 'env(safe-area-inset-top)',
+          pl: 'env(safe-area-inset-left)',
+          pr: 'env(safe-area-inset-right)',
         }}
       >
         <Toolbar>
@@ -139,24 +219,38 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
             color="inherit"
             edge="start"
             onClick={handleDrawerToggle}
+            aria-label={t('layout.openMenu')}
             sx={{ mr: 2, display: { sm: 'none' } }}
           >
             <MenuIcon />
           </IconButton>
-          <Typography variant="h6" noWrap component="div" sx={{ flexGrow: 1 }}>
-            TIGON IOT Dashboard
+          <Typography variant="h6" noWrap component="div" sx={{ flexGrow: 1, fontSize: { xs: '1.05rem', sm: '1.25rem' } }}>
+            {t('layout.appTitle')}
           </Typography>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Typography variant="body2" sx={{ display: { xs: 'none', sm: 'block' } }}>
+            <Tooltip title={`${t('layout.search')} (${t('search.shortcut')})`}>
+              <IconButton color="inherit" onClick={() => setSearchOpen(true)} aria-label={t('layout.search')} aria-keyshortcuts="Control+K Meta+K">
+                <SearchIcon />
+              </IconButton>
+            </Tooltip>
+            <Typography variant="body2" sx={{ display: { xs: 'none', md: 'block' } }}>
               {currentUser?.email}
             </Typography>
-            <IconButton onClick={handleMenuOpen} color="inherit">
-              <Avatar sx={{ width: 32, height: 32, bgcolor: 'secondary.main' }}>
+            <IconButton
+              onClick={handleMenuOpen}
+              color="inherit"
+              aria-label={t('layout.accountMenu')}
+              aria-haspopup="menu"
+              aria-controls={anchorEl ? 'account-menu' : undefined}
+              aria-expanded={anchorEl ? true : undefined}
+            >
+              <Avatar sx={{ width: 32, height: 32, bgcolor: 'secondary.main', color: 'secondary.contrastText' }}>
                 <AccountCircle />
               </Avatar>
             </IconButton>
           </Box>
           <Menu
+            id="account-menu"
             anchorEl={anchorEl}
             open={Boolean(anchorEl)}
             onClose={handleMenuClose}
@@ -165,17 +259,65 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
               <Typography variant="body2">{currentUser?.email}</Typography>
             </MenuItem>
             <Divider />
+            <MenuItem onClick={() => setMode(resolved === 'dark' ? 'light' : 'dark')}>
+              <ListItemIcon>
+                {resolved === 'dark' ? <DarkMode fontSize="small" /> : <LightMode fontSize="small" />}
+              </ListItemIcon>
+              <ListItemText>{t('prefs.darkMode')}</ListItemText>
+              <Switch
+                edge="end"
+                size="small"
+                checked={resolved === 'dark'}
+                tabIndex={-1}
+                slotProps={{ input: { 'aria-label': t('prefs.darkMode') } }}
+              />
+            </MenuItem>
+            <MenuItem onClick={() => setLargeText(!largeText)}>
+              <ListItemIcon><TextIncrease fontSize="small" /></ListItemIcon>
+              <ListItemText>{t('prefs.largeText')}</ListItemText>
+              <Switch
+                edge="end"
+                size="small"
+                checked={largeText}
+                tabIndex={-1}
+                slotProps={{ input: { 'aria-label': t('prefs.largeText') } }}
+              />
+            </MenuItem>
+            <MenuItem
+              onClick={(e) => setLangAnchor(e.currentTarget)}
+              aria-haspopup="menu"
+              aria-controls={langAnchor ? 'language-menu' : undefined}
+            >
+              <ListItemIcon><Translate fontSize="small" /></ListItemIcon>
+              <ListItemText secondary={LANGUAGES.find((l) => l.code === lang)?.label}>{t('prefs.language')}</ListItemText>
+            </MenuItem>
+            <Divider />
             <MenuItem onClick={handleLogout}>
               <ListItemIcon>
                 <LogoutIcon fontSize="small" />
               </ListItemIcon>
-              <ListItemText>Logout</ListItemText>
+              <ListItemText>{t('layout.logout')}</ListItemText>
             </MenuItem>
+          </Menu>
+          <Menu
+            id="language-menu"
+            anchorEl={langAnchor}
+            open={Boolean(langAnchor)}
+            onClose={() => setLangAnchor(null)}
+            anchorOrigin={{ vertical: 'top', horizontal: 'left' }}
+            transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+          >
+            {LANGUAGES.map((l) => (
+              <MenuItem key={l.code} lang={l.code} selected={l.code === lang} onClick={() => pickLanguage(l.code)}>
+                <ListItemIcon>{l.code === lang ? <Check fontSize="small" /> : null}</ListItemIcon>
+                <ListItemText>{l.label}</ListItemText>
+              </MenuItem>
+            ))}
           </Menu>
         </Toolbar>
       </AppBar>
       <Box
-        component="nav"
+        component="div"
         sx={{ width: { sm: drawerWidth }, flexShrink: { sm: 0 } }}
       >
         <Drawer
@@ -185,7 +327,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
           ModalProps={{ keepMounted: true }}
           sx={{
             display: { xs: 'block', sm: 'none' },
-            '& .MuiDrawer-paper': { boxSizing: 'border-box', width: drawerWidth },
+            '& .MuiDrawer-paper': { boxSizing: 'border-box', width: drawerWidth, pt: 'env(safe-area-inset-top)' },
           }}
         >
           {drawer}
@@ -194,7 +336,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
           variant="permanent"
           sx={{
             display: { xs: 'none', sm: 'block' },
-            '& .MuiDrawer-paper': { boxSizing: 'border-box', width: drawerWidth },
+            '& .MuiDrawer-paper': { boxSizing: 'border-box', width: drawerWidth, pt: 'env(safe-area-inset-top)' },
           }}
           open
         >
@@ -205,13 +347,17 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
         component="main"
         sx={{
           flexGrow: 1,
-          p: 3,
+          p: { xs: 2, sm: 3 },
           width: { sm: `calc(100% - ${drawerWidth}px)` },
-          mt: 8,
+          minWidth: 0,
+          mt: 'calc(64px + env(safe-area-inset-top))',
+          pb: 'calc(24px + env(safe-area-inset-bottom))',
         }}
       >
+        <OfflineBanner />
         {children}
       </Box>
+      <GlobalSearch open={searchOpen} onClose={() => setSearchOpen(false)} />
     </Box>
   );
 };
