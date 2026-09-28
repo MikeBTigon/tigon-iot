@@ -8,6 +8,9 @@ import MpShell from '../components/MpShell';
 import { useMp } from '../MpDataContext';
 import { ACCOUNT_GROUPS, LEGACY_USERS } from '../constants';
 import { importLegacyData } from '../legacyImport';
+import { writeAudit } from '../audit';
+import AuditLogPanel from '../components/AuditLogPanel';
+import { ROLE_LABELS } from '../constants';
 import { timeAgo } from '../cartUtils';
 import type { MpAccount, MpRole } from '../types';
 
@@ -33,13 +36,15 @@ const MpAccounts: React.FC = () => {
     return opts;
   }, [users]);
 
-  const run = async (label: string, fn: () => Promise<string | void>) => {
+  /** Runs an admin action; when `action` is given, the result is written to the audit log. */
+  const run = async (label: string, fn: () => Promise<string | void>, action?: string) => {
     setBusy(true);
     setError('');
     setStatus(label);
     try {
       const msg = await fn();
       setStatus(msg || 'Done.');
+      if (action) await writeAudit(profile, action, '', msg || label);
     } catch (e) {
       console.error(e);
       setError(e instanceof Error ? e.message : String(e));
@@ -53,7 +58,7 @@ const MpAccounts: React.FC = () => {
     const a = accounts.find((x) => x.id === dragId);
     setDragId(null);
     setOverGroup(null);
-    if (a && a.group !== group) run(`Moving ${a.name} to ${group}…`, () => saveAccount({ ...a, group }).then(() => `Moved ${a.name} to ${group}.`));
+    if (a && a.group !== group) run(`Moving ${a.name} to ${group}…`, () => saveAccount({ ...a, group }).then(() => `Moved ${a.name} to ${group}.`), 'account.move');
   };
 
   const deleteFlagged = carts.filter((c) => c.flaggedDelete);
@@ -96,7 +101,7 @@ const MpAccounts: React.FC = () => {
                 <IconButton
                   size="small"
                   aria-label="Delete"
-                  onClick={() => window.confirm(`Delete account "${a.name}"? Posting history on carts is kept.`) && run('Deleting…', () => deleteAccount(a.id).then(() => `Deleted ${a.name}.`))}
+                  onClick={() => window.confirm(`Delete account "${a.name}"? Posting history on carts is kept.`) && run('Deleting…', () => deleteAccount(a.id).then(() => `Deleted ${a.name}.`), 'account.delete')}
                 >
                   <Delete fontSize="small" />
                 </IconButton>
@@ -118,10 +123,11 @@ const MpAccounts: React.FC = () => {
               size="small"
               value={u.role}
               disabled={u.uid === profile?.uid}
-              onChange={(e) => run('Updating role…', () => setUserRole(u.uid, e.target.value as MpRole).then(() => `${u.name} is now ${e.target.value}.`))}
+              onChange={(e) => run('Updating role…', () => setUserRole(u.uid, e.target.value as MpRole).then(() => `${u.name} is now ${ROLE_LABELS[e.target.value] || e.target.value}.`), 'user.role')}
             >
               <MenuItem value="admin">Admin</MenuItem>
-              <MenuItem value="sales">Sales</MenuItem>
+              <MenuItem value="manager">Manager</MenuItem>
+              <MenuItem value="sales">Member</MenuItem>
             </Select>
           </Box>
         ))}
@@ -137,7 +143,7 @@ const MpAccounts: React.FC = () => {
               run('Syncing active inventory from the DMS (production)… this can take a minute.', async () => {
                 const r = await syncNow();
                 return `DMS sync done: ${r.inStock} in stock, ${r.written} updated, ${r.removedSold} sold removed.${r.warning ? ' ' + r.warning : ''}`;
-              })
+              }, 'dms.sync')
             }
           >
             Sync from DMS now
@@ -162,7 +168,7 @@ const MpAccounts: React.FC = () => {
             disabled={busy || deleteFlagged.length === 0}
             onClick={() =>
               window.confirm(`Remove ${deleteFlagged.length} cart(s) with "delete" in their data?`) &&
-              run('Removing…', () => deleteCarts(deleteFlagged.map((c) => c.docId)).then(() => `Removed ${deleteFlagged.length} 'delete' carts.`))
+              run('Removing…', () => deleteCarts(deleteFlagged.map((c) => c.docId)).then(() => `Removed ${deleteFlagged.length} 'delete' carts.`), 'carts.cleanup')
             }
           >
             Scan & remove 'delete' carts
@@ -179,7 +185,7 @@ const MpAccounts: React.FC = () => {
                 const msg = await importLegacyData(setStatus);
                 reloadCarts();
                 return msg;
-              })
+              }, 'legacy.import')
             }
           >
             Import from legacy MP Assistant
@@ -189,7 +195,7 @@ const MpAccounts: React.FC = () => {
           </Typography>
         </Box>
         <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-          <Button variant="outlined" disabled={busy} onClick={() => run('Seeding…', () => seedAccounts().then(() => 'Default accounts restored.'))}>
+          <Button variant="outlined" disabled={busy} onClick={() => run('Seeding…', () => seedAccounts().then(() => 'Default accounts restored.'), 'accounts.seed')}>
             Restore default accounts
           </Button>
           <Button variant="outlined" disabled={busy} onClick={() => { reloadCarts(); setStatus('Reloading inventory…'); }}>
@@ -226,13 +232,16 @@ const MpAccounts: React.FC = () => {
             onClick={() => {
               const d = draft!;
               setDraft(null);
-              run('Saving…', () => saveAccount({ ...d, name: d.name.trim() }).then(() => `Saved ${d.name.trim()}.`));
+              run('Saving…', () => saveAccount({ ...d, name: d.name.trim() }).then(() => `Saved ${d.name.trim()}.`), d.id ? 'account.edit' : 'account.add');
             }}
           >
             Save
           </Button>
         </DialogActions>
       </Dialog>
+      <Box sx={{ mt: 4 }}>
+        <AuditLogPanel />
+      </Box>
     </MpShell>
   );
 };

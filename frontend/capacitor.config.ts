@@ -21,6 +21,14 @@ const config: CapacitorConfig = {
     },
   },
   plugins: {
+    // Long-press the app icon for these quick actions ("hotkeys").
+    AppShortcuts: {
+      shortcuts: [
+        { id: 'next', title: 'Next cart to post', description: 'Suggested carts', iosIcon: 'car.fill' },
+        { id: 'queue', title: 'My posting queue', description: 'Carts assigned to you', iosIcon: 'list.bullet' },
+        { id: 'dashboard', title: 'Notifications', description: 'IoT dashboard', iosIcon: 'bell.fill' },
+      ],
+    },
     SystemBars: {
       insetsHandling: 'native',
       initialViewportFitValueHint: 'cover',

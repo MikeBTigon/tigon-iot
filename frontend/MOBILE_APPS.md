@@ -9,6 +9,11 @@ plus phone-only features:
 | **Push alerts** | Dashboard / Devices → **Alerts on this phone → Turn on**. The phone registers as a *master* device, so it gets a push for every new notification from worker phones. Tapping an alert opens the dashboard. Signing out turns alerts off for that phone. |
 | **Save photos** | "Save" / "Save all" in MP Assistant opens the share sheet → **Save Image(s)** puts them straight into the photo library. |
 | **Phone layout** | Content stays clear of the notch / status bar; Android back button works. |
+| **Pair with QR** | Sign-in screen → **Scan pairing QR code** (or type the 8-character code) from Devices → Pair a phone on a computer. Signs in automatically. |
+| **Prepare listing** | 3 taps: save photos → copy listing & open Marketplace → "I published it". |
+| **Posting queue pushes** | Carts sent with **Auto Post** arrive as "Ready to post" notifications; tap to prepare. |
+| **Quick actions** | Long-press the app icon: Next cart to post · My posting queue · Notifications. |
+| **Heartbeat** | While open, the phone reports online status and active time (Analytics, Team phones). A revoked phone signs out. |
 
 > The app does **not** forward notifications (worker role). iPhones can't read other apps' notifications
 > at all, so worker phones keep using the existing Android IoT app.

@@ -8,7 +8,7 @@ import { Storefront } from '@mui/icons-material';
 import DashboardLayout from '../../components/Layout/DashboardLayout';
 import { useAuth } from '../../context/AuthContext';
 import { db } from '../../config/firebase';
-import { LEGACY_USERS } from '../constants';
+import { LEGACY_USERS, ROLE_LABELS } from '../constants';
 import { timeAgo } from '../cartUtils';
 import { useMp } from '../MpDataContext';
 
@@ -17,6 +17,8 @@ const TABS = [
   { label: 'Find a Cart', path: '/mp/find' },
   { label: 'Locations', path: '/mp/locations' },
   { label: 'Browse', path: '/mp/browse' },
+  { label: 'Queue', path: '/mp/queue' },
+  { label: 'Analytics', path: '/mp/analytics' },
   { label: 'Profiles', path: '/mp/profiles' },
   { label: 'Accounts', path: '/mp/accounts', admin: true },
 ];
@@ -66,8 +68,8 @@ export const ProfileSetup: React.FC<{ editing?: boolean; onDone?: () => void }> 
       <Typography variant="h5" color="primary" gutterBottom>{editing ? 'Your MP profile' : 'Set up MP Assistant'}</Typography>
       {!editing && (
         <Typography color="text.secondary" sx={{ mb: 2 }}>
-          Your posted carts and listing wording are tracked per user. New users start with the sales role; an admin can
-          promote you on the Accounts tab.
+          Your posted carts and listing wording are tracked per user. New users start as Members; an admin can make you a
+          Manager or Admin on the Accounts tab.
         </Typography>
       )}
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
@@ -122,8 +124,8 @@ const MpShell: React.FC<{ children: React.ReactNode; adminOnly?: boolean }> = ({
               />
             )}
             <Chip
-              label={`${profile.name} · ${profile.role}`}
-              color={isAdmin ? 'primary' : 'default'}
+              label={`${profile.name} · ${ROLE_LABELS[profile.role] || profile.role}`}
+              color={profile.role === 'sales' ? 'default' : 'primary'}
               onClick={() => navigate('/mp/profiles?me=1')}
             />
           </>

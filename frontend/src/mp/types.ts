@@ -1,4 +1,5 @@
-export type MpRole = 'admin' | 'sales';
+/** admin: everything · manager: team devices, queue, analytics · sales (shown as "Member"): own work. */
+export type MpRole = 'admin' | 'manager' | 'sales';
 
 export interface MpProfile {
   uid: string;
@@ -107,4 +108,126 @@ export interface Listing {
   title2: string;
   description: string;
   format: ListingFormat;
+}
+
+// ---------------------------------------------------------------------------
+// Devices (shared `devices` collection; phone-app docs have source 'tigon-iot-app')
+// ---------------------------------------------------------------------------
+
+export interface DeviceDoc {
+  id: string;
+  userId: string;
+  deviceName: string;
+  deviceType: 'master' | 'worker';
+  /** IoT push alerts on (onNotificationCreate sends to active master devices). */
+  isActive: boolean;
+  fcmToken?: string;
+  source?: 'tigon-iot-app' | string;
+  platform?: 'ios' | 'android' | 'web' | string;
+  model?: string;
+  osVersion?: string;
+  appVersion?: string;
+  installId?: string;
+  /** Epoch ms of the last heartbeat (app open in foreground). */
+  lastSeen?: number;
+  status?: 'active' | 'revoked';
+  pairedAt?: number;
+}
+
+// ---------------------------------------------------------------------------
+// Posting queue (mp_queue)
+// ---------------------------------------------------------------------------
+
+export type QueueStatus = 'queued' | 'sent' | 'opened' | 'posted' | 'failed' | 'cancelled';
+
+export interface QueueItem {
+  id: string;
+  cartId: string;
+  cartTitle: string;
+  cartPrice: number;
+  locationId: string;
+  assignedUserId: string;
+  /** Specific phone, or '' for any of the assigned user's phones. */
+  deviceId: string;
+  /** Facebook account to post on ('' = user picks). */
+  accountId: string;
+  accountName: string;
+  /** Listing variation index 0-4. */
+  variation: number;
+  scheduledAt: number;
+  status: QueueStatus;
+  attempts: number;
+  createdBy: string;
+  createdAt: number;
+  updatedAt: number;
+  sentAt?: number;
+  openedAt?: number;
+  postedAt?: number;
+  lastError?: string;
+  failAlertedAt?: number;
+}
+
+// ---------------------------------------------------------------------------
+// Analytics (mp_events, mp_device_days)
+// ---------------------------------------------------------------------------
+
+export type MpEventType =
+  | 'app_open'
+  | 'listing_prepared'
+  | 'photos_saved'
+  | 'text_copied'
+  | 'marketplace_opened'
+  | 'post_marked'
+  | 'post_failed'
+  | 'queue_opened'
+  | 'ai_listing'
+  | 'error';
+
+export interface MpEvent {
+  id?: string;
+  type: MpEventType;
+  userId: string;
+  /** Device doc id, or 'web' for the website. */
+  deviceId: string;
+  platform: string;
+  ts: number;
+  cartId?: string;
+  queueId?: string;
+  accountId?: string;
+  message?: string;
+}
+
+/** Per-device per-day activity: mp_device_days/{deviceId}_{YYYYMMDD}. */
+export interface DeviceDay {
+  deviceId: string;
+  userId: string;
+  /** YYYY-MM-DD */
+  date: string;
+  activeMinutes: number;
+}
+
+// ---------------------------------------------------------------------------
+// Alerts + audit
+// ---------------------------------------------------------------------------
+
+export interface MpAlert {
+  id: string;
+  kind: 'device_offline' | 'post_failed' | 'sync_failed';
+  text: string;
+  deviceId?: string;
+  queueId?: string;
+  userId?: string;
+  createdAt: number;
+  acknowledgedBy?: string;
+  acknowledgedAt?: number;
+}
+
+export interface AuditEntry {
+  id?: string;
+  actorUid: string;
+  actorName: string;
+  action: string;
+  target: string;
+  details?: string;
+  ts: number;
 }

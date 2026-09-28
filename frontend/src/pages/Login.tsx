@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import PairThisPhone from '../native/PairThisPhone';
 import {
   Box,
   Button,
@@ -119,6 +120,7 @@ const Login: React.FC = () => {
               </Link>
             </Box>
           </Box>
+          <PairThisPhone />
         </Paper>
       </Box>
     </Container>

@@ -1,13 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Alert, Box, Button, Chip, CircularProgress, Paper, Table, TableBody, TableCell, TableRow, Typography } from '@mui/material';
-import { ArrowBack, CheckCircle, Description, Download, RadioButtonUnchecked, Refresh } from '@mui/icons-material';
+import { ArrowBack, CheckCircle, Description, Download, RadioButtonUnchecked, Refresh, RocketLaunch, Send } from '@mui/icons-material';
 import MpShell from '../components/MpShell';
 import CartPhoto from '../components/CartPhoto';
 import PhotoLightbox from '../components/PhotoLightbox';
 import ListingVariations from '../components/ListingVariations';
 import PostedOnTracker from '../components/PostedOnTracker';
 import StoreInfo from '../components/StoreInfo';
+import AutoPostDialog from '../components/AutoPostDialog';
+import AiListingPanel from '../components/AiListingPanel';
 import { useMp } from '../MpDataContext';
 import { cartName, cartTitle } from '../cartLogic';
 import { formatPrice, hasPhotoIssue, postedTs, timeAgo, workingPhotos } from '../cartUtils';
@@ -19,8 +21,10 @@ const yes = (b: boolean) => (b ? 'Yes' : 'No');
 const MpCartDetail: React.FC = () => {
   const { id = '' } = useParams();
   const navigate = useNavigate();
-  const { carts, cartsLoading, brokenPhotos, userKeys, isAdmin, setPosted, refreshCart, userName } = useMp();
+  const { carts, cartsLoading, brokenPhotos, userKeys, profile, setPosted, refreshCart, userName } = useMp();
   const [lightbox, setLightbox] = useState<number | null>(null);
+  const [autoPostOpen, setAutoPostOpen] = useState(false);
+  const [queuedMsg, setQueuedMsg] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const cart = carts.find((c) => c.docId === id);
@@ -101,7 +105,14 @@ const MpCartDetail: React.FC = () => {
             </Button>
           )}
         </Box>
-        {isAdmin && (
+        {profile && (
+          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+          <Button variant="contained" color="secondary" startIcon={<RocketLaunch />} onClick={() => navigate(`/mp/prepare/${encodeURIComponent(cart.docId)}`)}>
+            Prepare listing
+          </Button>
+          <Button variant="outlined" color="secondary" startIcon={<Send />} onClick={() => setAutoPostOpen(true)}>
+            Auto Post
+          </Button>
           <Button
             variant={myTs ? 'outlined' : 'contained'}
             color={myTs ? 'success' : 'primary'}
@@ -111,9 +122,11 @@ const MpCartDetail: React.FC = () => {
           >
             {myTs ? `Posted by you ${timeAgo(myTs)} — undo` : 'Mark posted'}
           </Button>
+          </Box>
         )}
       </Box>
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+      {queuedMsg && <Alert severity="success" sx={{ mb: 2 }} onClose={() => setQueuedMsg('')}>{queuedMsg}</Alert>}
 
       <Paper sx={{ p: 2, mb: 3 }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
@@ -161,7 +174,19 @@ const MpCartDetail: React.FC = () => {
         </Paper>
       </Box>
 
+      <Box sx={{ mb: 3 }}>
+        <AiListingPanel cart={cart} />
+      </Box>
+
       <PostedOnTracker cart={cart} />
+      <AutoPostDialog
+        cart={cart}
+        open={autoPostOpen}
+        onClose={(queued) => {
+          setAutoPostOpen(false);
+          if (queued) setQueuedMsg('Queued — the phone gets a notification when it is due. Track it on the Queue tab.');
+        }}
+      />
       <Box sx={{ mt: 3 }}>
         <StoreInfo locationId={cart.locationId} />
       </Box>

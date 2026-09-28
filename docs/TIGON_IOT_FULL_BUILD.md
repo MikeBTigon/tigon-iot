@@ -32,6 +32,7 @@
 22. [Known issues and gaps](#22-known-issues-and-gaps)
 23. [Roadmap / ideas](#23-roadmap--ideas)
 24. [Build history](#24-build-history)
+25. [Posting, phones and analytics](#25-posting-phones-and-analytics)
 
 ---
 
@@ -181,8 +182,9 @@ Capacitor 8, Firebase Functions v2 (Node.js 22), firebase-admin 13, date-fns, re
 ### MP Assistant roles
 | Role | Can do |
 |---|---|
-| **admin** | Everything: mark posted, Posted On tracker, Accounts page, team roles, Sync from DMS, cleanup, legacy import |
-| **sales** | View inventory, filters, copy listings, save photos (read-only posting status) |
+| **admin** | Everything: Accounts page, team roles, Sync from DMS, cleanup, legacy import, audit log, delete phones |
+| **manager** | Team phones (see, rename, reassign, revoke), queue carts to anyone, team analytics, alerts |
+| **sales** (shown as **Member**) | Inventory, listings, photos, Prepare listing, mark posted / Posted On, own queue and own analytics |
 
 - First visit to MP Assistant: pick a display name and (optionally) a **legacy identity** from the old app
   (Manager / Navid / Victoria / Sales) so old "posted" history carries over. Each legacy identity can be claimed once.
@@ -498,6 +500,12 @@ Shared files: `tigon-auth.js` (copy of `mp-assistant/shared/tigon-auth.js`), `ca
 | `updateLastLogin` | HTTPS | Update `users/{uid}.lastLogin` | No |
 | `mpSyncInventory` | Every 60 min | DMS → `mp_carts` sync | **Yes** |
 | `mpSyncNow` | Callable (admins) | Run the sync now | **Yes** |
+| `mpCreatePairingCode` | Callable | One-time QR + 8-char code (10 min) to pair a phone to a user | **Yes** |
+| `mpPairDevice` | Callable (no sign-in) | Validates the code, registers the phone, returns a custom sign-in token | **Yes** |
+| `mpSendQueueItem` | Callable | Push a due queue item to the assigned phone right away | **Yes** |
+| `mpDispatchQueue` | Every 5 min | Send scheduled items, remind after 30 min, fail after 3 reminders | **Yes** |
+| `mpMonitor` | Every 15 min | Alerts: phone not opened for 24 h, failed posts, failed DMS sync | **Yes** |
+| `mpAiListing` | Callable | AI listing writer (Claude) | Only when `ENABLE_AI_WRITER` = true |
 
 Runtime: Node.js 22 (`firebase.json`). CI deploys only the two MP functions so the live IoT functions
 (built from code not in GitHub) are never overwritten or deleted.
@@ -516,7 +524,14 @@ Runtime: Node.js 22 (`firebase.json`). CI deploys only the two MP functions so t
 | `mp_users/{uid}` | name, email, role (`admin`/`sales`), legacyId, createdAt | User (create/name), admins (role) |
 | `mp_carts/{dmsId}` | payload (raw DMS JSON string), payloadHash, savedAt, dmsId, serial, locationId, isUsed, source, postedBy{userKey: ms}, postedAccounts{accountId: {by, ts}} | DMS sync; admins (posting) |
 | `mp_accounts/{id}` | name, group (T-location or Other), owner (uid or legacy id), order | Admins |
-| `mp_meta/sync` | ok, trigger, startedAt, finishedAt, fetched, inStock, written, unchanged, removedSold, skippedDelete, warning, error | DMS sync |
+| `mp_meta/sync` | ok, trigger, startedAt, finishedAt, fetched, inStock, written, unchanged, removedSold, skippedDelete, warning, error, alertedAt | DMS sync |
+| `mp_queue/{id}` | cartId, cartTitle, cartPrice, locationId, assignedUserId, deviceId, accountId, accountName, variation, scheduledAt, status (queued/sent/opened/posted/failed/cancelled), attempts, sentAt, openedAt, postedAt, lastError, createdBy | Managers / members (own), functions |
+| `mp_events/{id}` | type, userId, deviceId ('web' or device), platform, ts, cartId, queueId, accountId, message | Apps (append-only) |
+| `mp_device_days/{deviceId_YYYYMMDD}` | deviceId, userId, date, activeMinutes | Phone app heartbeat |
+| `mp_alerts/{id}` | kind, text, deviceId, queueId, userId, createdAt, acknowledgedBy/At | `mpMonitor`; managers acknowledge |
+| `mp_audit/{id}` | actorUid, actorName, action, target, details, ts | Apps + functions (append-only) |
+| `mp_pairing/{sha256(token)}` | userId, codeHash, createdBy, createdAt, expiresAt, used | Functions only |
+| `devices` (phone app extras) | source `tigon-iot-app`, installId, platform, model, osVersion, appVersion, lastSeen, status (active/revoked), pairedAt, offlineAlertAt | Phone app, functions, managers |
 
 Posted-state keys: the user's Firebase uid, plus their claimed legacy id (`manager`, `navid`, `victoria`, `sales`).
 
@@ -538,6 +553,16 @@ Helpers: `isAuthenticated`, `isValidEmail` (email ends with `@tigongolfcarts.com
 | mp_carts | MP member | admin | admin | admin |
 | mp_accounts | MP member | admin | admin | admin |
 | mp_meta | MP member | server only | server only | server only |
+| devices (addition) | + managers | — | + managers (rename/reassign/revoke) | + admins |
+| mp_carts (addition) | — | — | + members, only `postedBy`/`postedAccounts` | — |
+| mp_queue | members | managers, or member for self | managers, or the assignee | managers |
+| mp_events | managers, or own | own (append-only) | — | — |
+| mp_device_days | managers, or own | own | own | — |
+| mp_alerts | managers | server | managers (acknowledge only) | — |
+| mp_audit | admins | own entries | — | — |
+| mp_pairing | nobody | server | server | server |
+
+Rules are covered by 30 emulator permission tests (members vs managers vs admins).
 | Storage | locked | — | — | — |
 
 ---
@@ -547,7 +572,7 @@ Helpers: `isAuthenticated`, `isValidEmail` (email ends with `@tigongolfcarts.com
 ### Website + backend — `.github/workflows/firebase-deploy.yml`
 - Trigger: push/merge to `main` (or **Run workflow** manually).
 - Steps: build website (`frontend`, `npm run build`) → copy to `dist/` → build functions → authenticate with
-  secret `FIREBASE_SERVICE_ACCOUNT` → `firebase deploy --only firestore:rules,hosting,functions:mpSyncInventory,functions:mpSyncNow`.
+  secret `FIREBASE_SERVICE_ACCOUNT` → `firebase deploy --only firestore:rules,hosting` + the MP functions (`mpSyncInventory, mpSyncNow, mpCreatePairingCode, mpPairDevice, mpSendQueueItem, mpDispatchQueue, mpMonitor`, and `mpAiListing` when enabled).
 - Service account `github-deploy` roles: Firebase Admin, Cloud Functions Admin, Service Account User,
   Cloud Scheduler Admin, Artifact Registry Administrator, Cloud Build Editor. Cloud Billing API must be enabled
   (Blaze plan).
@@ -566,13 +591,16 @@ Helpers: `isAuthenticated`, `isValidEmail` (email ends with `@tigongolfcarts.com
 | `GOOGLE_SERVICES_JSON` | Android push alerts (optional) |
 | `GOOGLE_SERVICE_INFO_PLIST` | iOS push alerts in CI builds (optional) |
 
+Repository **variable** (Settings → Secrets and variables → Actions → Variables): `ENABLE_AI_WRITER` = `true`
+turns on deploying the AI listing writer (after the `ANTHROPIC_API_KEY` secret exists in Google Secret Manager).
+
 ### Manual deploy (from a computer)
 ```bash
 git clone https://github.com/Tigon-Golf-Carts-LLC/tigon-iot.git && cd tigon-iot
 cd frontend && npm ci && npm run build && cd .. && rm -rf dist && cp -r frontend/dist dist
 cd functions && npm ci && npm run build && cd ..
 npm install -g firebase-tools && firebase login
-firebase deploy --only firestore:rules,hosting,functions:mpSyncInventory,functions:mpSyncNow
+firebase deploy --only firestore:rules,hosting,functions:mpSyncInventory,functions:mpSyncNow,functions:mpCreatePairingCode,functions:mpPairDevice,functions:mpSendQueueItem,functions:mpDispatchQueue,functions:mpMonitor
 ```
 
 ---
@@ -687,3 +715,103 @@ big DMS changes.
 | Sept 28, 2026 | DMS scraping replaced by the production DMS API sync; dealership data T0–T14 added |
 | Sept 28, 2026 | GitHub Actions auto-deploy (PR #2); Functions runtime → Node.js 22 (PR #3); CI limited to MP functions + system overview doc (PR #4) — MP Assistant live |
 | Sept 28, 2026 | TIGON IOT phone app for iPhone + Android (Capacitor), push alerts, phone photo saving, build pipeline |
+| Sept 28, 2026 | Posting & phones release: Prepare listing, posting queue + Auto Post, QR phone pairing, heartbeat/online status, manager role, team phones, analytics, alerts, audit log, AI listing writer, app quick actions |
+
+---
+
+## 25. Posting, phones and analytics
+
+### 25.1 Prepare listing (one tap per phone)
+Route `/mp/prepare/:cartId` (from the cart page) or `/mp/post/:queueId` (from a queue push).
+1. **Save N photos to this phone**: opens the share sheet → Save Images. In a browser, the photos download.
+2. **Copy listing & open Marketplace**: copies the chosen variation's description and opens
+   `facebook.com/marketplace/create/vehicle`. The Facebook app opens it if it's installed.
+3. **I published it**: pick the account(s). This marks the cart posted, fills in Posted On, and completes the queue item.
+- **Couldn't post it**: enter a reason. The queue item is marked failed and managers get an alert.
+- Tap-to-copy chips for Title, Price, Year, Make, Model; tap the description to copy it; switch variations 1–5.
+- **Facebook Marketplace has no posting API.** The person always taps **Publish**, which keeps the accounts safe.
+
+### 25.2 Auto Post + posting queue
+- **Auto Post** is on every cart page. Choose:
+  - who posts it (managers can pick anyone);
+  - which phone, or any of that person's phones;
+  - the Facebook account (the person's own accounts are listed first; accounts it's already posted on are disabled);
+  - the listing variation;
+  - **Send now** or **Schedule** (date and time).
+- The phone gets a push: "Ready to post · <cart> on <account> — tap to prepare". Tapping it opens the Prepare screen.
+- Delivery:
+  - `mpSendQueueItem` sends a due item immediately.
+  - `mpDispatchQueue` runs every 5 minutes. It sends scheduled items and re-sends unopened ones after 30 minutes, up to 3 pushes.
+  - An item still unopened an hour after the third push is marked **failed**.
+- **Queue tab** (`/mp/queue`):
+  - Mine / Team (Team is for managers).
+  - Filter: Waiting / Posted / Failed / All.
+  - Actions: **Post now**, retry, cancel, delete.
+  - Managers also see the alerts panel here.
+
+### 25.3 Phones: pairing, heartbeat, management
+- **Pair a phone** (Devices page) creates a QR code plus an 8-character code (`ABCD-EFGH`). It's valid for 10 minutes and can be used once.
+  Managers can pair a phone for any teammate.
+- On the phone app's sign-in screen, tap **Scan pairing QR code** or type the code. The phone signs in as that person
+  automatically (custom token) and registers itself. Email/password sign-in still works.
+- Every signed-in phone registers `devices/app_<installId>_<uid>` with platform, model, OS and app version.
+- **Heartbeat** every 5 minutes while the app is open: updates `lastSeen` and adds active minutes for the day.
+  A phone is **Online** if it was seen in the last 10 minutes; otherwise it shows "Seen X ago".
+- **Team phones** (managers):
+  - Owner filter and an online count.
+  - Rename, **reassign** to another person, restore, and delete (admins only).
+  - **Revoke**: the phone is signed out on its next heartbeat.
+  - Every action is written to the audit log.
+- **Quick actions ("hotkeys")**: long-press the app icon for Next cart to post · My posting queue · Notifications.
+
+### 25.4 Analytics (`/mp/analytics`)
+- **Range:** Today / 7 / 30 / 90 days. Managers can pick a user.
+- **Tiles:** listings prepared, posts marked, failed posts, success rate (posted ÷ (posted + failed)), active hours,
+  phones online.
+- **Charts:** daily prepared / posted / failed, and active hours per day.
+- **Leaderboard** (managers): for each user, phones, prepared, posted, failed, success %, active hours and last seen.
+  Click a user to drill down to each phone: model, app version, online status, counts and last error.
+- **Recent failures** list.
+- **Events tracked:** app_open, listing_prepared, photos_saved, text_copied, marketplace_opened, post_marked,
+  post_failed, queue_opened, ai_listing, error.
+
+### 25.5 Alerts and audit log
+- `mpMonitor` runs every 15 minutes and raises an alert for:
+  - a phone not opened in **24 hours** (once per offline stretch);
+  - a **failed post**;
+  - a **failed DMS sync**.
+- Each alert is saved in `mp_alerts` **and** sent as an IoT notification to every manager and admin, so it shows on
+  the Dashboard and pushes to their alert phones.
+- The alerts panel is on the Queue tab (managers), with Acknowledge.
+- **Audit log** (Accounts page, admins) records:
+  - role changes;
+  - account add / edit / move / delete;
+  - phone rename / reassign / revoke / delete / pairing;
+  - queue create / cancel / retry / delete;
+  - cleanup, legacy import and DMS sync.
+
+### 25.6 AI listing writer
+- Cart page → **AI listing writer**. Pick a tone (Friendly / Professional / Short) to get a title, a description
+  and a price note, each with copy buttons.
+- It uses only the cart's facts, plus the first photo for appearance, and never invents features.
+- Model: Claude (`claude-opus-5`, low effort). Estimated **$0.02–0.04 per listing** with a photo.
+- Setup:
+  1. Create an Anthropic API key.
+  2. Store it in Google Cloud **Secret Manager** as the secret `ANTHROPIC_API_KEY`.
+  3. Give the `github-deploy` account **Secret Manager Admin**.
+  4. Set the repository variable `ENABLE_AI_WRITER` to `true`, then merge or deploy.
+
+### 25.7 One-time setup for this release
+1. **Pairing sign-in:** Google Cloud → IAM → the functions runtime account
+   (`<project-number>-compute@developer.gserviceaccount.com`) → add the role **Service Account Token Creator**.
+   Without it, pairing still registers the phone, but the person signs in with email and password.
+2. **Roles:** Accounts → Team → set Managers.
+3. **Push:** complete the Firebase app registration in `frontend/MOBILE_APPS.md` so queue pushes reach phones.
+4. **AI (optional):** see 25.6.
+
+### 25.8 Not included (needs outside accounts)
+- Facebook Login per user, Page posting, and Catalog / Instagram Shop sync: need a Meta developer app, business
+  verification and app review.
+- Signed Play Store / TestFlight builds: need an Apple Developer account ($99/yr) and a Google Play account ($25).
+- eBay / Etsy / Shopify posting.
+- Stripe billing.

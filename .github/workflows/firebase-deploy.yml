@@ -50,8 +50,15 @@ jobs:
       # Only the MP Assistant functions are deployed from this repo. The live IoT functions
       # (onUserCreate, validateEmailDomain, ...) were deployed from other code that isn't in
       # GitHub yet, so they must not be overwritten or deleted by this workflow.
+      # The AI listing writer is included only when the repository variable ENABLE_AI_WRITER
+      # is "true" (it needs the ANTHROPIC_API_KEY secret in Google Secret Manager first).
       - name: Deploy
-        run: >-
-          npx --yes firebase-tools@latest deploy
-          --only firestore:rules,hosting,functions:mpSyncInventory,functions:mpSyncNow
-          --project tigon-iot --non-interactive --force
+        env:
+          ENABLE_AI_WRITER: ${{ vars.ENABLE_AI_WRITER }}
+        run: |
+          FUNCS="mpSyncInventory mpSyncNow mpCreatePairingCode mpPairDevice mpSendQueueItem mpDispatchQueue mpMonitor"
+          if [ "$ENABLE_AI_WRITER" = "true" ]; then FUNCS="$FUNCS mpAiListing"; fi
+          ONLY="firestore:rules,hosting"
+          for f in $FUNCS; do ONLY="$ONLY,functions:$f"; done
+          echo "Deploying: $ONLY"
+          npx --yes firebase-tools@latest deploy --only "$ONLY" --project tigon-iot --non-interactive --force

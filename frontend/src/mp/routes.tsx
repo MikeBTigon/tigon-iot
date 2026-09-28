@@ -6,6 +6,9 @@ import MpBrowse from './pages/MpBrowse';
 import MpProfiles from './pages/MpProfiles';
 import MpAccounts from './pages/MpAccounts';
 import MpCartDetail from './pages/MpCartDetail';
+import MpQueue from './pages/MpQueue';
+import MpAnalytics from './pages/MpAnalytics';
+import MpPrepare from './pages/MpPrepare';
 
 /** MP Assistant routes; each element is wrapped by the caller's route guard. */
 export const MP_ROUTES = [
@@ -17,6 +20,10 @@ export const MP_ROUTES = [
   { path: '/mp/profiles', element: <MpProfiles /> },
   { path: '/mp/accounts', element: <MpAccounts /> },
   { path: '/mp/cart/:id', element: <MpCartDetail /> },
+  { path: '/mp/queue', element: <MpQueue /> },
+  { path: '/mp/analytics', element: <MpAnalytics /> },
+  { path: '/mp/post/:queueId', element: <MpPrepare /> },
+  { path: '/mp/prepare/:cartId', element: <MpPrepare /> },
 ];
 
 export function mpRoutes(guard: (el: React.ReactNode) => React.ReactNode) {
