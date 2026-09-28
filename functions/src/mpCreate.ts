@@ -6,12 +6,13 @@
 import * as logger from 'firebase-functions/logger';
 import {HttpsError, onCall} from 'firebase-functions/v2/https';
 import {onSchedule} from 'firebase-functions/v2/scheduler';
-import {defineSecret} from 'firebase-functions/params';
 import * as admin from 'firebase-admin';
 import {createHash} from 'crypto';
 import Anthropic from '@anthropic-ai/sdk';
 
-const ANTHROPIC_API_KEY = defineSecret('ANTHROPIC_API_KEY');
+// Secret referenced by name (not defineSecret) so merely loading this file never makes a deploy
+// look the secret up; it is only bound to the AI function when that function is exported.
+const ANTHROPIC_SECRET = 'ANTHROPIC_API_KEY';
 
 const MODEL = 'claude-opus-5';
 const USERS = 'mp_users';
@@ -257,7 +258,7 @@ async function snapCall(client: Anthropic, photos: string[], text: string, compa
 
 /** Snap-to-list AI fill: {photoUrls?: string[] (≤3), text?: string, comparables?: [{make,model,year,price}] (≤10)}. */
 export const mpAiSnap = onCall(
-  {secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 120, memory: '256MiB'},
+  {secrets: [ANTHROPIC_SECRET], timeoutSeconds: 120, memory: '256MiB'},
   async (req): Promise<AiSnapResult> => {
     if (!req.auth) throw new HttpsError('unauthenticated', 'Sign in first.');
     const uid = req.auth.uid;
@@ -274,7 +275,7 @@ export const mpAiSnap = onCall(
       throw new HttpsError('invalid-argument', 'Add a photo or describe the cart first.');
     }
 
-    const apiKey = ANTHROPIC_API_KEY.value();
+    const apiKey = (process.env[ANTHROPIC_SECRET] || '');
     if (!apiKey) throw new HttpsError('failed-precondition', 'AI is not configured (missing ANTHROPIC_API_KEY).');
     const client = new Anthropic({apiKey, timeout: 90_000, maxRetries: 1});
 

@@ -3,11 +3,12 @@
 // Requires the ANTHROPIC_API_KEY secret (firebase functions:secrets:set ANTHROPIC_API_KEY).
 import * as logger from 'firebase-functions/logger';
 import {HttpsError, onCall} from 'firebase-functions/v2/https';
-import {defineSecret} from 'firebase-functions/params';
 import * as admin from 'firebase-admin';
 import Anthropic from '@anthropic-ai/sdk';
 
-const ANTHROPIC_API_KEY = defineSecret('ANTHROPIC_API_KEY');
+// Secret referenced by name (not defineSecret) so merely loading this file never makes a deploy
+// look the secret up; it is only bound to the AI function when that function is exported.
+const ANTHROPIC_SECRET = 'ANTHROPIC_API_KEY';
 
 const MODEL = 'claude-opus-5';
 const USERS = 'mp_users';
@@ -290,7 +291,7 @@ function extract(msg: Anthropic.Beta.BetaMessage): AiListingResult | null {
 }
 
 export const mpAiListing = onCall(
-  {secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 60, memory: '256MiB'},
+  {secrets: [ANTHROPIC_SECRET], timeoutSeconds: 60, memory: '256MiB'},
   async (req): Promise<AiListingResult> => {
     if (!req.auth) throw new HttpsError('unauthenticated', 'Sign in first.');
     const uid = req.auth.uid;
@@ -302,7 +303,7 @@ export const mpAiListing = onCall(
     const tone: Tone = TONES.includes(data.tone as Tone) ? (data.tone as Tone) : 'friendly';
     let photoUrl = cleanPhotoUrl(data.photoUrl);
 
-    const apiKey = ANTHROPIC_API_KEY.value();
+    const apiKey = (process.env[ANTHROPIC_SECRET] || '');
     if (!apiKey) {
       throw new HttpsError('failed-precondition', 'AI writer is not configured (missing ANTHROPIC_API_KEY).');
     }
