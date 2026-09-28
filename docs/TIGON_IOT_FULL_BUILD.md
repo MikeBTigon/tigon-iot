@@ -33,6 +33,7 @@
 23. [Roadmap / ideas](#23-roadmap--ideas)
 24. [Build history](#24-build-history)
 25. [Posting, phones and analytics](#25-posting-phones-and-analytics)
+26. [Growth release: create, share, sell, team, ease of use](#26-growth-release-create-share-sell-team-ease-of-use)
 
 ---
 
@@ -716,6 +717,7 @@ big DMS changes.
 | Sept 28, 2026 | GitHub Actions auto-deploy (PR #2); Functions runtime → Node.js 22 (PR #3); CI limited to MP functions + system overview doc (PR #4) — MP Assistant live |
 | Sept 28, 2026 | TIGON IOT phone app for iPhone + Android (Capacitor), push alerts, phone photo saving, build pipeline |
 | Sept 28, 2026 | Posting & phones release: Prepare listing, posting queue + Auto Post, QR phone pairing, heartbeat/online status, manager role, team phones, analytics, alerts, audit log, AI listing writer, app quick actions |
+| Sept 28, 2026 | Growth release: snap-to-list, voice, photo studio, templates, imports; Share Kit, graphics, video, flyers, storefronts, tracked links, A/B; leads, customers, reviews, calendar, insights, digest; goals, badges, assets, approval, status, backups, exports; navigation, search, dark mode, 4 languages, onboarding, help, offline |
 
 ---
 
@@ -815,3 +817,85 @@ Route `/mp/prepare/:cartId` (from the cart page) or `/mp/post/:queueId` (from a 
 - Signed Play Store / TestFlight builds: need an Apple Developer account ($99/yr) and a Google Play account ($25).
 - eBay / Etsy / Shopify posting.
 - Stripe billing.
+
+---
+
+## 26. Growth release: create, share, sell, team, ease of use
+
+All paths are grouped in the MP navigation (`frontend/src/mp/navRegistry.ts`): **Sell · Post & share · Customers ·
+Team · Admin · Help**. On phones there is a bottom bar (Home, New listing, Queue, Leads, More).
+
+### 26.1 Create listings (`frontend/src/mp/create/`, `functions/src/mpCreate.ts`)
+| Feature | Details |
+|---|---|
+| **New listing / Snap-to-list** (`/mp/new`) | 3 steps (Photos → Details → Review). Take/upload photos (compressed to ≤2000px, stored in Storage `mp_media/{uid}/`). Optional **AI fill** (`mpAiSnap`) from photos and/or dictated text fills make, model, year, color, features, title, description; a rough price estimate is shown only when comparable inventory exists and is never auto-applied. Saved as an `mp_carts` doc with `source: 'manual'` (DMS-shaped payload, so every screen works). Edit later via `/mp/new?edit=<id>`. |
+| **Voice input** | Mic button dictates descriptions (native speech plugin in the app, Web Speech API in browsers). |
+| **Photo studio** | Cart page → Photo studio: crop 1:1 / 4:5 / 16:9, brightness/contrast/saturation, Auto fix, logo or text stamp; save to phone or replace a photo in your own listing. |
+| **Templates** (`/mp/templates`) | Listing and reply templates with placeholders `{year} {make} {model} {color} {price} {location} {phone} {name} {storeName} {link} {title} {reviewLink}`; starter reply templates. |
+| **Import** (`/mp/import`, managers) | CSV upload with column mapping and preview; connectors for **WooCommerce**, **Shopify**, **JSON feed**, **CSV URL** (credentials write-only in `mp_integration_secrets`), run now (`mpRunImport`) or every 6 hours (`mpImportScheduled`). Imported items: `mp_carts/imp_<connector>_<id>`, `source: 'import:<id>'`. The DMS sync never removes manual or imported listings. |
+
+### 26.2 Share everywhere (`frontend/src/mp/share/`, `frontend/src/storefront/`, `functions/src/mpShare.ts`)
+| Feature | Details |
+|---|---|
+| **Share Kit** (`/mp/share/:cartId`) | Pick photos + listing text, then one tap per platform: Facebook, Instagram, WhatsApp, TikTok, X, SMS, Email, More (native share sheet with photos in the app). Each share gets its own tracked link. |
+| **Graphics** | Branded 1080×1080 post and 1080×1920 story images (3 styles) with photo, price, store, QR code. |
+| **Promo video** | Vertical slideshow video (Ken Burns, crossfades, price/phone overlays) recorded on the device (MP4 where supported, else WebM). |
+| **Flyers & QR** (`/mp/flyer/:cartId`) | Letter-size flyer or 6-per-page QR labels, print or save as PDF. |
+| **Mini-storefront** (`/mp/storefront`, public `/s/:slug`) | Each person's own public page of in-stock carts (choose locations, new/used, pinned carts); built-in `/s/tigon` shows everything. Public data only (no serial/VIN), served by `mpStorefrontApi` with caching. |
+| **Short links + UTM** (`/l/:code`) | Every share link carries `utm_source` (platform), `utm_campaign`, `utm_content` (person_phone). `mpLink` counts real clicks (bots excluded; social previews get a proper title/photo) and records who/which phone/platform. |
+| **Links & A/B** (`/mp/links`) | Your links and clicks, A/B tests of two titles/photos with a leader indicator, clicks by platform/phone/person. |
+
+### 26.3 Sales & marketing (`frontend/src/mp/crm/`, `functions/src/mpCrm.ts`)
+| Feature | Details |
+|---|---|
+| **Leads** (`/mp/leads`) | New → Talking → Sold / Lost (kanban on desktop, tabs on phones); call/text/WhatsApp/email with reply templates; follow-up dates with due/overdue badges; **Make lead** button on every IoT dashboard notification. |
+| **Mark as sold** | From a lead or the cart page: records price/date, hides the cart from inventory (`soldLocally`), cancels its queue items, optionally saves the buyer as a customer, then offers a review request. |
+| **Customers** (`/mp/customers`) | Contacts with **per-channel opt-in consent** (SMS, WhatsApp, email) and where consent was given; CSV export; Broadcast = one-tap send per opted-in customer only, with "Reply STOP to opt out". |
+| **Review requests** | Sends the store's Google review link through a channel the customer opted into (or in person); no incentives. |
+| **Calendar** (`/mp/calendar`) | Week/month view of scheduled posts; drag to reschedule; relist-due items overlaid. |
+| **Insights** (`/mp/insights`) | Best time to post (heatmap from your clicks, leads, posts), price insights (comparables + sales history), relist list, week-over-week digest. |
+| **Reminders & digest** | `mpCrmReminders` (every 30 min): follow-up and relist reminders as IoT notifications. `mpWeeklyDigest` (Monday 08:00): team digest to managers, personal digest to active members. |
+
+### 26.4 Team & admin (`frontend/src/mp/team/`, `functions/src/mpTeam.ts`)
+| Feature | Details |
+|---|---|
+| **Goals & badges** (`/mp/team`) | Weekly/monthly goals per person (posts, leads, sales) with progress; leaderboard with medals; badges (first post, 10/50/100 posts, streaks, first sale, sharer, early bird, every store, photo pro) and posting streaks. |
+| **Brand assets** (`/mp/assets`) | Shared library of logos/photos (managers upload; everyone downloads/shares); "Use as team logo". |
+| **Approval** (`/mp/settings`) | Admins can require manager approval: members' Auto Post items wait as "Waiting for approval" until a manager approves/rejects in the Queue; managers get a digest (`mpApprovalDigest`). |
+| **Status** (`/mp/status`) | Health of DMS sync, queue, phones (offline, no push, push token errors), alerts, connectors, backups. |
+| **Backups** | Daily Firestore export (`mpBackup`, 03:00) to `gs://<project>-backups/backups/<date>`; "Back up now" (`mpBackupNow`). |
+| **Exports** (`/mp/exports`, `/mp/report`) | CSV exports (inventory, posts, queue, leads, customers, events, clicks) and a printable monthly report (save as PDF). |
+
+### 26.5 Ease of use (`frontend/src/ui/`, `frontend/src/i18n/`, `frontend/src/mp/help/`)
+- **Setup wizard** (`/mp/welcome`): profile & language → pair a phone → alerts → first listing, with a "Finish setup (n/4)" banner.
+- **Global search**: Ctrl/Cmd+K or the search icon — pages, help, carts, phones, queue, leads, customers.
+- **Dark mode, large text**, and **English / Spanish / French / Haitian Creole** (avatar menu). Non-English text
+  should be reviewed by a native speaker; other pages adopt translations over time via `useT()`.
+- **Help center** (`/mp/help`) with articles and **Contact support** (phone/email in `SUPPORT`,
+  `frontend/src/mp/help/articles.ts` — change them there).
+- **Offline**: data is cached on the device and changes sync when back online; the website caches the app and
+  cart photos (service worker). An "offline" banner shows when there's no connection.
+- **Quick actions** (long-press the app icon): Next cart, New listing, My queue, Leads, Notifications.
+
+### 26.6 New collections and rules
+`mp_templates`, `mp_integrations` (+ `mp_integration_secrets`, never readable), `mp_links`, `mp_clicks` (function-written),
+`mp_storefronts`, `mp_leads` (owner or manager), `mp_customers`, `mp_goals` (managers write), `mp_assets`,
+`mp_settings/general` (admins write). Manual listings: members create/edit their own; members can mark any cart
+sold. Storage: `mp_media/{uid}/` (own uploads), `mp_assets/`. **75 emulator permission tests** cover the rules.
+
+### 26.7 One-time setup for this release
+1. **Backups:** create bucket `gs://tigon-iot-backups` (same region as Firestore); give the functions runtime account
+   (`<project-number>-compute@developer.gserviceaccount.com`) **Cloud Datastore Import Export Admin** and
+   **Storage Object Admin** on that bucket.
+2. **Photo editing of Storage photos (optional):** set CORS on the Storage bucket so the studio/graphics can draw
+   uploaded photos: `gsutil cors set cors.json gs://tigon-iot.firebasestorage.app` allowing GET from
+   `https://tigon-iot.web.app`, `https://localhost`, `capacitor://localhost`.
+3. **Connectors:** WooCommerce → Settings → Advanced → REST API → key with **Read**; Shopify → Develop apps →
+   `read_products` → Admin API token; Google Sheets → Publish to web → CSV.
+4. **AI** (writer + snap-to-list): `ANTHROPIC_API_KEY` secret + `ENABLE_AI_WRITER=true` (see 25.6).
+5. **Approval / logo / relist days:** MP → Admin → Settings.
+
+### 26.8 Not included
+Paid plans / trials / upgrade prompts and referral or affiliate programs (internal tool), home-screen widgets
+(quick actions instead), two-factor login (needs Identity Platform), automatic background removal, bulk SMS/WhatsApp/
+email sending (needs Twilio / WhatsApp Business), how-to videos.
