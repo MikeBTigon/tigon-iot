@@ -112,6 +112,8 @@ export interface WhDomain {
   status: 'active' | 'paused';
   platform?: 'wordpress' | 'webflow' | 'wix' | 'squarespace' | 'shopify' | 'custom' | string;
   settings: WhSettings;
+  /** Updated by ingest (at most once a minute); used by the no-leads alert. */
+  lastReceivedAt?: number;
   createdBy: string;
   createdAt: number;
   updatedAt: number;
@@ -225,6 +227,11 @@ export interface WhSubmission extends SubmissionFields {
   hasDead?: boolean;
   /** Created by "Send test": emails get a [TEST] subject; GA4, CRM lead and DMS are skipped. */
   isTest?: boolean;
+  /** e.g. "email:x@y.com", "phone:5551234567" — used for duplicate lookups (array-contains). */
+  dedupeKeys?: string[];
+  /** Validation failure message / last step error. */
+  error?: string;
+  lastError?: string;
 }
 
 export type StepRunStatus = 'success' | 'failed' | 'retrying' | 'skipped' | 'dead';
@@ -246,6 +253,9 @@ export interface WhStepRun {
   startedAt: number;
   finishedAt?: number;
   nextAttemptAt?: number;
+  /** Stored jump/outcome so a replay that skips a finished step still follows it. */
+  next?: string | null;
+  outcome?: string | null;
 }
 
 /** Retry delays after each failed attempt; after the last one the step is 'dead' (dead-letter list). */

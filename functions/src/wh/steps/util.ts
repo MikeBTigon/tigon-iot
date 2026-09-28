@@ -42,7 +42,9 @@ export function mergeDataFor(sub: Partial<WhSubmission>, domain: WhDomain | null
     if (v !== undefined && v !== null && v !== '') data[f] = String(v);
   }
   const mapped = new Set(Object.keys(webhook?.fieldMap || {}));
-  const raw = (sub.rawPayload || {}) as Record<string, unknown>;
+  // Ingest keeps unmapped fields in rawPayload.extra (older/other payloads: top level).
+  const payload = (sub.rawPayload || {}) as Record<string, unknown>;
+  const raw = (payload.extra && typeof payload.extra === 'object' ? payload.extra : payload) as Record<string, unknown>;
   for (const [k, v] of Object.entries(raw)) {
     if (STD.includes(k) || mapped.has(k) || JUNK.test(k) || k in data) continue;
     if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') {
