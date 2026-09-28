@@ -9,6 +9,8 @@ import Dashboard from './pages/Dashboard';
 import Devices from './pages/Devices';
 import Settings from './pages/Settings';
 import Download from './pages/Download';
+import { MpDataProvider } from './mp/MpDataContext';
+import { mpRoutes } from './mp/routes';
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { currentUser } = useAuth();
@@ -68,6 +70,7 @@ function AppContent() {
     </ProtectedRoute>
   }
 />
+  {mpRoutes((el) => <ProtectedRoute>{el}</ProtectedRoute>)}
   <Route path="/" element={<Navigate to="/dashboard" />} />
 </Routes>
     </Router>
@@ -79,7 +82,9 @@ function App() {
     <ThemeProvider theme={theme}>
       <CssBaseline />
       <AuthProvider>
-        <AppContent />
+        <MpDataProvider>
+          <AppContent />
+        </MpDataProvider>
       </AuthProvider>
     </ThemeProvider>
   );

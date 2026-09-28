@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "build:mp-ext": "esbuild src/mp/cartLogic.ts --bundle --format=iife --global-name=TigonCartLogic --target=chrome110 --outfile=../mp-assistant/shared/cart-logic.js && node -e \"for (const d of ['poster']) require('fs').copyFileSync('../mp-assistant/shared/cart-logic.js', '../mp-assistant/'+d+'/cart-logic.js')\""
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",
@@ -28,6 +29,7 @@
     "@types/react": "^19.2.5",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.1",
+    "esbuild": "^0.27.2",
     "eslint": "^9.39.1",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.24",

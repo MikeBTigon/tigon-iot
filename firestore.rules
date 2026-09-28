@@ -59,5 +59,59 @@ service cloud.firestore {
       allow read: if isAuthenticated();
       allow write: if false; // Only admins
     }
+
+    // ---------------------------------------------------------------
+    // Tigon MP Assistant (Facebook Marketplace posting) — parallel module
+    // ---------------------------------------------------------------
+    function mpProfilePath() {
+      return /databases/$(database)/documents/mp_users/$(request.auth.uid);
+    }
+
+    function isMpMember() {
+      return isValidEmail() && exists(mpProfilePath());
+    }
+
+    function isMpAdmin() {
+      return isMpMember() && get(mpProfilePath()).data.role == 'admin';
+    }
+
+    // Bootstrap admins are listed in systemConfig/mpAssistant.adminEmails (console only).
+    function isMpBootstrapAdmin() {
+      return exists(/databases/$(database)/documents/systemConfig/mpAssistant) &&
+             request.auth.token.email in
+               get(/databases/$(database)/documents/systemConfig/mpAssistant).data.adminEmails;
+    }
+
+    match /mp_users/{userId} {
+      allow read: if isValidEmail();
+      allow create: if isValidEmail() && isOwner(userId) &&
+                       request.resource.data.email == request.auth.token.email &&
+                       (request.resource.data.role == 'sales' ||
+                        (request.resource.data.role == 'admin' && isMpBootstrapAdmin()));
+      allow update: if isMpAdmin() ||
+                       (isValidEmail() && isOwner(userId) &&
+                        request.resource.data.role == resource.data.role &&
+                        request.resource.data.email == resource.data.email);
+      allow delete: if isMpAdmin();
+    }
+
+    // Inventory synced from the DMS API by the mpSyncInventory / mpSyncNow functions (admin SDK).
+    // Admins update posting fields and can remove carts.
+    match /mp_carts/{cartId} {
+      allow read: if isMpMember();
+      allow write: if isMpAdmin();
+    }
+
+    // Sync status (written by functions only).
+    match /mp_meta/{docId} {
+      allow read: if isMpMember();
+      allow write: if false;
+    }
+
+    // Facebook posting accounts.
+    match /mp_accounts/{accountId} {
+      allow read: if isMpMember();
+      allow write: if isMpAdmin();
+    }
   }
 }

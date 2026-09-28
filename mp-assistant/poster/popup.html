@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Tigon Poster</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header class="bar">
+    <div class="brand">TIGON <span>Poster</span></div>
+    <div id="who" class="who hidden">
+      <span id="who-email"></span>
+      <button id="btn-signout" class="link">Sign out</button>
+    </div>
+  </header>
+
+  <!-- Sign in -->
+  <section id="view-signin" class="card hidden">
+    <h2>Sign in</h2>
+    <p class="muted">Use your TIGON IOT account (@tigongolfcarts.com).</p>
+    <form id="signin-form">
+      <label>Email<input id="si-email" type="email" autocomplete="username" required></label>
+      <label>Password<input id="si-pass" type="password" autocomplete="current-password" required></label>
+      <button type="submit" class="btn primary" id="si-submit">SIGN IN</button>
+    </form>
+    <div id="si-msg" class="msg hidden"></div>
+  </section>
+
+  <!-- Cart list -->
+  <section id="view-list" class="hidden">
+    <div id="list-msg" class="msg hidden"></div>
+    <input id="search" class="search" type="text" placeholder="Search make, model, serial, location, color…" style="width:100%;padding:7px 8px;border:1px solid var(--border);border-radius:6px;font:inherit">
+    <div class="toolbar">
+      <span id="list-count"></span>
+      <button id="btn-reload" class="link">Reload</button>
+    </div>
+    <div id="list" class="list"></div>
+  </section>
+
+  <!-- Cart detail -->
+  <section id="view-detail" class="hidden">
+    <div class="row" style="margin-bottom:8px"><button id="btn-back" class="btn ghost small">← Back to carts</button></div>
+    <div class="card">
+      <h2 id="d-name"></h2>
+      <table id="d-fields" class="fields"></table>
+      <div id="d-photos" class="photos"></div>
+    </div>
+    <div class="card">
+      <h2>Listing</h2>
+      <label>Variation<select id="d-variation"></select></label>
+      <div id="d-listing" class="variation"></div>
+      <div id="send-msg" class="msg hidden"></div>
+      <div class="row">
+        <button id="btn-send" class="btn primary">SEND TO FACEBOOK FORM</button>
+      </div>
+      <div class="row" style="margin-top:6px">
+        <button id="btn-open-fb" class="btn ghost">Open Facebook vehicle form</button>
+      </div>
+      <p class="muted" style="margin-top:8px">Then click <b>Fill Facebook form</b> on the TIGON MP Autofill panel. Review everything, add photos and click Post yourself.</p>
+    </div>
+  </section>
+
+  <script src="cart-logic.js"></script>
+  <script src="tigon-auth.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
