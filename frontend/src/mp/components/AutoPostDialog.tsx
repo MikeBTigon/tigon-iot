@@ -11,6 +11,7 @@ import { groupAccounts } from '../cartUtils';
 import { queueCart } from '../queue';
 import type { DeviceDoc, MpCart } from '../types';
 import { seenLabel } from '../../devices/deviceStatus';
+import { needsApproval, useMpSettings } from '../team/settings';
 
 const toLocalInput = (ms: number) => {
   const d = new Date(ms - new Date().getTimezoneOffset() * 60000);
@@ -24,6 +25,8 @@ const toLocalInput = (ms: number) => {
 const AutoPostDialog: React.FC<{ cart: MpCart; open: boolean; onClose: (queued?: boolean) => void }> = ({ cart, open, onClose }) => {
   const { profile, users, accounts } = useMp();
   const isManager = profile?.role === 'admin' || profile?.role === 'manager';
+  const { settings, loaded: settingsLoaded } = useMpSettings();
+  const approval = needsApproval(profile?.role, settings);
   const [assignee, setAssignee] = useState(profile?.uid || '');
   const [deviceId, setDeviceId] = useState('');
   const [accountId, setAccountId] = useState('');
@@ -73,7 +76,7 @@ const AutoPostDialog: React.FC<{ cart: MpCart; open: boolean; onClose: (queued?:
         accountName: account?.name || '',
         variation,
         scheduledAt,
-      });
+      }, { requireApproval: settingsLoaded ? approval : undefined });
       onClose(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not queue this cart.');
@@ -143,12 +146,18 @@ const AutoPostDialog: React.FC<{ cart: MpCart; open: boolean; onClose: (queued?:
         {when === 'later' && (
           <TextField type="datetime-local" label="Send at" value={at} onChange={(e) => setAt(e.target.value)} slotProps={{ inputLabel: { shrink: true } }} />
         )}
+        {approval && (
+          <Alert severity="warning">
+            Needs manager approval — a manager must approve this before it goes to the phone. You'll see it under
+            <b> Queue → Needs approval</b> until then.
+          </Alert>
+        )}
         {error && <Alert severity="error">{error}</Alert>}
       </DialogContent>
       <DialogActions>
         <Button onClick={() => onClose()}>Cancel</Button>
         <Button variant="contained" onClick={submit} disabled={busy || !assignee}>
-          {busy ? 'Queuing…' : when === 'now' ? 'Send to phone' : 'Schedule'}
+          {busy ? 'Queuing…' : approval ? 'Ask for approval' : when === 'now' ? 'Send to phone' : 'Schedule'}
         </Button>
       </DialogActions>
     </Dialog>

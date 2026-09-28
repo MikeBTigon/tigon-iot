@@ -29,9 +29,10 @@ interface StepButtonProps {
   icon: React.ReactNode;
   onClick: () => void;
   isDone: boolean;
+  disabled?: boolean;
 }
 
-function StepButton({ n, label, doneLabel, icon, onClick, isDone }: StepButtonProps) {
+function StepButton({ n, label, doneLabel, icon, onClick, isDone, disabled }: StepButtonProps) {
   return (
     <Button
       fullWidth
@@ -40,6 +41,7 @@ function StepButton({ n, label, doneLabel, icon, onClick, isDone }: StepButtonPr
       color={isDone ? 'success' : 'primary'}
       startIcon={isDone ? <CheckCircle /> : icon}
       onClick={onClick}
+      disabled={disabled}
       sx={{ justifyContent: 'flex-start', py: 1.5, mb: 1.5 }}
     >
       {n}. {isDone ? doneLabel : label}
@@ -109,6 +111,7 @@ const MpPrepare: React.FC = () => {
   const account = accounts.find((a) => a.id === item?.accountId);
   const grouped = useMemo(() => groupAccounts(accounts), [accounts]);
   const ev = { cartId: cart?.docId, queueId: item?.id };
+  const pending = item?.status === 'pending_approval';
 
   if (itemError) return <MpShell><Alert severity="warning">{itemError}</Alert></MpShell>;
   if (!cart || !listing) {
@@ -195,11 +198,12 @@ const MpPrepare: React.FC = () => {
 
         <Box>
           <Paper sx={{ p: 2, mb: 2 }}>
+            {pending && <Alert severity="info" sx={{ mb: 1.5 }}>Waiting for a manager's approval — you can look it over, but post it once it's approved.</Alert>}
             <Typography variant="overline" color="text.secondary">Post in 3 taps</Typography>
             <StepButton n={1} label={`Save ${photos.length} photos to this phone`} doneLabel="Photos saved" icon={<PhotoLibrary />} onClick={savePhotos} isDone={done.photos} />
             <StepButton n={2} label="Copy listing & open Marketplace" doneLabel="Copied — Marketplace opened" icon={<OpenInNew />} onClick={copyAndOpen} isDone={done.opened} />
-            <StepButton n={3} label="I published it" doneLabel="Marked as posted" icon={<CheckCircle />} onClick={() => setConfirmOpen(true)} isDone={item?.status === 'posted'} />
-            <Button fullWidth color="error" startIcon={<ErrorOutline />} onClick={() => setFailOpen(true)} disabled={item?.status === 'posted'}>
+            <StepButton n={3} label="I published it" doneLabel="Marked as posted" icon={<CheckCircle />} onClick={() => setConfirmOpen(true)} isDone={item?.status === 'posted'} disabled={pending} />
+            <Button fullWidth color="error" startIcon={<ErrorOutline />} onClick={() => setFailOpen(true)} disabled={item?.status === 'posted' || pending}>
               Couldn't post it
             </Button>
             {message && <Alert severity="success" sx={{ mt: 1 }}>{message}</Alert>}

@@ -136,19 +136,53 @@ export const mpPairDevice = onCall(async (req) => {
 // Posting queue
 // ---------------------------------------------------------------------------
 
-async function tokensFor(item: Json): Promise<string[]> {
+interface PushTarget {
+  token: string;
+  ref: admin.firestore.DocumentReference;
+  hadError: boolean;
+}
+
+async function tokensFor(item: Json): Promise<PushTarget[]> {
   const devices = db().collection('devices');
   const docs = item.deviceId ?
     [await devices.doc(item.deviceId).get()] :
     (await devices.where('userId', '==', item.assignedUserId).where('source', '==', 'tigon-iot-app').get()).docs;
   return docs
     .filter((d) => d.exists && d.get('userId') === item.assignedUserId && d.get('status') !== 'revoked' && d.get('fcmToken'))
-    .map((d) => String(d.get('fcmToken')));
+    .map((d) => ({token: String(d.get('fcmToken')), ref: d.ref, hadError: !!d.get('pushError')}));
+}
+
+/** FCM error codes meaning the phone's push token is dead (app removed / token rotated / garbage). */
+const DEAD_TOKEN_CODES = new Set([
+  'messaging/registration-token-not-registered',
+  'messaging/invalid-registration-token',
+  'messaging/invalid-argument',
+]);
+
+/**
+ * Records push-token problems on the device doc ({pushError, pushErrorAt}) so the Status page can list them,
+ * and clears the flag once a push to that phone succeeds again. Never throws.
+ */
+async function recordPushResults(targets: PushTarget[], responses: admin.messaging.SendResponse[]) {
+  const now = Date.now();
+  await Promise.all(targets.map(async (t, i) => {
+    const r = responses[i];
+    try {
+      if (r?.success) {
+        if (t.hadError) await t.ref.update({pushError: admin.firestore.FieldValue.delete(), pushErrorAt: admin.firestore.FieldValue.delete()});
+      } else if (r?.error && DEAD_TOKEN_CODES.has(r.error.code)) {
+        await t.ref.update({pushError: `${r.error.code}: ${r.error.message}`.slice(0, 300), pushErrorAt: now});
+      }
+    } catch (err) {
+      logger.warn('Could not record push result', t.ref.id, err);
+    }
+  }));
 }
 
 async function dispatch(ref: admin.firestore.DocumentReference, item: Json) {
   const now = Date.now();
-  const tokens = await tokensFor(item);
+  const targets = await tokensFor(item);
+  const tokens = targets.map((t) => t.token);
   const update: Json = {attempts: (item.attempts || 0) + 1, updatedAt: now, sentAt: now};
   if (!tokens.length) {
     update.lastError = 'No phone with notifications turned on for this person (it still shows in their queue).';
@@ -162,6 +196,8 @@ async function dispatch(ref: admin.firestore.DocumentReference, item: Json) {
       data: {type: 'mp_queue', queueId: ref.id, cartId: String(item.cartId || '')},
       android: {priority: 'high'},
     });
+    // responses[] is in the same order as tokens[].
+    await recordPushResults(targets, res.responses);
     if (res.successCount) {
       update.status = 'sent';
       update.lastError = admin.firestore.FieldValue.delete();

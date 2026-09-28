@@ -139,7 +139,10 @@ service cloud.firestore {
                        (isMpMember() && resource.data.assignedUserId == request.auth.uid &&
                         request.resource.data.assignedUserId == request.auth.uid &&
                         (resource.data.status != 'pending_approval' ||
-                         request.resource.data.status in ['pending_approval', 'cancelled']));
+                         request.resource.data.status in ['pending_approval', 'cancelled']) &&
+                        // With approval on, members can't put an item back in line themselves.
+                        (!mpRequireApproval() || request.resource.data.status != 'queued' ||
+                         resource.data.status == 'queued'));
       allow delete: if isMpManager();
     }
 
