@@ -26,6 +26,20 @@
     ],
     "rewrites": [
       {
+        "source": "/l/**",
+        "function": {
+          "functionId": "mpLink",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/api/storefront/**",
+        "function": {
+          "functionId": "mpStorefrontApi",
+          "region": "us-central1"
+        }
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }

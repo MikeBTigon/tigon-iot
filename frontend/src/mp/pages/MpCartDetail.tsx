@@ -10,6 +10,7 @@ import PostedOnTracker from '../components/PostedOnTracker';
 import StoreInfo from '../components/StoreInfo';
 import AutoPostDialog from '../components/AutoPostDialog';
 import AiListingPanel from '../components/AiListingPanel';
+import CartExtensions from '../components/CartExtensions';
 import { useMp } from '../MpDataContext';
 import { cartName, cartTitle } from '../cartLogic';
 import { formatPrice, hasPhotoIssue, postedTs, timeAgo, workingPhotos } from '../cartUtils';
@@ -127,6 +128,7 @@ const MpCartDetail: React.FC = () => {
       </Box>
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
       {queuedMsg && <Alert severity="success" sx={{ mb: 2 }} onClose={() => setQueuedMsg('')}>{queuedMsg}</Alert>}
+      <CartExtensions cart={cart} />
 
       <Paper sx={{ p: 2, mb: 3 }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>

@@ -7,6 +7,7 @@ import type { MpCart, MpProfile, QueueItem, QueueStatus } from './types';
 import { writeAudit } from './audit';
 
 export const QUEUE_STATUS_LABEL: Record<QueueStatus, string> = {
+  pending_approval: 'Waiting for approval',
   queued: 'Queued',
   sent: 'Sent to phone',
   opened: 'Opened',
@@ -16,6 +17,7 @@ export const QUEUE_STATUS_LABEL: Record<QueueStatus, string> = {
 };
 
 export const QUEUE_STATUS_COLOR: Record<QueueStatus, 'default' | 'info' | 'warning' | 'success' | 'error' | 'secondary'> = {
+  pending_approval: 'secondary',
   queued: 'default',
   sent: 'info',
   opened: 'warning',

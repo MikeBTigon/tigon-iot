@@ -10,7 +10,7 @@ import Devices from './pages/Devices';
 import Settings from './pages/Settings';
 import Download from './pages/Download';
 import { MpDataProvider } from './mp/MpDataContext';
-import { mpRoutes } from './mp/routes';
+import { mpRoutes, publicRoutes } from './mp/routes';
 import NativeBridge from './native/NativeBridge';
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
@@ -73,6 +73,7 @@ function AppContent() {
   }
 />
   {mpRoutes((el) => <ProtectedRoute>{el}</ProtectedRoute>)}
+  {publicRoutes()}
   <Route path="/" element={<Navigate to="/dashboard" />} />
 </Routes>
     </Router>

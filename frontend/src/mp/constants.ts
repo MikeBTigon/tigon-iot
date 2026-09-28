@@ -22,7 +22,23 @@ export const COLLECTIONS = {
   deviceDays: 'mp_device_days',
   alerts: 'mp_alerts',
   audit: 'mp_audit',
+  templates: 'mp_templates',
+  integrations: 'mp_integrations',
+  integrationSecrets: 'mp_integration_secrets',
+  links: 'mp_links',
+  clicks: 'mp_clicks',
+  storefronts: 'mp_storefronts',
+  leads: 'mp_leads',
+  customers: 'mp_customers',
+  goals: 'mp_goals',
+  assets: 'mp_assets',
+  settings: 'mp_settings',
 } as const;
+
+/** Public site origin used in short links, storefronts, QR codes. */
+export const PUBLIC_ORIGIN = 'https://tigon-iot.web.app';
+export const shortLinkUrl = (code: string) => `${PUBLIC_ORIGIN}/l/${code}`;
+export const storefrontUrl = (slug: string) => `${PUBLIC_ORIGIN}/s/${slug}`;
 
 /** A phone counts as online if its last heartbeat is newer than this. */
 export const ONLINE_WINDOW_MS = 10 * 60 * 1000;

@@ -24,6 +24,9 @@ export interface MpCartDoc {
   isUsed: boolean;
   postedBy?: Record<string, number>;
   postedAccounts?: Record<string, PostedAccountEntry>;
+  source?: string;
+  createdBy?: string;
+  soldLocally?: boolean;
 }
 
 export interface MpAccount {
@@ -84,6 +87,10 @@ export interface MpCart extends Cart {
   savedAt: number;
   postedBy: Record<string, number>;
   postedAccounts: Record<string, PostedAccountEntry>;
+  /** 'dms-api' (synced), 'manual' (created in the app) or 'import:<integrationId>'. */
+  source?: string;
+  createdBy?: string;
+  soldLocally?: boolean;
 }
 
 export interface MpSyncStatus {
@@ -138,7 +145,7 @@ export interface DeviceDoc {
 // Posting queue (mp_queue)
 // ---------------------------------------------------------------------------
 
-export type QueueStatus = 'queued' | 'sent' | 'opened' | 'posted' | 'failed' | 'cancelled';
+export type QueueStatus = 'pending_approval' | 'queued' | 'sent' | 'opened' | 'posted' | 'failed' | 'cancelled';
 
 export interface QueueItem {
   id: string;
@@ -165,6 +172,9 @@ export interface QueueItem {
   postedAt?: number;
   lastError?: string;
   failAlertedAt?: number;
+  approvedBy?: string;
+  approvedAt?: number;
+  rejectedReason?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -181,6 +191,10 @@ export type MpEventType =
   | 'post_failed'
   | 'queue_opened'
   | 'ai_listing'
+  | 'listing_created'
+  | 'share'
+  | 'lead_created'
+  | 'lead_sold'
   | 'error';
 
 export interface MpEvent {
