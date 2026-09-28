@@ -204,10 +204,19 @@ export const updateLastLogin = onRequest(async (req, res) => {
 });
 export {mpSyncInventory, mpSyncNow} from './mpAssistant';
 export {mpCreatePairingCode, mpPairDevice, mpSendQueueItem, mpDispatchQueue, mpMonitor} from './mpOps';
-export {mpAiListing} from './mpAi';
 
 // Growth release
-export * from './mpCreate';
+export {mpRunImport, mpImportScheduled} from './mpCreate';
 export * from './mpShare';
 export * from './mpCrm';
 export * from './mpTeam';
+
+// AI functions use the ANTHROPIC_API_KEY secret, so they are only exported (and therefore only
+// deployed) when AI is turned on: the deploy workflow writes ENABLE_AI_WRITER=true to functions/.env,
+// which Firebase loads both when deploying and at runtime.
+if (process.env.ENABLE_AI_WRITER === 'true') {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  exports.mpAiListing = require('./mpAi').mpAiListing;
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  exports.mpAiSnap = require('./mpCreate').mpAiSnap;
+}

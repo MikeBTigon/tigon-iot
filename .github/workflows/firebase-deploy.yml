@@ -57,7 +57,10 @@ jobs:
           ENABLE_AI_WRITER: ${{ vars.ENABLE_AI_WRITER }}
         run: |
           FUNCS="mpSyncInventory mpSyncNow mpCreatePairingCode mpPairDevice mpSendQueueItem mpDispatchQueue mpMonitor mpApprovalDigest mpBackup mpBackupNow mpRunImport mpImportScheduled mpCrmReminders mpWeeklyDigest mpLink mpStorefrontApi"
-          if [ "$ENABLE_AI_WRITER" = "true" ]; then FUNCS="$FUNCS mpAiListing mpAiSnap"; fi
+          if [ "$ENABLE_AI_WRITER" = "true" ]; then
+            FUNCS="$FUNCS mpAiListing mpAiSnap"
+            echo "ENABLE_AI_WRITER=true" >> functions/.env
+          fi
           ONLY="firestore:rules,storage,hosting"
           for f in $FUNCS; do ONLY="$ONLY,functions:$f"; done
           echo "Deploying: $ONLY"
