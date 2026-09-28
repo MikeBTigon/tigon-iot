@@ -29,6 +29,7 @@ import { collection, query, where, onSnapshot, deleteDoc, doc, updateDoc } from 
 import { db } from '../config/firebase';
 import { useAuth } from '../context/AuthContext';
 import DashboardLayout from '../components/Layout/DashboardLayout';
+import PhoneAlertsCard from '../native/PhoneAlertsCard';
 import { formatDistanceToNow } from 'date-fns';
 
 interface Device {
@@ -130,6 +131,7 @@ const Devices: React.FC = () => {
 
   return (
     <DashboardLayout>
+      <PhoneAlertsCard />
       <Box>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
           <Typography variant="h4" color="primary">

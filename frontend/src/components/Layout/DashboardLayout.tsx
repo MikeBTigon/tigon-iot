@@ -28,6 +28,8 @@ import {
   AccountCircle,
 } from '@mui/icons-material';
 import { useAuth } from '../../context/AuthContext';
+import { isNativeApp } from '../../native/platform';
+import { disablePhoneAlerts } from '../../native/phoneAlerts';
 
 const drawerWidth = 240;
 
@@ -56,6 +58,8 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
 
   const handleLogout = async () => {
     try {
+      // A signed-out phone must stop receiving this user's alerts.
+      if (isNativeApp() && currentUser) await disablePhoneAlerts(currentUser.uid).catch(() => undefined);
       await logout();
       navigate('/login');
     } catch (error) {
@@ -132,6 +136,10 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
         sx={{
           width: { sm: `calc(100% - ${drawerWidth}px)` },
           ml: { sm: `${drawerWidth}px` },
+          // Phone apps draw under the status bar / notch; these insets are 0 in a browser.
+          pt: 'env(safe-area-inset-top)',
+          pl: 'env(safe-area-inset-left)',
+          pr: 'env(safe-area-inset-right)',
         }}
       >
         <Toolbar>
@@ -185,7 +193,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
           ModalProps={{ keepMounted: true }}
           sx={{
             display: { xs: 'block', sm: 'none' },
-            '& .MuiDrawer-paper': { boxSizing: 'border-box', width: drawerWidth },
+            '& .MuiDrawer-paper': { boxSizing: 'border-box', width: drawerWidth, pt: 'env(safe-area-inset-top)' },
           }}
         >
           {drawer}
@@ -194,7 +202,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
           variant="permanent"
           sx={{
             display: { xs: 'none', sm: 'block' },
-            '& .MuiDrawer-paper': { boxSizing: 'border-box', width: drawerWidth },
+            '& .MuiDrawer-paper': { boxSizing: 'border-box', width: drawerWidth, pt: 'env(safe-area-inset-top)' },
           }}
           open
         >
@@ -207,7 +215,8 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
           flexGrow: 1,
           p: 3,
           width: { sm: `calc(100% - ${drawerWidth}px)` },
-          mt: 8,
+          mt: 'calc(64px + env(safe-area-inset-top))',
+          pb: 'calc(24px + env(safe-area-inset-bottom))',
         }}
       >
         {children}

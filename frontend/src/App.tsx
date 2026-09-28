@@ -11,6 +11,7 @@ import Settings from './pages/Settings';
 import Download from './pages/Download';
 import { MpDataProvider } from './mp/MpDataContext';
 import { mpRoutes } from './mp/routes';
+import NativeBridge from './native/NativeBridge';
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { currentUser } = useAuth();
@@ -35,6 +36,7 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 function AppContent() {
   return (
     <Router>
+      <NativeBridge />
       <Routes>
   <Route path="/login" element={<Login />} />
   <Route path="/register" element={<Register />} />

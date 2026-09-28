@@ -22,6 +22,7 @@ import { useAuth } from '../context/AuthContext';
 import DashboardLayout from '../components/Layout/DashboardLayout';
 import { formatDistanceToNow } from 'date-fns';
 import MpDashboardCard from '../mp/components/MpDashboardCard';
+import PhoneAlertsCard from '../native/PhoneAlertsCard';
 
 interface Notification {
   id: string;
@@ -144,6 +145,7 @@ const Dashboard: React.FC = () => {
           </Grid>
         </Grid>
 
+        <PhoneAlertsCard />
         <MpDashboardCard />
 
         <Paper sx={{ p: 3 }}>

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">TIGON IOT</string>
+    <string name="title_activity_main">TIGON IOT</string>
+    <string name="package_name">com.tigongolfcarts.iot</string>
+    <string name="custom_url_scheme">com.tigongolfcarts.iot</string>
+</resources>
