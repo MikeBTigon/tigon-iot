@@ -21,11 +21,14 @@ const config: CapacitorConfig = {
     },
   },
   plugins: {
-    // Long-press the app icon for these quick actions ("hotkeys").
+    // Long-press the app icon for these quick actions ("hotkeys"). Routes: native/NativeBridge.tsx SHORTCUT_ROUTES.
+    // Android launchers show at most 4–5; keep this list short.
     AppShortcuts: {
       shortcuts: [
         { id: 'next', title: 'Next cart to post', description: 'Suggested carts', iosIcon: 'car.fill' },
-        { id: 'queue', title: 'My posting queue', description: 'Carts assigned to you', iosIcon: 'list.bullet' },
+        { id: 'new', title: 'New listing', description: 'Snap-to-list', iosIcon: 'camera.fill' },
+        { id: 'queue', title: 'My queue', description: 'Carts assigned to you', iosIcon: 'list.bullet' },
+        { id: 'leads', title: 'Leads', description: 'Follow-ups due', iosIcon: 'person.2.fill' },
         { id: 'dashboard', title: 'Notifications', description: 'IoT dashboard', iosIcon: 'bell.fill' },
       ],
     },

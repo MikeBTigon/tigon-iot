@@ -1,20 +1,13 @@
 rules_version = '2';
 
-// Files are only reachable by signed-in @tigongolfcarts.com users, except through
-// download URLs (tokenized), which storefronts and shares use for listing photos.
+// Only signed-in @tigongolfcarts.com users can reach files, except through tokenized
+// download URLs, which storefronts and shares use for listing photos.
+// (No Firestore lookups here, so deploys need no cross-service IAM grant; which files are
+// shown in the brand library is controlled by the manager-only mp_assets collection.)
 service firebase.storage {
   match /b/{bucket}/o {
     function isValidEmail() {
       return request.auth != null && request.auth.token.email.matches('.*@tigongolfcarts[.]com$');
-    }
-    function mpRole() {
-      return firestore.get(/databases/(default)/documents/mp_users/$(request.auth.uid)).data.role;
-    }
-    function isMpMember() {
-      return isValidEmail() && firestore.exists(/databases/(default)/documents/mp_users/$(request.auth.uid));
-    }
-    function isMpManager() {
-      return isMpMember() && mpRole() in ['admin', 'manager'];
     }
     function isImageOrVideo() {
       return request.resource.contentType.matches('image/.*') || request.resource.contentType.matches('video/.*');
@@ -22,16 +15,17 @@ service firebase.storage {
 
     // Listing photos and generated media, per user: mp_media/{uid}/...
     match /mp_media/{uid}/{allPaths=**} {
-      allow read: if isMpMember();
-      allow create, update: if isMpMember() && request.auth.uid == uid &&
+      allow read: if isValidEmail();
+      allow create, update: if isValidEmail() && request.auth.uid == uid &&
                                request.resource.size < 25 * 1024 * 1024 && isImageOrVideo();
-      allow delete: if isMpMember() && (request.auth.uid == uid || isMpManager());
+      allow delete: if isValidEmail() && request.auth.uid == uid;
     }
 
-    // Shared brand library (logos, fonts, photos): managers upload.
+    // Shared brand library (logos, fonts, photos).
     match /mp_assets/{allPaths=**} {
-      allow read: if isMpMember();
-      allow write: if isMpManager() && (request.resource == null || request.resource.size < 50 * 1024 * 1024);
+      allow read: if isValidEmail();
+      allow create, update: if isValidEmail() && request.resource.size < 50 * 1024 * 1024;
+      allow delete: if isValidEmail();
     }
 
     match /{allPaths=**} {

@@ -1,3 +1,5 @@
+import type { UserPrefs } from './growthTypes';
+
 /** admin: everything · manager: team devices, queue, analytics · sales (shown as "Member"): own work. */
 export type MpRole = 'admin' | 'manager' | 'sales';
 
@@ -7,6 +9,8 @@ export interface MpProfile {
   name: string;
   role: MpRole;
   legacyId?: string;
+  /** Display preferences (language, theme, large text, onboarding). */
+  prefs?: UserPrefs;
 }
 
 export interface PostedAccountEntry {

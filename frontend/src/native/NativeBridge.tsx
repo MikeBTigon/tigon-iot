@@ -6,7 +6,14 @@ import { isNativeApp } from './platform';
 import { ensurePushToken, initPushListeners } from './phoneAlerts';
 import { endDeviceSession, logEvent, registerDevice, startHeartbeat } from './deviceSession';
 
-const SHORTCUT_ROUTES: Record<string, string> = { next: '/mp', queue: '/mp/queue', dashboard: '/dashboard' };
+/** Home-screen quick actions (ids match capacitor.config.ts AppShortcuts) → in-app routes. */
+const SHORTCUT_ROUTES: Record<string, string> = {
+  next: '/mp',
+  new: '/mp/new',
+  queue: '/mp/queue',
+  leads: '/mp/leads',
+  dashboard: '/dashboard',
+};
 
 /**
  * Phone-app-only wiring (renders nothing): device registration + heartbeat, push taps,

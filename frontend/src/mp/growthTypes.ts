@@ -78,7 +78,10 @@ export interface ShortLink {
   variant?: 'A' | 'B';
   variantLabel?: string;
   abTestId?: string;
+  /** Cart title at share time (readable after the cart sells). */
+  cartTitle?: string;
   clicks: number;
+  lastClickAt?: number;
   createdAt: number;
 }
 
@@ -143,6 +146,7 @@ export interface Lead {
   lastContactAt?: number;
   soldPrice?: number;
   soldAt?: number;
+  reviewRequestedAt?: number;
   createdAt: number;
   updatedAt: number;
 }

@@ -56,9 +56,9 @@ jobs:
         env:
           ENABLE_AI_WRITER: ${{ vars.ENABLE_AI_WRITER }}
         run: |
-          FUNCS="mpSyncInventory mpSyncNow mpCreatePairingCode mpPairDevice mpSendQueueItem mpDispatchQueue mpMonitor mpApprovalDigest mpBackup mpBackupNow mpRunImport mpImportScheduled"
+          FUNCS="mpSyncInventory mpSyncNow mpCreatePairingCode mpPairDevice mpSendQueueItem mpDispatchQueue mpMonitor mpApprovalDigest mpBackup mpBackupNow mpRunImport mpImportScheduled mpCrmReminders mpWeeklyDigest mpLink mpStorefrontApi"
           if [ "$ENABLE_AI_WRITER" = "true" ]; then FUNCS="$FUNCS mpAiListing mpAiSnap"; fi
-          ONLY="firestore:rules,hosting"
+          ONLY="firestore:rules,storage,hosting"
           for f in $FUNCS; do ONLY="$ONLY,functions:$f"; done
           echo "Deploying: $ONLY"
           npx --yes firebase-tools@latest deploy --only "$ONLY" --project tigon-iot --non-interactive --force
