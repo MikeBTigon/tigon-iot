@@ -899,3 +899,85 @@ sold. Storage: `mp_media/{uid}/` (own uploads), `mp_assets/`. **75 emulator perm
 Paid plans / trials / upgrade prompts and referral or affiliate programs (internal tool), home-screen widgets
 (quick actions instead), two-factor login (needs Identity Platform), automatic background removal, bulk SMS/WhatsApp/
 email sending (needs Twilio / WhatsApp Business), how-to videos.
+
+## 27. Webhook Flows (website forms → flows → Master Flow)
+
+Sidebar section **WEBHOOK FLOWS** (under MARKETPLACE; managers and admins). Every website lead form posts to
+`https://tigoniot.com/hooks/{webhook_key}`; each submission runs through its webhook's flow and then the single
+**Master Flow**. Code: `functions/src/wh/` (engine) and `functions/src/wh/steps/` (integrations), `frontend/src/wh/` (UI).
+
+### 27.1 Pages
+| Page | Path | What it does |
+|---|---|---|
+| Overview | `/wh` | Leads/spam/duplicates/failed steps, leads per day, top websites/forms/sources, "needs attention" |
+| Add website | `/wh/new` | Generator: website + webhook + flow in one go, then the **Setup Packet** |
+| Websites | `/wh/websites` | Per-website settings, forms (webhooks), stats, recent leads |
+| Webhooks | `/wh/webhooks` | All webhooks; bulk pause/activate, assign flow, recipients, sheet, new keys, CSV |
+| Flows | `/wh/flows` | Master Flow, shared template flows, private website flows; clone / save as template |
+| Flow builder | `/wh/flows/:id` | Step cards: validate, dedupe, condition, email, sheets, ga4, dms_sync, webhook_out, delay, create_lead, notify, forward_to_master |
+| Submissions | `/wh/submissions` | Filters, CSV export, spam marking; lead timeline per submission with replay |
+| Dead letters | `/wh/dead` | Steps that failed after all retries; replay one, a group, or selected |
+| Email templates | `/wh/templates` | Editor with merge tags, live preview, test send |
+| Settings | `/wh/settings` | Admins: global settings, integrations (SMTP, Sheets, DMS, GA4), security & retention |
+
+**Setup Packet** (after Add website and on every webhook): endpoint URL, copy-paste form + script (or a script for an
+existing form), per-platform tips, field reference, cURL/JSON and HMAC examples, GA4 checklist, **Send test**, an AI
+setup prompt, and a downloadable `.md`.
+
+### 27.2 Ingestion (`whIngest`)
+JSON, urlencoded and multipart (up to 3 images, 10 MB each, checked by content). The IP is taken from the request
+headers (the client's value is ignored). Honeypot field (default `website`), optional Cloudflare Turnstile, blocked
+IPs/words → stored as spam, not processed, still answered 200. Rate limits per IP and per key (default 10 and 120 per
+minute) → 429. Optional HMAC per webhook (`X-Tigon-Signature: sha256=<hex hmac of body>`). Field map + common aliases;
+unknown fields kept in `rawPayload.extra`. CORS: the website's URL, `allowedOrigins`, and the TIGON sites. Answers
+immediately: JSON `{ok, id}`, or a redirect to the thank-you URL for plain HTML form posts.
+
+### 27.3 Engine
+- `whProcess` runs every minute and processes queued submissions (a lease stops double processing). With the GitHub
+  variable `WH_REALTIME=true`, the Firestore trigger `whOnSubmission` also processes them instantly.
+- Each step writes `wh_step_runs/{submission}_{flow}_{step}`. Steps that already succeeded are never re-run, so retries and
+  replays are safe (emails aren't re-sent by "Retry failed steps").
+- Failures retry after 1 min, 5 min, 30 min, 2 h, 12 h, then go to **Dead letters**, and the flow continues with the next
+  step. Configuration errors go to dead letters immediately. Failed validation marks the lead `failed` and stops.
+- Settings cascade: Global → Master Flow → Website → Webhook flow → Webhook (empty = inherit; recipients can "add to"
+  inherited lists instead of replacing).
+- `whReplay` (retry failed / re-run all / one step / bulk), `whTestWebhook` (sample lead through the real flow;
+  emails get "[TEST]", GA4/CRM/DMS skipped), `whTestEmail` (template or SMTP test).
+- `whAlerts` (hourly): no leads for N days per website (default 3), failure spike (default 20 failed steps/hour) →
+  MP alert + phone notification. `whMaintenance` (daily 03:15 New York time): retention (default 365 days,
+  including step runs and uploaded images), cleanup, and the **Master digest** email of yesterday's leads.
+
+### 27.4 Integrations
+- **Email:** SMTP (custom, Postmark, SendGrid, Amazon SES, Gmail app password). Merge tags `{{first_name}}`,
+  `{{{raw}}}`, `{{#if image_1}}…{{else}}…{{/if}}`, `{{all_fields_table}}`, plus `domain_name`, `webhook_name`,
+  `submitted_at`, `lead_url`. Reply-To defaults to the customer's email. Optional customer auto-reply.
+- **Google Sheets:** rows are buffered and appended in batches every minute. The tab and header row are created
+  automatically, and formula injection is escaped.
+- **GA4 Measurement Protocol:** `generate_lead` with UTM data (no personal data).
+- **DMS:** adapter pattern; ADF/XML (HTTP POST or email) and JSON; DMS lead id stored on the submission.
+- **Webhook out:** https only, private addresses blocked, optional HMAC signature.
+- **CRM lead** (MP Leads) and **phone notification** (IoT notifications).
+
+### 27.5 Data and security
+Collections: `wh_domains`, `wh_webhooks`, `wh_flows`, `wh_email_templates`, `wh_submissions`, `wh_step_runs`,
+`wh_stats`, `wh_settings` (global, sheets_status, alert/digest state), `wh_integrations`, `wh_integration_secrets`
+(write-only from the app, read only by functions), `wh_sheet_buffer`, `wh_rate` (server only). Storage:
+`wh_uploads/` (staff read, server write).
+- Managers: websites, webhooks, flows, templates.
+- Admins: Master Flow, global settings, integrations.
+- Webhook keys are 32 random characters. Everything is audited in `mp_audit`.
+- **35 emulator permission tests** cover these rules, and the engine and integrations have 119 emulator tests.
+- All queries use single-field indexes only (CI doesn't deploy composite indexes).
+
+### 27.6 One-time setup
+1. **Open Webhook Flows → Overview → Finish setup** (admin): creates the Master Flow, the "Standard lead flow",
+   default email templates and global settings.
+2. **Email:** Settings → Integrations → add an SMTP server (Postmark/SendGrid/SES/Gmail app password), then **Send
+   test**. Set the global recipients in Settings → General.
+3. **Google Sheets:** enable the **Google Sheets API** in the `tigon-iot` Google Cloud project, and share each sheet
+   (Editor) with `470095494000-compute@developer.gserviceaccount.com`.
+4. **GA4:** per website, the Measurement ID and a Measurement Protocol API secret (GA Admin → Data streams).
+5. **DMS:** Settings → Integrations → DMS (ADF by email is the most widely accepted).
+6. **Instant processing (optional):** GitHub → Settings → Variables → `WH_REALTIME` = `true`, then run the deploy.
+   If that deploy fails with an Eventarc/IAM error, remove the variable (leads still process every minute).
+7. **Add website** → paste the snippet on the site → **Send test**.
