@@ -1,0 +1,51 @@
+# Deploys TIGON IOT (web dashboard + MP Assistant, Cloud Functions, Firestore rules)
+# to Firebase project "tigon-iot" on every push to main. Can also be run by hand
+# from the Actions tab ("Run workflow").
+#
+# One-time setup: add a repository secret FIREBASE_SERVICE_ACCOUNT containing the
+# JSON key of a service account with deploy permissions (see mp-assistant/README.md).
+name: Deploy to Firebase
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: firebase-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Build web dashboard
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Stage hosting files
+        run: |
+          rm -rf dist
+          cp -r frontend/dist dist
+
+      - name: Build Cloud Functions
+        working-directory: functions
+        run: |
+          npm ci
+          npm run build
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+
+      - name: Deploy
+        run: npx --yes firebase-tools@latest deploy --only firestore:rules,functions,hosting --project tigon-iot --non-interactive --force

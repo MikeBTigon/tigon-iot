@@ -53,6 +53,19 @@ Store details (phone, address, map, Facebook, YouTube, website, Pinterest, revie
 | `mp_users/{uid}` | `name`, `email`, `role`, `legacyId` | the user (create/name), admins (role) |
 | `systemConfig/mpAssistant` | `adminEmails: string[]` | Firebase console only — bootstrap admins |
 
+## Automatic deploys (GitHub Actions)
+
+`.github/workflows/firebase-deploy.yml` builds and deploys the web app, Cloud Functions and Firestore rules
+to `tigon-iot` on every push/merge to `main` (or by hand: GitHub → **Actions → Deploy to Firebase → Run workflow**).
+
+One-time setup:
+1. Google Cloud console → **IAM & Admin → Service Accounts** (project `tigon-iot`) → **Create service account**
+   named `github-deploy`, with roles: **Firebase Admin**, **Cloud Functions Admin**, **Service Account User**,
+   **Cloud Scheduler Admin**, **Artifact Registry Administrator**, **Cloud Build Editor**.
+2. Open that account → **Keys → Add key → Create new key → JSON** (a file downloads).
+3. GitHub repo → **Settings → Secrets and variables → Actions → New repository secret**:
+   name `FIREBASE_SERVICE_ACCOUNT`, value = the whole contents of the JSON file. Then delete the file.
+
 ## First-time setup
 
 1. **Deploy** rules, functions and hosting from the repo root:
