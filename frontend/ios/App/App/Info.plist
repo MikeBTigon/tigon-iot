@@ -3,7 +3,13 @@
 <plist version="1.0">
 <dict>
 	<key>NSCameraUsageDescription</key>
-	<string>TIGON IOT uses the camera to scan the pairing QR code.</string>
+	<string>TIGON IOT uses the camera to scan pairing QR codes and take listing photos.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>TIGON IOT uses the microphone so you can dictate listing descriptions.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>TIGON IOT turns your voice into listing text.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>TIGON IOT saves listing photos and graphics to your photo library.</string>
   <key>CAPACITOR_DEBUG</key>
 	<string>$(CAPACITOR_DEBUG)</string>
 	<key>CFBundleDevelopmentRegion</key>

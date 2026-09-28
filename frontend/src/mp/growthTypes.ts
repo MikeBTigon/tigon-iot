@@ -52,6 +52,8 @@ export interface Integration {
   mapping?: Record<string, string>;
   lastRunAt?: number;
   lastResult?: string;
+  /** When credentials were last saved (the secrets themselves are never readable). */
+  credentialsSetAt?: number;
   createdAt: number;
 }
 
