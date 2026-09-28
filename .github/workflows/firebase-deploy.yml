@@ -47,5 +47,11 @@ jobs:
         with:
           credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
 
+      # Only the MP Assistant functions are deployed from this repo. The live IoT functions
+      # (onUserCreate, validateEmailDomain, ...) were deployed from other code that isn't in
+      # GitHub yet, so they must not be overwritten or deleted by this workflow.
       - name: Deploy
-        run: npx --yes firebase-tools@latest deploy --only firestore:rules,functions,hosting --project tigon-iot --non-interactive --force
+        run: >-
+          npx --yes firebase-tools@latest deploy
+          --only firestore:rules,hosting,functions:mpSyncInventory,functions:mpSyncNow
+          --project tigon-iot --non-interactive --force
