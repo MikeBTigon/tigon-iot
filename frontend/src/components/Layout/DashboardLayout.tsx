@@ -40,6 +40,14 @@ import {
   Translate,
   Check,
   HelpOutline,
+  Insights,
+  AddLink,
+  Language as WebsiteIcon,
+  Webhook,
+  AccountTree,
+  Inbox,
+  Email,
+  Tune,
 } from '@mui/icons-material';
 import { useAuth } from '../../context/AuthContext';
 import { isNativeApp } from '../../native/platform';
@@ -50,6 +58,19 @@ import { useSetLanguage } from '../../ui/useSetLanguage';
 import { activeNavPath } from '../../ui/navUtils';
 import GlobalSearch from '../../ui/GlobalSearch';
 import OfflineBanner from '../../ui/OfflineBanner';
+import { useMp } from '../../mp/MpDataContext';
+import { WH_NAV, activeWhPath } from '../../wh/nav';
+
+const WH_ICONS: Record<string, React.ReactNode> = {
+  '/wh': <Insights />,
+  '/wh/new': <AddLink />,
+  '/wh/websites': <WebsiteIcon />,
+  '/wh/webhooks': <Webhook />,
+  '/wh/flows': <AccountTree />,
+  '/wh/submissions': <Inbox />,
+  '/wh/templates': <Email />,
+  '/wh/settings': <Tune />,
+};
 
 const drawerWidth = 240;
 
@@ -76,6 +97,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
   const [langAnchor, setLangAnchor] = useState<null | HTMLElement>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const { currentUser, logout } = useAuth();
+  const { profile } = useMp();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -130,8 +152,16 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
     { text: t('nav.help'), icon: <HelpOutline />, path: '/mp/help' },
   ];
 
+  // Webhook Flows (website forms → email / Sheets / DMS / GA4): managers and admins.
+  const isMpManager = profile?.role === 'admin' || profile?.role === 'manager';
+  const webhookItems: NavEntry[] = isMpManager
+    ? WH_NAV.filter((i) => !i.admin || profile?.role === 'admin')
+      .map((i) => ({ text: i.label, icon: WH_ICONS[i.path], path: i.path }))
+    : [];
+
   const activeMp = activeNavPath(location.pathname);
   const isSelected = (path: string) => {
+    if (path === '/wh' || path.startsWith('/wh/')) return activeWhPath(location.pathname) === path;
     if (path === '/mp') {
       return (location.pathname === '/mp' || location.pathname.startsWith('/mp/'))
         && !MP_SHORTCUTS.includes(activeMp) && activeMp !== '/mp/help';
@@ -192,6 +222,21 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
       >
         {renderNavItems(marketplaceItems)}
       </List>
+      {webhookItems.length > 0 && (
+        <>
+          <Divider />
+          <List
+            sx={{ pt: 0 }}
+            subheader={
+              <ListSubheader component="div" sx={{ lineHeight: '32px', pt: 1, textTransform: 'uppercase', fontSize: '0.75rem', letterSpacing: 1 }}>
+                {t('layout.webhookFlows')}
+              </ListSubheader>
+            }
+          >
+            {renderNavItems(webhookItems)}
+          </List>
+        </>
+      )}
     </nav>
   );
 

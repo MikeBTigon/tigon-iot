@@ -45,6 +45,7 @@ const ht: Resource = {
     settings: 'Paramèt',
     download: 'Telechaje app la',
     marketplace: 'Marketplace',
+    webhookFlows: 'Webhook Flows',
     mpAssistant: 'MP Assistant',
     openMenu: 'Louvri meni navigasyon an',
     accountMenu: 'Meni kont lan',

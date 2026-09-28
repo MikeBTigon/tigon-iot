@@ -40,6 +40,13 @@
         }
       },
       {
+        "source": "/hooks/**",
+        "function": {
+          "functionId": "whIngest",
+          "region": "us-central1"
+        }
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }

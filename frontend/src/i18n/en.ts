@@ -45,6 +45,7 @@ const en = {
     settings: 'Settings',
     download: 'Download App',
     marketplace: 'Marketplace',
+    webhookFlows: 'Webhook Flows',
     mpAssistant: 'MP Assistant',
     openMenu: 'Open navigation menu',
     accountMenu: 'Account menu',

@@ -52,14 +52,22 @@ jobs:
       # GitHub yet, so they must not be overwritten or deleted by this workflow.
       # The AI listing writer is included only when the repository variable ENABLE_AI_WRITER
       # is "true" (it needs the ANTHROPIC_API_KEY secret in Google Secret Manager first).
+      # Webhook Flows: submissions are processed by whProcess every minute. Set the repository
+      # variable WH_REALTIME to "true" to also process them instantly with a Firestore trigger.
       - name: Deploy
         env:
           ENABLE_AI_WRITER: ${{ vars.ENABLE_AI_WRITER }}
+          WH_REALTIME: ${{ vars.WH_REALTIME }}
         run: |
           FUNCS="mpSyncInventory mpSyncNow mpCreatePairingCode mpPairDevice mpSendQueueItem mpDispatchQueue mpMonitor mpApprovalDigest mpBackup mpBackupNow mpRunImport mpImportScheduled mpCrmReminders mpWeeklyDigest mpLink mpStorefrontApi"
+          FUNCS="$FUNCS whIngest whProcess whReplay whTestEmail whTestWebhook whAlerts whMaintenance"
           if [ "$ENABLE_AI_WRITER" = "true" ]; then
             FUNCS="$FUNCS mpAiListing mpAiSnap"
             echo "ENABLE_AI_WRITER=true" >> functions/.env
+          fi
+          if [ "$WH_REALTIME" = "true" ]; then
+            FUNCS="$FUNCS whOnSubmission"
+            echo "WH_REALTIME=true" >> functions/.env
           fi
           ONLY="firestore:rules,storage,hosting"
           for f in $FUNCS; do ONLY="$ONLY,functions:$f"; done

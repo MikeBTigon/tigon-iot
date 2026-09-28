@@ -44,6 +44,7 @@ const fr: Resource = {
     settings: 'Paramètres',
     download: "Télécharger l'app",
     marketplace: 'Marketplace',
+    webhookFlows: 'Webhook Flows',
     mpAssistant: 'MP Assistant',
     openMenu: 'Ouvrir le menu de navigation',
     accountMenu: 'Menu du compte',
