@@ -3,6 +3,7 @@ import {createHmac} from 'crypto';
 import {promises as dns} from 'dns';
 import {isIP} from 'net';
 import type {StepContext, StepResult} from '../engineTypes';
+import {getIntegrationSecrets} from './cache';
 import {bodySnippet, ctxMergeData, errMsg, fail, fetchWithTimeout, httpRetryable} from './util';
 
 /** true for loopback, private, link-local, CGNAT, multicast/reserved and unspecified addresses. */
@@ -94,8 +95,11 @@ export async function webhookOutStep(ctx: StepContext): Promise<StepResult> {
       if (/^[A-Za-z0-9-]{1,64}$/.test(k) && !RESERVED_HEADERS.test(k) && typeof v === 'string') headers[k] = v.replace(/[\r\n]/g, '');
     }
   }
-  if (typeof c.secret === 'string' && c.secret) {
-    headers['X-Tigon-Signature'] = 'sha256=' + createHmac('sha256', c.secret).update(body).digest('hex');
+  // Signing secret: write-only doc set from the flow builder (flows are readable by managers), else legacy config.secret.
+  const stored = ctx.flowId ? (await getIntegrationSecrets(`webhook_out_${ctx.flowId}_${ctx.step.id}`)).secret : '';
+  const secret = stored || (typeof c.secret === 'string' ? c.secret : '');
+  if (secret) {
+    headers['X-Tigon-Signature'] = 'sha256=' + createHmac('sha256', secret).update(body).digest('hex');
   }
   let res: Response;
   try {

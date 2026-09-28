@@ -7,6 +7,8 @@ export interface StepContext {
   settings: WhSettings;
   step: FlowStep;
   flowKind: 'webhook' | 'master';
+  /** Id of the flow being run (webhook/template flow or the Master Flow). */
+  flowId?: string;
   domain: WhDomain | null;
   webhook: WhWebhook | null;
   /** 1 on the first try. */
