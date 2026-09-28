@@ -252,5 +252,60 @@ service cloud.firestore {
       allow read: if isMpMember();
       allow write: if isMpAdmin();
     }
+
+    // ---- Webhook Flows (website forms → flows) -----------------------------
+    // Managers run websites, webhooks, flows and email templates; admins own global settings and
+    // integrations. Submissions and step runs are written only by Cloud Functions.
+    match /wh_domains/{id} {
+      allow read, write: if isMpManager();
+    }
+    match /wh_webhooks/{id} {
+      allow read, write: if isMpManager();
+    }
+    match /wh_flows/{id} {
+      allow read: if isMpManager();
+      // Only admins may change the Master Flow (every lead passes through it).
+      allow create: if isMpAdmin() || (isMpManager() && request.resource.data.type != 'master');
+      allow update: if isMpAdmin() ||
+                       (isMpManager() && resource.data.type != 'master' && request.resource.data.type != 'master');
+      allow delete: if isMpAdmin() || (isMpManager() && resource.data.type != 'master');
+    }
+    match /wh_email_templates/{id} {
+      allow read, write: if isMpManager();
+    }
+    match /wh_submissions/{id} {
+      allow read: if isMpManager();
+      // Managers may flag a lead (spam / not spam, notes); the engine owns everything else.
+      allow update: if isMpManager() &&
+                       request.resource.data.diff(resource.data).affectedKeys()
+                         .hasOnly(['isSpam', 'spamReason', 'status', 'notes', 'reviewedBy', 'reviewedAt']);
+      allow delete: if isMpAdmin();
+    }
+    match /wh_step_runs/{id} {
+      allow read: if isMpManager();
+    }
+    match /wh_stats/{id} {
+      allow read: if isMpManager();
+    }
+    match /wh_settings/{id} {
+      allow read: if isMpManager();
+      allow write: if isMpAdmin();
+    }
+    match /wh_integrations/{id} {
+      allow read: if isMpManager();
+      allow write: if isMpAdmin();
+    }
+    // Credentials: write-only from the app, read only by Cloud Functions. Managers may set the
+    // HMAC signing secret of a webhook (id "webhook_<webhookId>").
+    match /wh_integration_secrets/{id} {
+      allow read: if false;
+      allow create, update, delete: if isMpAdmin() || (isMpManager() && id.matches('webhook_.*'));
+    }
+    match /wh_sheet_buffer/{id} {
+      allow read, write: if false;
+    }
+    match /wh_rate/{id} {
+      allow read, write: if false;
+    }
   }
 }

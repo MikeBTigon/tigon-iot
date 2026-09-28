@@ -28,6 +28,13 @@ service firebase.storage {
       allow delete: if isValidEmail();
     }
 
+    // Images uploaded through website forms (written by the whIngest function only; emails and
+    // sheets link to them with tokenized download URLs).
+    match /wh_uploads/{allPaths=**} {
+      allow read: if isValidEmail();
+      allow write: if false;
+    }
+
     match /{allPaths=**} {
       allow read, write: if false;
     }
