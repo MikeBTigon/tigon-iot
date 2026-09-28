@@ -223,6 +223,8 @@ export interface WhSubmission extends SubmissionFields {
   leaseUntil?: number;
   /** Set when a step went to the dead-letter list. */
   hasDead?: boolean;
+  /** Created by "Send test": emails get a [TEST] subject; GA4, CRM lead and DMS are skipped. */
+  isTest?: boolean;
 }
 
 export type StepRunStatus = 'success' | 'failed' | 'retrying' | 'skipped' | 'dead';
