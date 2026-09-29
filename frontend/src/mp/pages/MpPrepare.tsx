@@ -13,6 +13,8 @@ import CartPhoto from '../components/CartPhoto';
 import { useMp } from '../MpDataContext';
 import { cartTitle, generateVariations } from '../cartLogic';
 import { formatPrice, groupAccounts, workingPhotos } from '../cartUtils';
+import { posterVersion, sendToPoster } from '../posterBridge';
+import { isNativeApp } from '../../native/platform';
 import { COLLECTIONS, MARKETPLACE_CREATE_URL } from '../constants';
 import { saveAllPhotos } from '../photos';
 import { isOpenStatus, QUEUE_STATUS_COLOR, QUEUE_STATUS_LABEL, setQueueStatus } from '../queue';
@@ -134,6 +136,16 @@ const MpPrepare: React.FC = () => {
   };
 
   const copyAndOpen = async () => {
+    // Computer with the Tigon Poster extension: it fills the whole form and uploads the photos.
+    if (!isNativeApp() && posterVersion()) {
+      sendToPoster(cart, photos, listing);
+      window.open(MARKETPLACE_CREATE_URL, '_blank', 'noopener');
+      setDone((d) => ({ ...d, text: true, opened: true, photos: true }));
+      logEvent(uid, 'listing_prepared', ev);
+      logEvent(uid, 'marketplace_opened', ev);
+      setMessage('Facebook is opening — Tigon Poster fills in the form and uploads the photos. Check it, then click Next / Publish.');
+      return;
+    }
     await copyText(listing.description);
     setDone((d) => ({ ...d, text: true, opened: true }));
     logEvent(uid, 'listing_prepared', ev);
@@ -201,12 +213,18 @@ const MpPrepare: React.FC = () => {
             {pending && <Alert severity="info" sx={{ mb: 1.5 }}>Waiting for a manager's approval — you can look it over, but post it once it's approved.</Alert>}
             <Typography variant="overline" color="text.secondary">Post in 3 taps</Typography>
             <StepButton n={1} label={`Save ${photos.length} photos to this phone`} doneLabel="Photos saved" icon={<PhotoLibrary />} onClick={savePhotos} isDone={done.photos} />
-            <StepButton n={2} label="Copy listing & open Marketplace" doneLabel="Copied — Marketplace opened" icon={<OpenInNew />} onClick={copyAndOpen} isDone={done.opened} />
+            <StepButton n={2} label={!isNativeApp() && posterVersion() ? 'Open Marketplace & fill it in (Tigon Poster)' : 'Copy listing & open Marketplace'} doneLabel="Copied — Marketplace opened" icon={<OpenInNew />} onClick={copyAndOpen} isDone={done.opened} />
             <StepButton n={3} label="I published it" doneLabel="Marked as posted" icon={<CheckCircle />} onClick={() => setConfirmOpen(true)} isDone={item?.status === 'posted'} disabled={pending} />
             <Button fullWidth color="error" startIcon={<ErrorOutline />} onClick={() => setFailOpen(true)} disabled={item?.status === 'posted' || pending}>
               Couldn't post it
             </Button>
             {message && <Alert severity="success" sx={{ mt: 1 }}>{message}</Alert>}
+            {!isNativeApp() && !posterVersion() && (
+              <Alert severity="info" sx={{ mt: 1 }}>
+                <b>Fill Facebook automatically:</b> install the free <b>Tigon Poster</b> Chrome extension and step 2 fills
+                in the whole vehicle form and uploads the photos for you. <a href="/download#extension">How to install</a>
+              </Alert>
+            )}
           </Paper>
 
           <Paper sx={{ p: 2 }}>

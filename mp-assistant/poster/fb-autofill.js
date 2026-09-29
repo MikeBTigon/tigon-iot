@@ -342,12 +342,74 @@
       if (loc) await fillText("Location", /^location\b/i, loc, { optional: true, onlyIfEmpty: true, pickSuggestion: true });
       else status("Location", "left as is", "warn");
       status("Mileage", "no mileage in DMS — enter if required", "warn");
-      status("Photos", `attach ${(cart.photos || []).length} photo(s) manually`, "warn");
+      await uploadPhotos((cart.photos || []).map((p) => TigonCartLogic.photoUrl(p)));
     } catch (err) {
       status("Error", String(err && err.message || err), "err");
     } finally {
       fillBtn.disabled = false;
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Photos: the background worker downloads them; we hand them to Facebook's photo input (like drag & drop).
+  // ---------------------------------------------------------------------------
+  function photoInput() {
+    const inputs = Array.from(document.querySelectorAll("input[type=file]"));
+    return inputs.find((i) => /image/i.test(i.getAttribute("accept") || "") && !/^video/i.test(i.getAttribute("accept") || "")) ||
+      inputs.find((i) => !/video/i.test(i.getAttribute("accept") || "")) || null;
+  }
+
+  function fetchPhotos(urls) {
+    return new Promise((resolve) => {
+      try {
+        chrome.runtime.sendMessage({ type: "TIGON_FETCH_PHOTOS", urls }, (res) => resolve((res && res.photos) || []));
+      } catch (_) {
+        resolve([]);
+      }
+    });
+  }
+
+  async function uploadPhotos(urls) {
+    const list = urls.filter(Boolean).slice(0, 20);
+    if (!list.length) return status("Photos", "this cart has no photos", "warn");
+    const input = await waitFor(photoInput, 5000);
+    if (!input) return status("Photos", "photo box not found — add photos by hand", "err");
+    status("Photos", `downloading ${list.length}…`, "warn");
+    const got = await fetchPhotos(list);
+    const files = [];
+    got.forEach((p, i) => {
+      if (!p.data) return;
+      const bin = atob(p.data);
+      const bytes = new Uint8Array(bin.length);
+      for (let k = 0; k < bin.length; k++) bytes[k] = bin.charCodeAt(k);
+      const ext = /png/.test(p.type) ? "png" : /webp/.test(p.type) ? "webp" : "jpg";
+      files.push(new File([bytes], `tigon-cart-${i + 1}.${ext}`, { type: p.type || "image/jpeg" }));
+    });
+    const failed = got.length - files.length;
+    if (!files.length) return status("Photos", "couldn't download the photos — add them by hand", "err");
+    const dt = new DataTransfer();
+    files.forEach((f) => dt.items.add(f));
+    input.files = dt.files;
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    await sleep(1500);
+    return status("Photos", `${files.length} uploading${failed ? ` (${failed} couldn't be downloaded)` : ""} — check they all appear`, failed ? "warn" : "ok");
+  }
+
+  // Sent from TIGON IOT "Copy to Marketplace": fill automatically once the form is on screen (only once).
+  let autoRan = false;
+  async function autoFillIfSent() {
+    if (autoRan) return;
+    const p = await readPending();
+    if (!p || !p.autoFill || !p.ts || Date.now() - p.ts > 30 * 60 * 1000) return;
+    autoRan = true;
+    const ready = await waitFor(() => findControl(/^price\b/i), 20000, 300);
+    if (!ready) { autoRan = false; return; }
+    await sleep(800);
+    try { chrome.storage.local.set({ [PENDING_KEY]: Object.assign({}, p, { autoFill: false }) }); } catch (_) { /* ignore */ }
+    if (root && root.getElementById("p")) root.getElementById("p").classList.remove("min");
+    await onFill();
+    status("Next", "Review everything, then click Next / Publish yourself", "ok");
   }
 
   async function onCopyStructure() {
@@ -391,6 +453,7 @@
     const onCreate = /^\/marketplace\/create(\/|$)/.test(location.pathname);
     if (onCreate && !host) buildPanel();
     if (host) host.style.display = onCreate ? "" : "none";
+    if (onCreate) autoFillIfSent();
   }
   sync();
   setInterval(sync, 1000);

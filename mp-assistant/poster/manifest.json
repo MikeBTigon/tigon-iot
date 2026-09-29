@@ -2,15 +2,21 @@
   "manifest_version": 3,
   "name": "Tigon Poster (IoT)",
   "short_name": "Tigon Poster",
-  "version": "2.0.0",
-  "description": "Pick a cart from the TIGON IOT MP Assistant and autofill the Facebook Marketplace vehicle form. Never auto-posts.",
-  "permissions": ["storage"],
+  "version": "2.1.0",
+  "description": "Fills the Facebook Marketplace vehicle form and uploads the photos from TIGON IOT (Copy to Marketplace). Never auto-posts.",
+  "permissions": [
+    "storage"
+  ],
   "host_permissions": [
     "https://www.facebook.com/*",
     "https://web.facebook.com/*",
     "https://firestore.googleapis.com/*",
     "https://identitytoolkit.googleapis.com/*",
-    "https://securetoken.googleapis.com/*"
+    "https://securetoken.googleapis.com/*",
+    "https://s3.amazonaws.com/*",
+    "https://*.amazonaws.com/*",
+    "https://firebasestorage.googleapis.com/*",
+    "https://tigon-photos.michael-b-2da.workers.dev/*"
   ],
   "action": {
     "default_title": "Tigon Poster",
@@ -27,13 +33,32 @@
         "https://www.facebook.com/marketplace/*",
         "https://web.facebook.com/marketplace/*"
       ],
-      "js": ["cart-logic.js", "fb-autofill.js"],
+      "js": [
+        "cart-logic.js",
+        "fb-autofill.js"
+      ],
       "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://tigoniot.com/*",
+        "https://www.tigoniot.com/*",
+        "https://tigon-iot.web.app/*",
+        "https://tigon-iot.firebaseapp.com/*",
+        "http://localhost/*"
+      ],
+      "js": [
+        "tigon-bridge.js"
+      ],
+      "run_at": "document_start"
     }
   ],
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
+  },
+  "background": {
+    "service_worker": "background.js"
   }
 }

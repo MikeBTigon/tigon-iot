@@ -1,5 +1,6 @@
 import React from 'react';
 import { APK_URL, PUBLIC_APP_PAGE, useLatestAppBuild } from './appBuild';
+import { POSTER_ZIP_URL } from '../mp/posterBridge';
 import { Alert, Box, Button, Chip, Paper, Step, StepContent, StepLabel, Stepper, Typography } from '@mui/material';
 import { Android, Apple, Download as DownloadIcon } from '@mui/icons-material';
 import { QRCodeSVG } from 'qrcode.react';
@@ -76,6 +77,26 @@ const AppDownload: React.FC = () => {
             </Step>
           ))}
         </Stepper>
+      </Paper>
+
+      <Paper sx={{ p: 3, mb: 3 }} id="extension">
+        <Typography variant="h6" gutterBottom>Computers: Tigon Poster for Chrome</Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+          On a computer, the Tigon Poster extension fills in the Facebook Marketplace vehicle form (year, make, model,
+          price, description, location) and uploads the cart photos when you click <b>Copy listing &amp; open
+          Marketplace</b> in MP Assistant. It never clicks Publish — you check it and post.
+        </Typography>
+        <Button variant="outlined" startIcon={<DownloadIcon />} href={POSTER_ZIP_URL} sx={{ mb: 1.5 }}>Download Tigon Poster (.zip)</Button>
+        <Typography variant="body2" component="div">
+          <ol style={{ margin: 0, paddingLeft: 20 }}>
+            <li>Download the zip and <b>unzip</b> it (right-click → Extract All). You get a folder named <b>poster</b>.</li>
+            <li>In Chrome open <b>chrome://extensions</b> and switch on <b>Developer mode</b> (top right).</li>
+            <li>Click <b>Load unpacked</b> and choose the <b>poster</b> folder.</li>
+            <li>Refresh TIGON IOT. In MP Assistant → a cart → Prepare listing, step 2 now says
+              <b> "Open Marketplace &amp; fill it in"</b>.</li>
+            <li>Updating later: download the new zip, replace the folder, and click the reload arrow on the extension.</li>
+          </ol>
+        </Typography>
       </Paper>
 
       <Alert severity="info" icon={<Apple />}>
