@@ -84,7 +84,7 @@ const fr: Resource = {
     saveError: 'Impossible d’enregistrer votre profil. Seuls les comptes vérifiés @tigongolfcarts.com peuvent utiliser MP Assistant.',
     legacyIdentity: 'Ancienne identité MP Assistant',
     legacyNone: 'Aucune — je suis nouveau',
-    claimed: '(déjà prise)',
+    claimed: '(aussi utilisée sur {n} autre(s) compte(s))',
     bootstrapAdmin: 'Votre e-mail figure parmi les administrateurs de MP Assistant.',
     saving: 'Enregistrement…',
     start: 'Commencer à utiliser MP Assistant',

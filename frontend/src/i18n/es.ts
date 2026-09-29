@@ -84,7 +84,7 @@ const es: Resource = {
     saveError: 'No se pudo guardar tu perfil. Solo las cuentas verificadas @tigongolfcarts.com pueden usar MP Assistant.',
     legacyIdentity: 'Identidad anterior de MP Assistant',
     legacyNone: 'Ninguna — soy nuevo',
-    claimed: '(ya tomada)',
+    claimed: '(también en {n} otra(s) cuenta(s))',
     bootstrapAdmin: 'Tu correo figura como administrador de MP Assistant.',
     saving: 'Guardando…',
     start: 'Empezar a usar MP Assistant',

@@ -85,7 +85,7 @@ const en = {
     saveError: 'Could not save your profile. Only verified @tigongolfcarts.com accounts can use MP Assistant.',
     legacyIdentity: 'Previous MP Assistant identity',
     legacyNone: "None — I'm new",
-    claimed: '(claimed)',
+    claimed: '(also used on {n} other account(s))',
     bootstrapAdmin: 'Your email is listed as an MP Assistant admin.',
     saving: 'Saving…',
     start: 'Start using MP Assistant',
