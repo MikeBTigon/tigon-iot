@@ -20,6 +20,17 @@
             </intent-filter>
         </activity>
 
+        <!-- Notification echo: forwards this phone's notifications to the TIGON IOT dashboard -->
+        <service
+            android:name=".EchoListenerService"
+            android:label="TIGON IOT notification echo"
+            android:exported="true"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

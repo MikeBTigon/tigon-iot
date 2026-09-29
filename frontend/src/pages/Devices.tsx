@@ -33,6 +33,7 @@ import PhoneAlertsCard from '../native/PhoneAlertsCard';
 import PairPhoneDialog from '../devices/PairPhoneDialog';
 import TeamDevicesPanel from '../devices/TeamDevicesPanel';
 import ScanSetupCode from '../native/ScanSetupCode';
+import EchoCard from '../native/EchoCard';
 import { isNativeApp } from '../native/platform';
 import { phoneSummary } from '../devices/phoneSetup';
 import { isOnline, seenLabel } from '../devices/deviceStatus';
@@ -160,6 +161,8 @@ const Devices: React.FC = () => {
             </Button>
           )}
         </Box>
+
+        <EchoCard />
 
         {isNativeApp() && (
           <Paper sx={{ p: 3, mb: 3 }}>

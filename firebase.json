@@ -26,6 +26,13 @@
     ],
     "rewrites": [
       {
+        "source": "/api/echo",
+        "function": {
+          "functionId": "mpEcho",
+          "region": "us-central1"
+        }
+      },
+      {
         "source": "/l/**",
         "function": {
           "functionId": "mpLink",
