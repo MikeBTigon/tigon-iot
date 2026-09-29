@@ -1,5 +1,17 @@
 apply plugin: 'com.android.application'
 
+// App version: CI passes APP_VERSION_CODE / APP_VERSION_NAME (build number); local builds use the defaults.
+def appVersionCode = (System.getenv("APP_VERSION_CODE") ?: "2000").toInteger()
+def appVersionName = System.getenv("APP_VERSION_NAME") ?: "2.0.0"
+
+// One fixed signing key so every new build installs as an UPDATE over the previous one.
+// (Keystore + password live in this folder; CI can override them with secrets.)
+def keystoreProps = new Properties()
+def keystorePropsFile = file("keystore.properties")
+if (keystorePropsFile.exists()) keystorePropsFile.withInputStream { keystoreProps.load(it) }
+def storePw = System.getenv("TIGON_STORE_PASSWORD") ?: keystoreProps.getProperty("TIGON_STORE_PASSWORD")
+def storePath = System.getenv("TIGON_KEYSTORE_PATH") ?: "tigon-release.keystore"
+
 android {
     namespace = "com.tigongolfcarts.iot"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -7,8 +19,8 @@ android {
         applicationId "com.tigongolfcarts.iot"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode appVersionCode
+        versionName appVersionName
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,8 +28,20 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        tigon {
+            storeFile file(storePath)
+            storePassword storePw
+            keyAlias "tigon"
+            keyPassword storePw
+        }
+    }
     buildTypes {
+        debug {
+            signingConfig signingConfigs.tigon
+        }
         release {
+            signingConfig signingConfigs.tigon
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }

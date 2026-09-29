@@ -7,6 +7,7 @@ import Dashboard from './pages/Dashboard';
 import Devices from './pages/Devices';
 import Settings from './pages/Settings';
 import Download from './pages/Download';
+import GetApp from './pages/GetApp';
 import { MpDataProvider } from './mp/MpDataContext';
 import { mpRoutes, publicRoutes } from './mp/routes';
 import NativeBridge from './native/NativeBridge';
@@ -71,6 +72,7 @@ function AppContent() {
   }
 />
   {mpRoutes((el) => <ProtectedRoute>{el}</ProtectedRoute>)}
+  <Route path="/app" element={<GetApp />} />
   {publicRoutes()}
   <Route path="/" element={<Navigate to="/dashboard" />} />
 </Routes>

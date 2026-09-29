@@ -1,5 +1,5 @@
 # Builds the TIGON IOT phone apps (Capacitor shell around the web app in frontend/).
-# - Android: a debug APK you can install directly (download it from the run's "Artifacts").
+# - Android: the signed APK (the same app the website offers at /downloads/tigon-iot.apk after a deploy).
 # - iOS: a compile check for the simulator (App Store builds need an Apple Developer account).
 #
 # Optional repository secrets:
@@ -37,27 +37,21 @@ jobs:
           npm ci
           npm run build
 
-      - name: Sync native project
-        run: npx cap sync android
-
-      - name: Add Firebase config (push alerts)
+      - name: Build signed APK
         env:
           GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
         run: |
-          if [ -n "$GOOGLE_SERVICES_JSON" ]; then
-            printf '%s' "$GOOGLE_SERVICES_JSON" > android/app/google-services.json
-          else
+          if [ -z "$GOOGLE_SERVICES_JSON" ]; then
             echo "::warning::GOOGLE_SERVICES_JSON secret not set - the app builds, but push alerts won't work."
           fi
-
-      - name: Build APK
-        working-directory: frontend/android
-        run: ./gradlew assembleDebug --no-daemon
+          ../scripts/build-android.sh android/app/build/outputs/tigon/tigon-iot.apk
 
       - uses: actions/upload-artifact@v6
         with:
           name: tigon-iot-android-apk
-          path: frontend/android/app/build/outputs/apk/debug/app-debug.apk
+          path: |
+            frontend/android/app/build/outputs/tigon/tigon-iot.apk
+            frontend/android/app/build/outputs/tigon/version.json
 
   ios:
     runs-on: macos-latest
