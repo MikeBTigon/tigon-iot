@@ -972,8 +972,11 @@ Collections: `wh_domains`, `wh_webhooks`, `wh_flows`, `wh_email_templates`, `wh_
 ### 27.6 One-time setup
 1. **Open Webhook Flows → Overview → Finish setup** (admin): creates the Master Flow, the "Standard lead flow",
    default email templates and global settings.
-2. **Email:** Settings → Integrations → add an SMTP server (Postmark/SendGrid/SES/Gmail app password), then **Send
-   test**. Set the global recipients in Settings → General.
+2. **Email:** Settings → Integrations → **Add connection** → Email sending → provider **Gmail** (default) → follow the
+   steps shown: turn on 2-Step Verification, create an app password at myaccount.google.com/apppasswords, enter the Gmail
+   address (e.g. tigongolfcarts@gmail.com) and the 16-letter app password → Save → **Test**. Gmail sends from that
+   address and allows ~500 emails/day (Workspace ~2,000). Postmark/SendGrid/SES/other SMTP also work.
+   Set the global recipients in Settings → General.
 3. **Google Sheets:** enable the **Google Sheets API** in the `tigon-iot` Google Cloud project, and share each sheet
    (Editor) with `470095494000-compute@developer.gserviceaccount.com`.
 4. **GA4:** per website, the Measurement ID and a Measurement Protocol API secret (GA Admin → Data streams).

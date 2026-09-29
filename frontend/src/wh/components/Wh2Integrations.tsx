@@ -20,16 +20,46 @@ const TYPE_LABEL: Record<IntegrationType, string> = {
 
 type Provider = 'postmark' | 'sendgrid' | 'ses' | 'gmail' | 'custom';
 const PROVIDERS: Record<Provider, { label: string; host: string; port: number; secure: boolean; user: string; pass: string }> = {
+  gmail: { label: 'Gmail / Google Workspace (app password)', host: 'smtp.gmail.com', port: 465, secure: true,
+    user: 'The full address, e.g. tigon-worker@tigongolfcarts.com', pass: 'The 16-letter app password from Google (spaces are fine)' },
   postmark: { label: 'Postmark', host: 'smtp.postmarkapp.com', port: 587, secure: false,
     user: '', pass: 'Postmark → your server → API Tokens → Server API token (used as both SMTP username and password)' },
   sendgrid: { label: 'SendGrid', host: 'smtp.sendgrid.net', port: 587, secure: false,
     user: '', pass: 'SendGrid → Settings → API Keys → Create (Mail Send permission). The SMTP username "apikey" is filled in for you.' },
   ses: { label: 'Amazon SES', host: 'email-smtp.us-east-1.amazonaws.com', port: 587, secure: false,
     user: 'SES SMTP username (SES console → SMTP settings → Create SMTP credentials)', pass: 'SES SMTP password (not your AWS password)' },
-  gmail: { label: 'Gmail / Google Workspace', host: 'smtp.gmail.com', port: 465, secure: true,
-    user: 'The full Gmail address', pass: 'A Google app password (Google Account → Security → App passwords; needs 2-step verification)' },
   custom: { label: 'Other SMTP server', host: '', port: 587, secure: false, user: 'SMTP username', pass: 'SMTP password' },
 };
+
+/** Step-by-step: getting a Google app password for a Gmail account. */
+const GmailSteps: React.FC = () => (
+  <Alert severity="info" sx={{ '& ol': { pl: 2.5, my: 0.5 }, '& li': { mb: 0.5 } }}>
+    <b>How to get a Gmail app password</b> (takes about 2 minutes)
+    <ol>
+      <li>Sign in to Google as the account that will send the emails (e.g. tigon-worker@tigongolfcarts.com).</li>
+      <li>
+        Turn on <b>2-Step Verification</b> if it isn't on yet:{' '}
+        <a href="https://myaccount.google.com/signinoptions/twosv" target="_blank" rel="noreferrer">myaccount.google.com/signinoptions/twosv</a>.
+        App passwords only exist when 2-Step Verification is on.
+      </li>
+      <li>
+        Open <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noreferrer">myaccount.google.com/apppasswords</a>{' '}
+        (or Google Account → Security → search "App passwords").
+      </li>
+      <li>Type a name such as <b>TIGON IOT Webhook Flows</b> and click <b>Create</b>.</li>
+      <li>Google shows a 16-letter password (like <code>abcd efgh ijkl mnop</code>). Copy it into <b>App password</b> below — it's shown only once.</li>
+      <li>Enter the same address in <b>Gmail / Workspace address</b>, click <b>Save</b>, then press <b>Test</b> on the connection.</li>
+    </ol>
+    <b>Google Workspace address</b> (e.g. tigon-worker@tigongolfcarts.com) — same steps, plus once, as a Workspace admin at{' '}
+    <a href="https://admin.google.com" target="_blank" rel="noreferrer">admin.google.com</a>: Security → Authentication →
+    2-step verification → tick <b>Allow users to turn on 2-Step Verification</b> → Save. Then sign in as that user and do
+    steps 2–6. For best delivery, make sure Gmail → Authenticate email (DKIM) is turned on for your domain in the Admin console.
+    <br />
+    Good to know: emails are sent <b>from</b> this address (Google replaces any other "From"). Replies to lead emails still
+    go to the customer. Limits: about <b>500 emails a day</b> for @gmail.com, about <b>2,000</b> for Workspace. If the
+    account's password changes or the app password is removed, create a new one and paste it here.
+  </Alert>
+);
 
 interface Editing {
   id?: string;
@@ -74,6 +104,13 @@ const IntegrationDialog: React.FC<{ value: Editing; smtpList: WhIntegration[]; o
 
   const save = async () => {
     if (!v.name.trim()) { setError('Give the connection a name.'); return; }
+    if (v.type === 'smtp' && c.provider === 'gmail') {
+      if (!/^\S+@\S+\.\S+$/.test(cs('fromEmail'))) { setError('Enter the Gmail address that sends the emails.'); return; }
+      if (!v.credentialsSetAt && !(v.secrets.pass || '').trim()) { setError('Paste the Google app password (see the steps above).'); return; }
+      if (v.secrets.pass && v.secrets.pass.replace(/\s+/g, '').length !== 16) {
+        setError('A Google app password is 16 letters (e.g. "abcd efgh ijkl mnop"). Check that you copied all of it.'); return;
+      }
+    }
     if (v.type === 'smtp') {
       if (!cs('host') || !Number(c.port)) { setError('Enter the SMTP server and port.'); return; }
       if (!/^\S+@\S+\.\S+$/.test(cs('fromEmail'))) { setError('Enter the "From" email address (it must be verified with your provider).'); return; }
@@ -86,7 +123,9 @@ const IntegrationDialog: React.FC<{ value: Editing; smtpList: WhIntegration[]; o
     setError('');
     try {
       const allowed = v.type === 'smtp' ? smtpSecretKeys(String(c.provider || 'custom')) : SECRET_KEYS[v.type];
-      const secrets = Object.fromEntries(Object.entries(v.secrets).filter(([k, s]) => allowed.includes(k) && s.trim() !== '').map(([k, s]) => [k, s.trim()]));
+      const gmail = v.type === 'smtp' && c.provider === 'gmail';
+      const raw = gmail && v.secrets.pass ? { ...v.secrets, user: cs('fromEmail'), pass: v.secrets.pass.replace(/\s+/g, '') } : v.secrets;
+      const secrets = Object.fromEntries(Object.entries(raw).filter(([k, s]) => allowed.includes(k) && s.trim() !== '').map(([k, s]) => [k, s.trim()]));
       const body: Record<string, unknown> = { type: v.type, name: v.name.trim(), config: v.config };
       if (v.credentialsSetAt) body.credentialsSetAt = v.credentialsSetAt;
       if (value.id) body.createdAt = (value as Editing & { createdAt?: number }).createdAt;
@@ -116,32 +155,45 @@ const IntegrationDialog: React.FC<{ value: Editing; smtpList: WhIntegration[]; o
             {(Object.keys(TYPE_LABEL) as IntegrationType[]).map((t) => <MenuItem key={t} value={t}>{TYPE_LABEL[t]}</MenuItem>)}
           </TextField>
           <TextField label="Name" size="small" value={v.name} onChange={(e) => setV({ ...v, name: e.target.value })}
-            helperText="Shown in settings, e.g. &quot;Postmark – leads@tigon&quot;" />
+            helperText="Shown in settings, e.g. &quot;Gmail – tigongolfcarts@gmail.com&quot;" />
 
           {v.type === 'smtp' && <>
             <TextField select size="small" label="Provider" value={provider} onChange={(e) => applyProvider(e.target.value as Provider)}
               helperText="Choosing a provider fills in the server details.">
               {(Object.keys(PROVIDERS) as Provider[]).map((p) => <MenuItem key={p} value={p}>{PROVIDERS[p].label}</MenuItem>)}
             </TextField>
+            {provider === 'gmail' && <GmailSteps />}
             {provider === 'ses' && (
               <TextField size="small" label="AWS region" value={cs('region')} placeholder="us-east-1"
                 onChange={(e) => setC({ region: e.target.value.trim(), host: `email-smtp.${e.target.value.trim() || 'us-east-1'}.amazonaws.com` })} />
             )}
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
+            {provider !== 'gmail' && <><Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
               <TextField size="small" label="SMTP server" value={cs('host')} onChange={(e) => setC({ host: e.target.value.trim() })} sx={{ flexGrow: 1 }} />
               <TextField size="small" label="Port" type="number" value={cs('port')} sx={{ width: 110 }} onChange={(e) => setC({ port: Number(e.target.value) || '' })} />
             </Stack>
             <FormControlLabel control={<Switch checked={!!c.secure} onChange={(e) => setC({ secure: e.target.checked })} />}
               label="Use SSL from the start (port 465). Off = STARTTLS (port 587)." />
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
-              <TextField size="small" label="From email" value={cs('fromEmail')} onChange={(e) => setC({ fromEmail: e.target.value.trim() })}
-                helperText="Must be verified with the provider" sx={{ flexGrow: 1 }} />
-              <TextField size="small" label="From name" value={cs('fromName')} onChange={(e) => setC({ fromName: e.target.value })} sx={{ flexGrow: 1 }} />
-            </Stack>
+            </>}
+            {provider === 'gmail' ? (
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
+                <TextField size="small" label="Gmail / Workspace address" value={cs('fromEmail')} placeholder="tigon-worker@tigongolfcarts.com"
+                  onChange={(e) => { const em = e.target.value.trim(); setV({ ...v, config: { ...v.config, fromEmail: em }, secrets: { ...v.secrets, user: em } }); }}
+                  helperText="Emails are sent from this address" sx={{ flexGrow: 1 }} />
+                <TextField size="small" label="From name" value={cs('fromName')} placeholder="TIGON Golf Carts"
+                  onChange={(e) => setC({ fromName: e.target.value })} sx={{ flexGrow: 1 }} />
+              </Stack>
+            ) : (
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
+                <TextField size="small" label="From email" value={cs('fromEmail')} onChange={(e) => setC({ fromEmail: e.target.value.trim() })}
+                  helperText="Must be verified with the provider" sx={{ flexGrow: 1 }} />
+                <TextField size="small" label="From name" value={cs('fromName')} onChange={(e) => setC({ fromName: e.target.value })} sx={{ flexGrow: 1 }} />
+              </Stack>
+            )}
             <Typography variant="subtitle2">Login (write-only)</Typography>
+            {provider === 'gmail' && secretField('pass', 'App password', PROVIDERS.gmail.pass)}
             {provider === 'postmark' && secretField('token', 'Server API token', PROVIDERS.postmark.pass)}
             {provider === 'sendgrid' && secretField('apiKey', 'API key', PROVIDERS.sendgrid.pass)}
-            {provider !== 'postmark' && provider !== 'sendgrid' && <>
+            {provider !== 'postmark' && provider !== 'sendgrid' && provider !== 'gmail' && <>
               {secretField('user', 'Username', PROVIDERS[provider].user, false)}
               {secretField('pass', 'Password', PROVIDERS[provider].pass)}
             </>}
@@ -278,7 +330,7 @@ const Wh2Integrations: React.FC = () => {
         <Typography variant="body2" color="text.secondary" sx={{ flexGrow: 1 }}>
           Connections to email providers, Google Sheets and your DMS. Pick them in settings (global, website, flow or webhook).
         </Typography>
-        <Button variant="contained" startIcon={<Add />} onClick={() => setEditing({ type: 'smtp', name: '', config: { provider: 'postmark', host: 'smtp.postmarkapp.com', port: 587, secure: false }, secrets: {} })}>
+        <Button variant="contained" startIcon={<Add />} onClick={() => setEditing({ type: 'smtp', name: '', config: { provider: 'gmail', host: 'smtp.gmail.com', port: 465, secure: true }, secrets: {} })}>
           Add connection
         </Button>
       </Box>
