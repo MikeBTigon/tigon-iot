@@ -105,7 +105,40 @@ export async function runAlerts(now = Date.now()) {
   return {raised, failures};
 }
 
+/**
+ * One-time relabel: CRM leads created by Webhook Flows before websites had a lead channel were saved with
+ * channel 'website'; move them to their website's channel (default 'DBA Website'). Runs once (flag doc).
+ */
+export async function migrateLeadChannels(): Promise<number> {
+  const flagRef = db().collection(WH.settings).doc('migrations');
+  if ((await flagRef.get()).get('leadChannelV1')) return 0;
+  const snap = await db().collection('mp_leads').where('source', '==', 'website').limit(5000).get();
+  const domains = new Map<string, string>();
+  let n = 0;
+  let batch = db().batch();
+  for (const d of snap.docs) {
+    const domainId = String(d.get('whDomainId') || '');
+    if (!d.get('whSubmissionId') || d.get('channel') !== 'website') continue;
+    if (domainId && !domains.has(domainId)) {
+      domains.set(domainId, String((await db().collection(WH.domains).doc(domainId).get()).get('leadChannel') || ''));
+    }
+    batch.update(d.ref, {channel: domains.get(domainId) || 'dba_website', updatedAt: Date.now()});
+    if (++n % 400 === 0) {
+      await batch.commit();
+      batch = db().batch();
+    }
+  }
+  await batch.commit();
+  await flagRef.set({leadChannelV1: Date.now(), leadChannelV1Count: n}, {merge: true});
+  return n;
+}
+
 export const whAlerts = onSchedule({schedule: 'every 60 minutes', timeoutSeconds: 300}, async () => {
+  const moved = await migrateLeadChannels().catch((e) => {
+    logger.warn('wh lead channel migration failed', e);
+    return 0;
+  });
+  if (moved) logger.info('wh lead channels relabeled', {moved});
   const r = await runAlerts();
   if (r.raised.length) logger.info('wh alerts raised', r);
 });

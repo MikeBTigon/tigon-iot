@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { Box, Button, MenuItem, TextField, Typography } from '@mui/material';
+import { Alert, Box, Button, MenuItem, TextField, Tooltip, Typography } from '@mui/material';
 import { ContentCopy, Email, Phone, Sms, WhatsApp } from '@mui/icons-material';
 import { useMp } from '../MpDataContext';
 import { copyText } from '../../native/actions';
+import { isNativeApp } from '../../native/platform';
 import { contactUrl, openContact, useMpSettings, type ContactKind } from './crmData';
 import { fillFor, useReplyTemplates } from './replyTemplates';
 import type { Cart } from '../types';
@@ -13,6 +14,9 @@ const BUTTONS: Array<{ kind: ContactKind; label: string; icon: React.ReactNode; 
   { kind: 'whatsapp', label: 'WhatsApp', icon: <WhatsApp />, needs: 'phone' },
   { kind: 'email', label: 'Email', icon: <Email />, needs: 'email' },
 ];
+
+/** A computer (not the phone app, not a phone/tablet browser). */
+const isDesktop = () => !isNativeApp() && !/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
 
 /**
  * Reply template picker + editable message + Call / Text / WhatsApp / Email buttons.
@@ -35,10 +39,26 @@ export default function ContactPanel({ name, phone, email, cart, onContact }: {
   const fill = (l: string) => (tpl ? fillFor(tpl.body, { cart, name, phone: cart ? undefined : settings.defaultPhone, link: l }) : '');
   const message = edited ?? fill(link);
 
+  const [note, setNote] = useState('');
   const go = async (kind: ContactKind) => {
-    await openContact(contactUrl(kind, { phone, email }, message));
+    setNote('');
+    if (kind === 'email' && isDesktop()) {
+      // Computers often have no mail app for mailto: links — open a Gmail message to the customer instead.
+      const url = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(email.trim())}`
+        + `&su=${encodeURIComponent('TIGON Golf Carts')}&body=${encodeURIComponent(message)}`;
+      window.open(url, '_blank', 'noopener');
+    } else {
+      await openContact(contactUrl(kind, { phone, email }, message));
+      if ((kind === 'call' || kind === 'sms') && isDesktop()) {
+        await copyText(kind === 'sms' ? message : phone).catch(() => undefined);
+        setNote(kind === 'sms'
+          ? `Opening your texting app for ${phone}. The message is also copied — paste it if it doesn't appear.`
+          : `Calling ${phone} with your computer's phone app. The number is also copied.`);
+      }
+    }
     onContact?.(kind);
   };
+  const target = (b: (typeof BUTTONS)[number]) => (b.needs === 'phone' ? phone.trim() : email.trim());
 
   return (
     <Box sx={{ border: 1, borderColor: 'divider', borderRadius: 1, p: 1.5 }}>
@@ -53,13 +73,22 @@ export default function ContactPanel({ name, phone, email, cart, onContact }: {
       <TextField fullWidth multiline minRows={3} size="small" value={message} onChange={(e) => setEdited(e.target.value)} sx={{ mb: 1 }} />
       <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
         {BUTTONS.map((b) => (
-          <Button key={b.kind} size="small" variant="outlined" startIcon={b.icon}
-            disabled={b.needs === 'phone' ? !phone.trim() : !email.trim()} onClick={() => go(b.kind)}>
-            {b.label}
-          </Button>
+          <Tooltip key={b.kind} title={target(b) ? `${b.label} ${target(b)}` : `No ${b.needs === 'phone' ? 'phone number' : 'email address'} for this customer`}>
+            <span>
+              <Button size="small" variant="outlined" startIcon={b.icon} disabled={!target(b)} onClick={() => go(b.kind)}>
+                {b.label}
+              </Button>
+            </span>
+          </Tooltip>
         ))}
         <Button size="small" startIcon={<ContentCopy />} onClick={() => copyText(message)}>Copy</Button>
       </Box>
+      {(phone.trim() || email.trim()) && (
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+          To: {[phone.trim(), email.trim()].filter(Boolean).join(' · ')}
+        </Typography>
+      )}
+      {note && <Alert severity="info" sx={{ mt: 1 }} onClose={() => setNote('')}>{note}</Alert>}
     </Box>
   );
 }

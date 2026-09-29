@@ -9,6 +9,7 @@ import WhShell from '../components/WhShell';
 import StatusChip from '../components/StatusChip';
 import { lastDayKeys, summarize, useWhStats } from '../stats';
 import { platformLabel } from '../snippet';
+import { CHANNEL_LABEL } from '../../mp/crm/crmData';
 import { ago, useDomains, useNow, useWebhooks } from '../components/Wh1Hooks';
 
 /** All websites with webhook counts, last lead and leads in the last 7 days. */
@@ -59,6 +60,7 @@ const WhWebsites: React.FC = () => {
               <TableRow>
                 <TableCell>Website</TableCell>
                 <TableCell>Builder</TableCell>
+                <TableCell>Lead channel</TableCell>
                 <TableCell align="right">Forms</TableCell>
                 <TableCell>Last lead</TableCell>
                 <TableCell align="right">Leads (7 days)</TableCell>
@@ -73,13 +75,14 @@ const WhWebsites: React.FC = () => {
                     <Typography variant="caption" color="text.secondary">{d.url}</Typography>
                   </TableCell>
                   <TableCell>{platformLabel(d.platform)}</TableCell>
+                  <TableCell>{CHANNEL_LABEL[(d.leadChannel || 'dba_website') as keyof typeof CHANNEL_LABEL] || d.leadChannel}</TableCell>
                   <TableCell align="right">{hooks}</TableCell>
                   <TableCell sx={{ whiteSpace: 'nowrap' }}>{ago(last, now)}</TableCell>
                   <TableCell align="right">{week}</TableCell>
                   <TableCell><StatusChip status={d.status} /></TableCell>
                 </TableRow>
               ))}
-              {!rows.length && <TableRow><TableCell colSpan={6}>No websites match "{q}".</TableCell></TableRow>}
+              {!rows.length && <TableRow><TableCell colSpan={7}>No websites match "{q}".</TableCell></TableRow>}
             </TableBody>
           </Table>
         </Paper>

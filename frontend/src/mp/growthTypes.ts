@@ -122,7 +122,7 @@ export interface Storefront {
 // CRM
 // ---------------------------------------------------------------------------
 
-export type LeadChannel = 'facebook' | 'instagram' | 'whatsapp' | 'sms' | 'phone' | 'email' | 'walk-in' | 'website' | 'other';
+export type LeadChannel = 'facebook' | 'instagram' | 'whatsapp' | 'sms' | 'phone' | 'email' | 'walk-in' | 'website' | 'dba_website' | 'other';
 export type LeadStatus = 'new' | 'talking' | 'sold' | 'lost';
 
 /** Firestore: mp_leads. */

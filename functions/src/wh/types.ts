@@ -111,6 +111,8 @@ export interface WhDomain {
   url: string;
   status: 'active' | 'paused';
   platform?: 'wordpress' | 'webflow' | 'wix' | 'squarespace' | 'shopify' | 'custom' | string;
+  /** MP Leads channel for leads from this website (default 'dba_website'). */
+  leadChannel?: string;
   settings: WhSettings;
   /** Updated by ingest (at most once a minute); used by the no-leads alert. */
   lastReceivedAt?: number;
