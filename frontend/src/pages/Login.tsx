@@ -14,6 +14,7 @@ import {
 } from '@mui/material';
 import { Visibility, VisibilityOff } from '@mui/icons-material';
 import { useAuth } from '../context/AuthContext';
+import { authErrorMessage, cleanEmail } from '../context/authErrors';
 
 const Login: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -22,26 +23,46 @@ const Login: React.FC = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   
-  const { login } = useAuth();
+  const { login, resetPassword } = useAuth();
+  const [info, setInfo] = useState('');
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!email.endsWith('@tigongolfcarts.com')) {
+    const em = cleanEmail(email);
+    setEmail(em);
+    if (!em.endsWith('@tigongolfcarts.com')) {
       setError('Please use your @tigongolfcarts.com email address');
       return;
     }
 
     try {
       setError('');
+      setInfo('');
       setLoading(true);
-      await login(email, password);
+      await login(em, password);
       navigate('/dashboard');
-    } catch (err: any) {
-      setError('Failed to log in: ' + err.message);
+    } catch (err) {
+      setError(authErrorMessage(err));
     } finally {
       setLoading(false);
+    }
+  };
+
+  const forgot = async () => {
+    const em = cleanEmail(email);
+    setEmail(em);
+    if (!em.endsWith('@tigongolfcarts.com')) {
+      setError('Type your @tigongolfcarts.com email above first, then tap "Forgot password?".');
+      return;
+    }
+    try {
+      setError('');
+      await resetPassword(em);
+      setInfo(`We emailed a link to ${em} to set a new password. Open it (check spam too), set the password, then log in here.`);
+    } catch (err) {
+      setError(authErrorMessage(err));
     }
   };
 
@@ -64,6 +85,7 @@ const Login: React.FC = () => {
           </Typography>
 
           {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+          {info && <Alert severity="success" sx={{ mb: 2 }}>{info}</Alert>}
 
           <Box component="form" onSubmit={handleSubmit} sx={{ mt: 1 }}>
             <TextField
@@ -78,6 +100,7 @@ const Login: React.FC = () => {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               helperText="Use your @tigongolfcarts.com email"
+              inputProps={{ autoCapitalize: 'none', autoCorrect: 'off', spellCheck: false, inputMode: 'email' }}
             />
             <TextField
               margin="normal"
@@ -112,6 +135,9 @@ const Login: React.FC = () => {
             >
               {loading ? 'Logging in...' : 'Login'}
             </Button>
+            <Box sx={{ textAlign: 'center', mb: 1 }}>
+              <Button size="small" onClick={forgot} disabled={loading}>Forgot password?</Button>
+            </Box>
             <Box sx={{ textAlign: 'center' }}>
               <Link to="/register" style={{ textDecoration: 'none' }}>
                 <Typography variant="body2" color="primary">

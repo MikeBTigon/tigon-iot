@@ -14,6 +14,7 @@ import {
 } from '@mui/material';
 import { Visibility, VisibilityOff } from '@mui/icons-material';
 import { useAuth } from '../context/AuthContext';
+import { authErrorMessage, cleanEmail } from '../context/authErrors';
 
 const Register: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -41,7 +42,9 @@ const Register: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!email.endsWith('@tigongolfcarts.com')) {
+    const em = cleanEmail(email);
+    setEmail(em);
+    if (!em.endsWith('@tigongolfcarts.com')) {
       setError('Please use your @tigongolfcarts.com email address');
       return;
     }
@@ -59,10 +62,10 @@ const Register: React.FC = () => {
     try {
       setError('');
       setLoading(true);
-      await signup(email, password);
+      await signup(em, password);
       setSuccess(true);
-    } catch (err: any) {
-      setError('Failed to create account: ' + err.message);
+    } catch (err) {
+      setError(authErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -124,6 +127,7 @@ const Register: React.FC = () => {
               autoFocus
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+              inputProps={{ autoCapitalize: 'none', autoCorrect: 'off', spellCheck: false, inputMode: 'email' }}
               helperText="Must be @tigongolfcarts.com email"
             />
             <TextField
