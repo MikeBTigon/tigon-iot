@@ -21,7 +21,7 @@ const TYPE_LABEL: Record<IntegrationType, string> = {
 type Provider = 'postmark' | 'sendgrid' | 'ses' | 'gmail' | 'custom';
 const PROVIDERS: Record<Provider, { label: string; host: string; port: number; secure: boolean; user: string; pass: string }> = {
   gmail: { label: 'Gmail / Google Workspace (app password)', host: 'smtp.gmail.com', port: 465, secure: true,
-    user: 'The full Gmail address, e.g. tigongolfcarts@gmail.com', pass: 'The 16-letter app password from Google (spaces are fine)' },
+    user: 'The full address, e.g. tigon-worker@tigongolfcarts.com', pass: 'The 16-letter app password from Google (spaces are fine)' },
   postmark: { label: 'Postmark', host: 'smtp.postmarkapp.com', port: 587, secure: false,
     user: '', pass: 'Postmark → your server → API Tokens → Server API token (used as both SMTP username and password)' },
   sendgrid: { label: 'SendGrid', host: 'smtp.sendgrid.net', port: 587, secure: false,
@@ -36,7 +36,7 @@ const GmailSteps: React.FC = () => (
   <Alert severity="info" sx={{ '& ol': { pl: 2.5, my: 0.5 }, '& li': { mb: 0.5 } }}>
     <b>How to get a Gmail app password</b> (takes about 2 minutes)
     <ol>
-      <li>Sign in to Google as the Gmail account that will send the emails (e.g. tigongolfcarts@gmail.com).</li>
+      <li>Sign in to Google as the account that will send the emails (e.g. tigon-worker@tigongolfcarts.com).</li>
       <li>
         Turn on <b>2-Step Verification</b> if it isn't on yet:{' '}
         <a href="https://myaccount.google.com/signinoptions/twosv" target="_blank" rel="noreferrer">myaccount.google.com/signinoptions/twosv</a>.
@@ -48,12 +48,16 @@ const GmailSteps: React.FC = () => (
       </li>
       <li>Type a name such as <b>TIGON IOT Webhook Flows</b> and click <b>Create</b>.</li>
       <li>Google shows a 16-letter password (like <code>abcd efgh ijkl mnop</code>). Copy it into <b>App password</b> below — it's shown only once.</li>
-      <li>Enter the same Gmail address in <b>Gmail address</b>, click <b>Save</b>, then press <b>Test</b> on the connection.</li>
+      <li>Enter the same address in <b>Gmail / Workspace address</b>, click <b>Save</b>, then press <b>Test</b> on the connection.</li>
     </ol>
-    Good to know: emails are sent <b>from</b> this Gmail address (Gmail replaces any other "From"). Replies to lead emails still
-    go to the customer. Gmail allows about <b>500 emails a day</b> (Google Workspace about 2,000). If you change the Google
-    password or remove the app password, create a new one and paste it here. Google Workspace accounts: an admin may need to
-    allow app passwords / 2-Step Verification for your domain.
+    <b>Google Workspace address</b> (e.g. tigon-worker@tigongolfcarts.com) — same steps, plus once, as a Workspace admin at{' '}
+    <a href="https://admin.google.com" target="_blank" rel="noreferrer">admin.google.com</a>: Security → Authentication →
+    2-step verification → tick <b>Allow users to turn on 2-Step Verification</b> → Save. Then sign in as that user and do
+    steps 2–6. For best delivery, make sure Gmail → Authenticate email (DKIM) is turned on for your domain in the Admin console.
+    <br />
+    Good to know: emails are sent <b>from</b> this address (Google replaces any other "From"). Replies to lead emails still
+    go to the customer. Limits: about <b>500 emails a day</b> for @gmail.com, about <b>2,000</b> for Workspace. If the
+    account's password changes or the app password is removed, create a new one and paste it here.
   </Alert>
 );
 
@@ -172,7 +176,7 @@ const IntegrationDialog: React.FC<{ value: Editing; smtpList: WhIntegration[]; o
             </>}
             {provider === 'gmail' ? (
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
-                <TextField size="small" label="Gmail address" value={cs('fromEmail')} placeholder="tigongolfcarts@gmail.com"
+                <TextField size="small" label="Gmail / Workspace address" value={cs('fromEmail')} placeholder="tigon-worker@tigongolfcarts.com"
                   onChange={(e) => { const em = e.target.value.trim(); setV({ ...v, config: { ...v.config, fromEmail: em }, secrets: { ...v.secrets, user: em } }); }}
                   helperText="Emails are sent from this address" sx={{ flexGrow: 1 }} />
                 <TextField size="small" label="From name" value={cs('fromName')} placeholder="TIGON Golf Carts"
