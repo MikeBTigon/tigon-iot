@@ -59,7 +59,7 @@ jobs:
           ENABLE_AI_WRITER: ${{ vars.ENABLE_AI_WRITER }}
           WH_REALTIME: ${{ vars.WH_REALTIME }}
         run: |
-          FUNCS="mpSyncInventory mpSyncNow mpCreatePairingCode mpPairDevice mpSendQueueItem mpDispatchQueue mpMonitor mpApprovalDigest mpBackup mpBackupNow mpRunImport mpImportScheduled mpCrmReminders mpWeeklyDigest mpLink mpStorefrontApi"
+          FUNCS="mpSyncInventory mpSyncNow mpCreatePairingCode mpPairDevice mpSendQueueItem mpDispatchQueue mpMonitor mpApprovalDigest mpBackup mpBackupNow mpRunImport mpImportScheduled mpCrmReminders mpWeeklyDigest mpLink mpStorefrontApi mpEchoRegister mpEcho"
           FUNCS="$FUNCS whIngest whProcess whReplay whTestEmail whTestWebhook whDeleteSubmissions whAlerts whMaintenance"
           if [ "$ENABLE_AI_WRITER" = "true" ]; then
             FUNCS="$FUNCS mpAiListing mpAiSnap"

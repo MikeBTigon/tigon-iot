@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { isNativeApp } from './platform';
 import { ensurePushToken, initPushListeners } from './phoneAlerts';
 import { endDeviceSession, logEvent, registerDevice, startHeartbeat } from './deviceSession';
+import { ensureEcho } from './echo';
 
 /** Home-screen quick actions (ids match capacitor.config.ts AppShortcuts) → in-app routes. */
 const SHORTCUT_ROUTES: Record<string, string> = {
@@ -66,6 +67,8 @@ export default function NativeBridge() {
       }
       if (cancelled) return;
       await ensurePushToken(currentUser.uid);
+      // Android: give the notification listener this phone's echo credentials.
+      ensureEcho(currentUser.uid).catch((e) => console.warn('Echo setup failed', e));
       logEvent(currentUser.uid, 'app_open');
       stop = startHeartbeat(currentUser.uid, async (state) => {
         alert(state === 'revoked'

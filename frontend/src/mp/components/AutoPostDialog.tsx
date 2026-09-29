@@ -103,7 +103,12 @@ const AutoPostDialog: React.FC<{ cart: MpCart; open: boolean; onClose: (queued?:
         )}
         <FormControl fullWidth>
           <InputLabel>Phone</InputLabel>
-          <Select label="Phone" value={deviceId} onChange={(e) => setDeviceId(e.target.value)}>
+          <Select label="Phone" value={deviceId} onChange={(e) => {
+            const id = e.target.value;
+            setDeviceId(id);
+            const dev = devices.find((x) => x.id === id);
+            if (dev?.accountId && !cart.postedAccounts[dev.accountId]) setAccountId(dev.accountId);
+          }}>
             <MenuItem value="">Any of their phones</MenuItem>
             {devices.map((d) => (
               <MenuItem key={d.id} value={d.id}>{d.deviceName} — {seenLabel(d)}{d.fcmToken ? '' : ' (notifications off)'}</MenuItem>

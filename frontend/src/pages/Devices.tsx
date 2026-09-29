@@ -32,6 +32,10 @@ import DashboardLayout from '../components/Layout/DashboardLayout';
 import PhoneAlertsCard from '../native/PhoneAlertsCard';
 import PairPhoneDialog from '../devices/PairPhoneDialog';
 import TeamDevicesPanel from '../devices/TeamDevicesPanel';
+import ScanSetupCode from '../native/ScanSetupCode';
+import EchoCard from '../native/EchoCard';
+import { isNativeApp } from '../native/platform';
+import { phoneSummary } from '../devices/phoneSetup';
 import { isOnline, seenLabel } from '../devices/deviceStatus';
 import { formatDistanceToNow } from 'date-fns';
 
@@ -45,6 +49,9 @@ interface Device {
   status?: string;
   fcmToken?: string;
   appVersion?: string;
+  deviceNumber?: string;
+  locationId?: string;
+  accountName?: string;
 }
 
 const Devices: React.FC = () => {
@@ -55,6 +62,7 @@ const Devices: React.FC = () => {
   const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
   const [newDeviceName, setNewDeviceName] = useState('');
   const [pairOpen, setPairOpen] = useState(false);
+  const [setupDone, setSetupDone] = useState('');
 
   useEffect(() => {
     if (!currentUser) return;
@@ -143,14 +151,33 @@ const Devices: React.FC = () => {
           <Typography variant="h4" color="primary">
             Devices
           </Typography>
-          <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            onClick={() => setPairOpen(true)}
-          >
-            Pair a phone
-          </Button>
+          {!isNativeApp() && (
+            <Button
+              variant="contained"
+              startIcon={<AddIcon />}
+              onClick={() => setPairOpen(true)}
+            >
+              Set up a phone
+            </Button>
+          )}
         </Box>
+
+        <EchoCard />
+
+        {isNativeApp() && (
+          <Paper sx={{ p: 3, mb: 3 }}>
+            <Typography variant="h6" color="primary" gutterBottom>Set up this phone</Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              On a computer open TIGON IOT → Devices → <b>Set up a phone</b>, choose the phone number, location, person and
+              Facebook account, then scan the QR code here. Phones never make setup codes — only the computer does.
+            </Typography>
+            {setupDone ? (
+              <Typography sx={{ fontWeight: 600 }}>✓ Set up as {setupDone}</Typography>
+            ) : (
+              <ScanSetupCode onDone={(name) => setSetupDone(name)} />
+            )}
+          </Paper>
+        )}
 
         <Paper sx={{ p: 3 }}>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
@@ -196,9 +223,14 @@ const Devices: React.FC = () => {
                       <TableCell>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                           <SmartphoneIcon color="primary" />
-                          <Typography variant="body1" fontWeight={500}>
-                            {device.deviceName}
-                          </Typography>
+                          <Box>
+                            <Typography variant="body1" fontWeight={500}>
+                              {device.deviceName}
+                            </Typography>
+                            {phoneSummary(device) && (
+                              <Typography variant="caption" color="text.secondary">{phoneSummary(device)}</Typography>
+                            )}
+                          </Box>
                         </Box>
                       </TableCell>
                       <TableCell>

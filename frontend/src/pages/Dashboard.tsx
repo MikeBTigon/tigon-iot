@@ -37,6 +37,10 @@ interface Notification {
   /** Worker phone's device doc id, when the notification carries one. */
   deviceId?: string;
   sourceDeviceId?: string;
+  /** Team phone number (#0003) of the phone that echoed it. */
+  sourceDeviceNumber?: string;
+  /** App the notification came from (Facebook, Messenger, …). */
+  sourceApp?: string;
 }
 
 const Dashboard: React.FC = () => {
@@ -193,13 +197,17 @@ const Dashboard: React.FC = () => {
                 >
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                     <Box sx={{ flex: 1 }}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1, flexWrap: 'wrap' }}>
+                        {notif.sourceDeviceNumber && (
+                          <Chip label={`#${notif.sourceDeviceNumber}`} size="small" color="secondary" sx={{ fontWeight: 700 }} />
+                        )}
                         <Chip
                           label={notif.sourceDeviceName || 'Unknown Device'}
                           size="small"
                           color="primary"
                           icon={<SmartphoneIcon />}
                         />
+                        {notif.sourceApp && <Chip label={notif.sourceApp} size="small" variant="outlined" />}
                         <Chip
                           label={notif.isHandled ? 'Handled' : 'Unhandled'}
                           size="small"
