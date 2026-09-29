@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Alert, Button } from '@mui/material';
 import { isNativeApp, nativePlatform } from './platform';
 import { openExternal } from './actions';
+import { APK_URL } from '../devices/appBuild';
 
 const SITE = 'https://tigoniot.com';
 
@@ -30,7 +31,7 @@ const UpdateBanner: React.FC = () => {
   if (!latest || hidden) return null;
   return (
     <Alert severity="info" sx={{ mb: 2 }} onClose={() => setHidden(true)} action={
-      <Button color="inherit" size="small" onClick={() => openExternal(`${SITE}/downloads/tigon-iot.apk`)}>Update</Button>
+      <Button color="inherit" size="small" onClick={() => openExternal(APK_URL)}>Update</Button>
     }>
       A new version of the TIGON IOT app is ready ({latest.versionName}). Tap Update, open the file and tap Install —
       you stay signed in.

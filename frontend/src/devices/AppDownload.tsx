@@ -49,7 +49,7 @@ const AppDownload: React.FC = () => {
               <Alert severity="info" sx={{ mb: 2 }}>The app is published with the next website update (a few minutes after a merge).</Alert>
             )}
             <Box>
-              <Button size="large" variant="contained" startIcon={<DownloadIcon />} href={APK_URL} disabled={!build}>
+              <Button size="large" variant="contained" startIcon={<DownloadIcon />} href={APK_URL} download="TIGON-IOT.apk" disabled={!build}>
                 Download the app
               </Button>
             </Box>

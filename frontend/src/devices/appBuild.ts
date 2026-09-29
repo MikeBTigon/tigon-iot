@@ -1,6 +1,11 @@
 import { useEffect, useState } from 'react';
 
-export const APK_URL = '/downloads/tigon-iot.apk';
+/**
+ * The app file is served from the Firebase default domain on purpose: that origin has no offline cache
+ * (service worker) of ours, so the browser always downloads the real file. (On tigoniot.com an older
+ * cached copy of the website could intercept the link and show a blank page.)
+ */
+export const APK_URL = 'https://tigon-iot.firebaseapp.com/downloads/tigon-iot.apk';
 export const PUBLIC_APP_PAGE = 'https://tigoniot.com/app';
 
 export interface AppBuild { versionCode: number; versionName: string; builtAt: string; url: string }

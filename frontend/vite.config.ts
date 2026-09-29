@@ -20,7 +20,7 @@ export default defineConfig({
         navigateFallback: '/index.html',
         // Short links and server routes must always reach the network (Firebase Hosting rewrites);
         // /__/ is Firebase's reserved auth/hosting path. Storefront pages (/s/…) are SPA routes and work offline.
-        navigateFallbackDenylist: [/^\/l\//, /^\/api\//, /^\/__\//],
+        navigateFallbackDenylist: [/^\/l\//, /^\/api\//, /^\/__\//, /^\/downloads\//, /^\/hooks\//, /\.apk$/],
         runtimeCaching: [
           {
             // Cart photos on S3.
