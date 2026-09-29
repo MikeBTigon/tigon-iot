@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import PairThisPhone from '../native/PairThisPhone';
+import { isNativeApp } from '../native/platform';
 import {
   Box,
   Button,
@@ -137,6 +138,7 @@ const Login: React.FC = () => {
             </Button>
             <Box sx={{ textAlign: 'center', mb: 1 }}>
               <Button size="small" onClick={forgot} disabled={loading}>Forgot password?</Button>
+              {!isNativeApp() && <Button size="small" href="/app">Get the phone app</Button>}
             </Box>
             <Box sx={{ textAlign: 'center' }}>
               <Link to="/register" style={{ textDecoration: 'none' }}>

@@ -58,6 +58,7 @@ import { useSetLanguage } from '../../ui/useSetLanguage';
 import { activeNavPath } from '../../ui/navUtils';
 import GlobalSearch from '../../ui/GlobalSearch';
 import OfflineBanner from '../../ui/OfflineBanner';
+import UpdateBanner from '../../native/UpdateBanner';
 import { useMp } from '../../mp/MpDataContext';
 import { WH_NAV, activeWhPath } from '../../wh/nav';
 
@@ -400,6 +401,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
         }}
       >
         <OfflineBanner />
+        <UpdateBanner />
         {children}
       </Box>
       <GlobalSearch open={searchOpen} onClose={() => setSearchOpen(false)} />

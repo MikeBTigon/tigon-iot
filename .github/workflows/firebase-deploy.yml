@@ -36,6 +36,18 @@ jobs:
           rm -rf dist
           cp -r frontend/dist dist
 
+      # The Android phone app is built with every deploy and published on the website:
+      # https://tigoniot.com/downloads/tigon-iot.apk (+ version.json, used by the app's update check).
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Build Android app for the Download page
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: scripts/build-android.sh "$GITHUB_WORKSPACE/dist/downloads/tigon-iot.apk"
+
       - name: Build Cloud Functions
         working-directory: functions
         run: |
