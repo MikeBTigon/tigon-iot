@@ -85,7 +85,7 @@ const ht: Resource = {
     saveError: 'Nou pa t kapab anrejistre pwofil ou. Se sèlman kont @tigongolfcarts.com ki verifye ki ka itilize MP Assistant.',
     legacyIdentity: 'Ansyen idantite MP Assistant',
     legacyNone: 'Okenn — mwen nouvo',
-    claimed: '(deja pran)',
+    claimed: '(yo itilize l sou {n} lòt kont)',
     bootstrapAdmin: 'Imèl ou nan lis administratè MP Assistant yo.',
     saving: 'Ap anrejistre…',
     start: 'Kòmanse itilize MP Assistant',

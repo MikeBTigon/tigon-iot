@@ -36,7 +36,9 @@ export const ProfileSetup: React.FC<{ editing?: boolean; onDone?: () => void }> 
       .catch(() => setBootstrapAdmin(false));
   }, [editing, currentUser?.email]);
 
-  const claimed = new Set(users.filter((u) => u.uid !== currentUser?.uid && u.legacyId).map((u) => u.legacyId));
+  // One person can run many phones/accounts, so an identity may be shared: show how many others use it.
+  const usedBy = new Map<string, number>();
+  for (const u of users) if (u.uid !== currentUser?.uid && u.legacyId) usedBy.set(u.legacyId, (usedBy.get(u.legacyId) || 0) + 1);
 
   const submit = async () => {
     if (!name.trim()) return;
@@ -68,8 +70,8 @@ export const ProfileSetup: React.FC<{ editing?: boolean; onDone?: () => void }> 
         <Select labelId="mp-legacy-label" label={t('shell.legacyIdentity')} value={legacyId} onChange={(e) => setLegacyId(e.target.value)}>
           <MenuItem value="">{t('shell.legacyNone')}</MenuItem>
           {LEGACY_USERS.map((u) => (
-            <MenuItem key={u.id} value={u.id} disabled={claimed.has(u.id)}>
-              {u.name}{claimed.has(u.id) ? ` ${t('shell.claimed')}` : ''}
+            <MenuItem key={u.id} value={u.id}>
+              {u.name}{usedBy.get(u.id) ? ` ${t('shell.claimed').replace('{n}', String(usedBy.get(u.id)))}` : ''}
             </MenuItem>
           ))}
         </Select>
