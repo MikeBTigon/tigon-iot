@@ -166,3 +166,46 @@ export const whTestWebhook = onCall({timeoutSeconds: 120, memory: '512MiB'}, asy
   await audit(caller, 'wh_test_webhook', webhookId, `submission=${r.submissionId}; status=${r.status}`);
   return r;
 });
+
+/** Delete one submission with its step runs, unsent Sheets rows and uploaded images. false = not found. */
+export async function deleteSubmission(id: string): Promise<boolean> {
+  const ref = db().collection(WH.submissions).doc(id);
+  const snap = await ref.get();
+  if (!snap.exists) return false;
+  for (const coll of [WH.stepRuns, WH.sheetBuffer]) {
+    for (;;) {
+      const rs = await db().collection(coll).where('submissionId', '==', id).limit(400).get();
+      if (rs.empty) break;
+      const batch = db().batch();
+      rs.docs.forEach((r) => batch.delete(r.ref));
+      await batch.commit();
+      if (rs.size < 400) break;
+    }
+  }
+  await ref.delete();
+  await admin.storage().bucket().deleteFiles({prefix: `wh_uploads/${snap.get('webhookId')}/${id}/`})
+    .catch((e) => logger.warn('wh delete: file delete failed', id, e));
+  return true;
+}
+
+/**
+ * whDeleteSubmissions (manager): {submissionIds: string[]} (max 500) → permanently deletes the leads, their
+ * step history, pending Sheets rows and uploaded images. CRM leads (MP Leads), sent emails and rows already
+ * written to Google Sheets / the DMS are not touched.
+ */
+export const whDeleteSubmissions = onCall({timeoutSeconds: 300, memory: '512MiB'}, async (req) => {
+  const caller = await requireManager(req);
+  const d = (req.data || {}) as Record<string, unknown>;
+  const raw = Array.isArray(d.submissionIds) ? d.submissionIds : d.submissionId ? [d.submissionId] : [];
+  const ids = Array.from(new Set(raw.map(String).filter(Boolean)));
+  if (!ids.length) throw new HttpsError('invalid-argument', 'Choose at least one submission.');
+  if (ids.length > 500) throw new HttpsError('invalid-argument', 'Delete at most 500 submissions at a time.');
+  let deleted = 0;
+  let missing = 0;
+  for (let i = 0; i < ids.length; i += 10) {
+    const res = await Promise.all(ids.slice(i, i + 10).map((id) => deleteSubmission(id)));
+    res.forEach((ok) => (ok ? deleted++ : missing++));
+  }
+  await audit(caller, 'wh_delete_submissions', `${deleted} submissions`, `${ids.slice(0, 20).join(',')}${ids.length > 20 ? '…' : ''}`);
+  return {deleted, missing};
+});

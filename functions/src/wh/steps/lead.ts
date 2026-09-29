@@ -10,6 +10,9 @@ const ALREADY_EXISTS = 6;
 const isAlreadyExists = (e: unknown) => (e as {code?: unknown}).code === ALREADY_EXISTS ||
   /already exists/i.test(errMsg(e));
 
+/** MP Leads channel used when a website has none set. */
+export const DEFAULT_LEAD_CHANNEL = 'dba_website';
+
 export const leadDocId = (submissionId: string) => `wh_${submissionId}`;
 
 async function ownerFor(ctx: StepContext): Promise<string | null> {
@@ -38,7 +41,7 @@ export function leadDoc(ctx: StepContext, ownerUid: string, now: number) {
     str(s.url) ? `Page: ${str(s.url)}` : '',
   ].filter(Boolean).join('\n');
   const doc: Record<string, unknown> = {
-    name, phone: str(s.phone1), email: str(s.email), channel: 'website', source: 'website', status: 'new',
+    name, phone: str(s.phone1), email: str(s.email), channel: ctx.domain?.leadChannel || DEFAULT_LEAD_CHANNEL, source: 'website', status: 'new',
     ownerUid, notes, message, createdAt: now, updatedAt: now,
     whSubmissionId: s.id, whDomainId: s.domainId || '', whWebhookId: s.webhookId || '',
   };

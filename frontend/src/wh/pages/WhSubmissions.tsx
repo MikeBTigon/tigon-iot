@@ -2,15 +2,15 @@ import React, { useMemo, useState } from 'react';
 import { Link as RouterLink, useNavigate, useSearchParams } from 'react-router-dom';
 import { limit, orderBy, where } from 'firebase/firestore';
 import {
-  Alert, Box, Button, Checkbox, CircularProgress, FormControl, InputAdornment, InputLabel, MenuItem, Paper, Select, Table,
+  Alert, Box, Button, Checkbox, CircularProgress, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, FormControl, InputAdornment, InputLabel, MenuItem, Paper, Select, Table,
   TableBody, TableCell, TableHead, TablePagination, TableRow, TextField, Typography,
 } from '@mui/material';
-import { Download, ReportProblem, Search } from '@mui/icons-material';
+import { Delete, Download, ReportProblem, Search } from '@mui/icons-material';
 import WhShell from '../components/WhShell';
 import StatusChip from '../components/StatusChip';
 import { errText, leadName, markSpam, useDomains, useWebhooks } from '../components/Wh1Hooks';
 import { useMp } from '../../mp/MpDataContext';
-import { fmtTime, useWhCollection } from '../data';
+import { callWh, fmtTime, useWhCollection } from '../data';
 import { WH } from '../types';
 import type { SubmissionStatus, WhSubmission } from '../types';
 import { downloadFile, stamp, submissionsCsv } from '../csv';
@@ -95,6 +95,28 @@ const WhSubmissions: React.FC = () => {
     }
   };
 
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const removeSelected = async () => {
+    setBusy(true);
+    setMsg(null);
+    try {
+      const ids = selRows.map((s) => s.id);
+      let deleted = 0;
+      for (let i = 0; i < ids.length; i += 500) {
+        const r = await callWh<{ deleted: number }>('whDeleteSubmissions', { submissionIds: ids.slice(i, i + 500) });
+        deleted += r.deleted;
+      }
+      setMsg({ ok: true, text: `${deleted} lead(s) deleted.` });
+      setSelected(new Set());
+    } catch (e) {
+      setMsg({ ok: false, text: errText(e) });
+    } finally {
+      setBusy(false);
+      setConfirmDelete(false);
+    }
+  };
+  const selectAllFiltered = () => setSelected(new Set(filtered.map((s) => s.id)));
+
   const exportCsv = () => {
     const list = selRows.length ? selRows : filtered;
     downloadFile(`leads-${stamp()}.csv`, submissionsCsv(list, (id) => domainName.get(id) || id, (id) => hookName.get(id) || id));
@@ -141,11 +163,33 @@ const WhSubmissions: React.FC = () => {
           {rows ? <>{filtered.length} lead(s){rows.length >= MAX ? ` (from ${MAX} loaded — narrow by website or form to see older ones)` : ''}</> : 'Loading…'}
           {selRows.length > 0 && <> · <b>{selRows.length} selected</b></>}
         </Typography>
+        {pageAll && selRows.length < filtered.length && (
+          <Button size="small" onClick={selectAllFiltered}>Select all {filtered.length}</Button>
+        )}
+        {selRows.length > 0 && <Button size="small" onClick={() => setSelected(new Set())}>Clear</Button>}
         <Box sx={{ flexGrow: 1 }} />
         <Button size="small" disabled={!selRows.length || busy} onClick={() => flag(true)}>Mark as spam</Button>
         <Button size="small" disabled={!selRows.length || busy} onClick={() => flag(false)}>Not spam</Button>
         <Button size="small" startIcon={<Download />} onClick={exportCsv} disabled={!filtered.length}>Export CSV{selRows.length ? ' (selected)' : ''}</Button>
+        <Button size="small" color="error" startIcon={<Delete />} disabled={!selRows.length || busy} onClick={() => setConfirmDelete(true)}>
+          Delete{selRows.length ? ` (${selRows.length})` : ''}
+        </Button>
       </Paper>
+
+      <Dialog open={confirmDelete} onClose={() => !busy && setConfirmDelete(false)}>
+        <DialogTitle>Delete {selRows.length} lead{selRows.length === 1 ? '' : 's'}?</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            This permanently removes {selRows.length === 1 ? 'this lead' : 'these leads'} from Webhook Flows, with the step history
+            and uploaded photos. It can't be undone. Tip: use <b>Export CSV</b> first if you want a copy.
+            Emails already sent, rows already in Google Sheets, the DMS and MP Leads are not changed.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirmDelete(false)} disabled={busy}>Cancel</Button>
+          <Button color="error" variant="contained" onClick={removeSelected} disabled={busy}>{busy ? 'Deleting…' : 'Delete'}</Button>
+        </DialogActions>
+      </Dialog>
 
       {rows === undefined ? <CircularProgress aria-label="Loading" /> : (
         <Paper sx={{ overflowX: 'auto' }}>

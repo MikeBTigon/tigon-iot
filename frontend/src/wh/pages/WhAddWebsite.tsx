@@ -7,6 +7,8 @@ import {
 } from '@mui/material';
 import { ArrowBack, ArrowForward, CheckCircle } from '@mui/icons-material';
 import WhShell from '../components/WhShell';
+import LeadChannelSelect, { DEFAULT_LEAD_CHANNEL } from '../components/LeadChannelSelect';
+import { CHANNEL_LABEL } from '../../mp/crm/crmData';
 import SetupPacket from '../components/SetupPacket';
 import { useMp } from '../../mp/MpDataContext';
 import { db } from '../../config/firebase';
@@ -59,6 +61,7 @@ const WhAddWebsite: React.FC = () => {
   const [name, setName] = useState('');
   const [urlInput, setUrlInput] = useState('');
   const [platform, setPlatform] = useState('wordpress');
+  const [leadChannel, setLeadChannel] = useState(DEFAULT_LEAD_CHANNEL);
   const [formName, setFormName] = useState('Contact form');
   const [flowMode, setFlowMode] = useState<'shared' | 'copy'>('shared');
   const [templateId, setTemplateId] = useState('');
@@ -120,7 +123,7 @@ const WhAddWebsite: React.FC = () => {
       if (gaId.trim()) settings.ga4MeasurementId = gaId.trim().toUpperCase();
       if (gaSecret.trim()) settings.ga4ApiSecret = gaSecret.trim();
       const res = await createWebsite({
-        name, url: url.url as string, platform, formName, flowMode, templateFlow: tplFlow, settings,
+        name, url: url.url as string, platform, leadChannel, formName, flowMode, templateFlow: tplFlow, settings,
       }, profile);
       setResult(res);
       setStep(3);
@@ -164,6 +167,7 @@ const WhAddWebsite: React.FC = () => {
                 {PLATFORMS.map((p) => <MenuItem key={p.value} value={p.value}>{p.label}</MenuItem>)}
               </Select>
             </FormControl>
+            <LeadChannelSelect value={leadChannel} onChange={setLeadChannel} />
             <TextField label="Form name" value={formName} onChange={(e) => setFormName(e.target.value)}
               helperText='Which form on the site this is, e.g. "Contact form", "Trade-in form", "Get a quote".' error={touched && !formName.trim()} />
             {touched && step0Error && <Alert severity="error">{step0Error}</Alert>}
@@ -230,6 +234,7 @@ const WhAddWebsite: React.FC = () => {
             {[
               ['Website', `${name.trim()} — ${url.url}`],
               ['Builder', PLATFORMS.find((p) => p.value === platform)?.label || platform],
+              ['Lead channel', CHANNEL_LABEL[leadChannel as keyof typeof CHANNEL_LABEL] || leadChannel],
               ['Form', formName.trim()],
               ['Flow', summaryFlow],
               ['Email leads to', emailList.join(', ') || 'default recipients'],

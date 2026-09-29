@@ -5,12 +5,13 @@
 //   whReplay      callable (manager)           re-run failed / all / one step of submissions
 //   whTestEmail   callable (manager)           send a test email
 //   whTestWebhook callable (manager)           create + run a test submission
+//   whDeleteSubmissions callable (manager)     permanently delete submissions (single or bulk)
 //   whAlerts      hourly                       "no leads" and failure-spike alerts
 //   whMaintenance daily 03:15 New York         retention, rate-counter cleanup, Master Digest email
 //   whOnSubmission (only when WH_REALTIME=true) runs new submissions immediately
 export {whIngest} from './ingest';
 export {whProcess} from './engine';
-export {whReplay, whTestWebhook} from './admin';
+export {whReplay, whTestWebhook, whDeleteSubmissions} from './admin';
 export {whTestEmail} from './steps';
 export {whAlerts} from './alerts';
 export {whMaintenance} from './maintenance';

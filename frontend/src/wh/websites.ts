@@ -1,4 +1,6 @@
 /** Webhook Flows — creating websites, webhooks and private flow copies. */
+import { collection, getDocs, query, where, writeBatch } from 'firebase/firestore';
+import { db } from '../config/firebase';
 import { saveWh } from './data';
 import { randomKey } from './shared';
 import { WH } from './types';
@@ -80,6 +82,8 @@ export interface NewWebsiteInput {
   name: string;
   url: string;
   platform: string;
+  /** MP Leads channel for this website's leads (default 'dba_website'). */
+  leadChannel?: string;
   formName: string;
   /** 'shared' = use the template flow as is; 'copy' = make this website's own copy of it. */
   flowMode: 'shared' | 'copy';
@@ -93,6 +97,7 @@ export interface NewWebsiteResult { domainId: string; webhookId: string; flowId:
 export async function createWebsite(input: NewWebsiteInput, profile: MpProfile | null | undefined): Promise<NewWebsiteResult> {
   const domain: Omit<WhDomain, 'id' | 'createdAt' | 'updatedAt'> = {
     name: input.name.trim(), url: input.url, status: 'active', platform: input.platform, settings: input.settings,
+    leadChannel: input.leadChannel || 'dba_website',
     createdBy: profile?.uid || '',
   };
   const domainId = await saveWh(WH.domains, domain as unknown as Record<string, unknown>);
@@ -103,4 +108,16 @@ export async function createWebsite(input: NewWebsiteInput, profile: MpProfile |
   await writeAudit(profile, 'wh_add_website', input.name.trim(),
     `${input.url} · form "${input.formName}" · ${input.flowMode === 'copy' ? 'own flow copy' : 'shared flow'} ${flowId}`);
   return { domainId, webhookId, flowId, key };
+}
+
+/** Move every MP Leads lead that came from this website to another channel. Returns how many changed. */
+export async function relabelLeads(domainId: string, channel: string): Promise<number> {
+  const snap = await getDocs(query(collection(db, 'mp_leads'), where('whDomainId', '==', domainId)));
+  const docs = snap.docs.filter((d) => d.get('channel') !== channel);
+  for (let i = 0; i < docs.length; i += 400) {
+    const batch = writeBatch(db);
+    docs.slice(i, i + 400).forEach((d) => batch.update(d.ref, { channel, updatedAt: Date.now() }));
+    await batch.commit();
+  }
+  return docs.length;
 }

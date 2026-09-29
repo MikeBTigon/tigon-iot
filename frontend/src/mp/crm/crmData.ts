@@ -22,7 +22,7 @@ import type { Customer, Lead, LeadChannel, LeadStatus, MpSettings } from '../gro
 
 export const CHANNEL_LABEL: Record<LeadChannel, string> = {
   facebook: 'Facebook', instagram: 'Instagram', whatsapp: 'WhatsApp', sms: 'Text', phone: 'Phone',
-  email: 'Email', 'walk-in': 'Walk-in', website: 'Website', other: 'Other',
+  email: 'Email', 'walk-in': 'Walk-in', website: 'Website', dba_website: 'DBA Website', other: 'Other',
 };
 export const CHANNELS = Object.keys(CHANNEL_LABEL) as LeadChannel[];
 

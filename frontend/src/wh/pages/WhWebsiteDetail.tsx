@@ -6,6 +6,8 @@ import {
 } from '@mui/material';
 import { Add, Delete, Pause, PlayArrow, Save } from '@mui/icons-material';
 import WhShell from '../components/WhShell';
+import LeadChannelSelect, { DEFAULT_LEAD_CHANNEL } from '../components/LeadChannelSelect';
+import { relabelLeads } from '../websites';
 import SettingsForm from '../components/SettingsForm';
 import StatusChip from '../components/StatusChip';
 import RecentSubmissions from '../components/Wh1Recent';
@@ -35,6 +37,7 @@ const Editor: React.FC<{ domain: WhDomain }> = ({ domain }) => {
   const [urlInput, setUrlInput] = useState(domain.url);
   const [platform, setPlatform] = useState(domain.platform || 'custom');
   const [status, setStatus] = useState(domain.status);
+  const [leadChannel, setLeadChannel] = useState(domain.leadChannel || DEFAULT_LEAD_CHANNEL);
   const [settings, setSettings] = useState<WhSettings>(domain.settings || {});
   const [busy, setBusy] = useState('');
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -46,6 +49,7 @@ const Editor: React.FC<{ domain: WhDomain }> = ({ domain }) => {
   const series = useMemo(() => summarize(stats, lastDayKeys(30, now), domain.id).series, [stats, now, domain.id]);
   const url = normalizeSiteUrl(urlInput);
   const dirty = name !== domain.name || urlInput !== domain.url || platform !== (domain.platform || 'custom') || status !== domain.status ||
+    leadChannel !== (domain.leadChannel || DEFAULT_LEAD_CHANNEL) ||
     JSON.stringify(settings) !== JSON.stringify(domain.settings || {});
 
   // "Add another form" uses the flow of this website's newest webhook, else the default flow.
@@ -58,10 +62,12 @@ const Editor: React.FC<{ domain: WhDomain }> = ({ domain }) => {
     setBusy('save');
     setMsg(null);
     try {
-      await patchWh(WH.domains, domain.id, { name: name.trim(), url: url.url, platform, status, settings });
+      await patchWh(WH.domains, domain.id, { name: name.trim(), url: url.url, platform, status, settings, leadChannel });
       setUrlInput(url.url);
+      let relabeled = 0;
+      if (leadChannel !== (domain.leadChannel || DEFAULT_LEAD_CHANNEL)) relabeled = await relabelLeads(domain.id, leadChannel);
       await writeAudit(profile, 'wh_domain_update', name.trim(), `${domain.id}${status !== domain.status ? ` · status ${status}` : ''}`);
-      setMsg({ ok: true, text: 'Saved.' });
+      setMsg({ ok: true, text: relabeled ? `Saved. ${relabeled} existing lead(s) moved to the new channel.` : 'Saved.' });
     } catch (e) {
       setMsg({ ok: false, text: errText(e) });
     } finally {
@@ -138,6 +144,7 @@ const Editor: React.FC<{ domain: WhDomain }> = ({ domain }) => {
                 {PLATFORMS.map((p) => <MenuItem key={p.value} value={p.value}>{p.label}</MenuItem>)}
               </Select>
             </FormControl>
+            <LeadChannelSelect value={leadChannel} onChange={setLeadChannel} id="wd-channel" />
             <FormControl>
               <InputLabel id="wd-status">Status</InputLabel>
               <Select labelId="wd-status" label="Status" value={status} onChange={(e) => setStatus(e.target.value as WhDomain['status'])}>
