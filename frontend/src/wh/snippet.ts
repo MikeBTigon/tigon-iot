@@ -406,43 +406,106 @@ export const GA4_CHECKLIST: Array<{ id: string; label: string; help: string }> =
   { id: 'cid', label: 'ga_client_id is being captured', help: 'Open a test submission here and check that "GA client id" has a value. It needs the GA4 tag (gtag.js / Tag Manager) on the website.' },
 ];
 
+/** How each lead field should appear on the website form. */
+const FORM_SPEC: Record<string, { input: string; visible: boolean }> = {
+  form_name: { input: 'input (fixed value, see below)', visible: false },
+  first_name: { input: 'text, autocomplete="given-name"', visible: true },
+  last_name: { input: 'text, autocomplete="family-name"', visible: true },
+  phone1: { input: 'tel, autocomplete="tel"', visible: true },
+  phone2: { input: 'tel (label "Alternate phone")', visible: true },
+  address: { input: 'text, autocomplete="street-address"', visible: true },
+  email: { input: 'email, autocomplete="email"', visible: true },
+  zip_code: { input: 'text, inputmode="numeric", autocomplete="postal-code"', visible: true },
+  model: { input: 'text or select (cart model the customer is interested in)', visible: true },
+  brand: { input: 'text or select (cart brand)', visible: true },
+  vin_number: { input: 'text (label "VIN", optional)', visible: true },
+  sku_number: { input: 'text (label "Stock # / SKU", optional; may be hidden and pre-filled on inventory pages)', visible: true },
+  url: { input: 'input', visible: false },
+  comments: { input: 'textarea (label "Message")', visible: true },
+  image_1: { input: 'file, accept="image/*"', visible: true },
+  image_2: { input: 'file, accept="image/*"', visible: true },
+  image_3: { input: 'file, accept="image/*"', visible: true },
+};
+
 export function aiPrompt(o: SnippetOptions): string {
+  const endpoint = endpointOf(o);
+  const site = o.siteName || '(this website)';
+  const siteUrl = o.siteUrl || '';
+  const form = o.formName || 'Contact form';
   const refs = fieldReference(o.required);
   const lead = refs.filter((r) => r.group === 'Lead' && r.field !== 'user_ip');
-  return `I need help connecting the lead form on my website to a lead system. Please give me exact, copy-paste code and step-by-step instructions for my platform.
+  const required = lead.filter((r) => r.required).map((r) => r.field);
+  const mapped = Object.entries(o.fieldMap || {}).filter(([k, v]) => k && v);
+  const example: Record<string, string> = {};
+  for (const r of lead) if (!r.field.startsWith('image_')) example[r.field] = r.field === 'form_name' ? form : (r.example || '');
+  example.url = siteUrl ? `${siteUrl}/contact` : 'https://example.com/contact';
+  Object.assign(example, {
+    referrer: 'https://www.google.com/', utm_source: 'google', utm_medium: 'cpc', utm_campaign: 'spring-sale', utm_term: '', utm_content: '',
+    gclid: '', fbclid: '', ga_client_id: '1234567890.1712345678', [honeypotOf(o)]: '',
+  });
 
-Website: ${o.siteName || '(my website)'}${o.siteUrl ? ` — ${o.siteUrl}` : ''}
-Platform: ${platformLabel(o.platform)}
-Form: ${o.formName || 'Contact form'}
+  return `You are helping me connect the lead form(s) on my website to the TIGON IOT lead system ("Webhook Flows"). Read everything below, then do the tasks at the end. Every detail here is specific to THIS website.
 
-WHERE TO SEND
-- Every submission must be sent with an HTTP POST to: ${endpointOf(o)}
-- Send it as multipart/form-data (a FormData object) so photo uploads work. application/json and application/x-www-form-urlencoded are also accepted when there are no files.
-- No API key or login is needed; the address itself is the key, so don't publish it anywhere except the form code.
-- A successful post returns HTTP 200 with JSON like {"ok": true}. Show a thank-you message${o.thankYouUrl ? ` or redirect to ${o.thankYouUrl}` : ''} on success, and an error message otherwise. Disable the submit button while sending.
+=== THIS WEBSITE ===
+Website name: ${site}
+Website address: ${siteUrl || '(not set)'}
+Website builder / platform: ${platformLabel(o.platform)}
+Form: ${form}
 
-FIELD NAMES (use these exact names; any other fields are kept too)
-${lead.map((r) => `- ${r.field}: ${r.label}${r.required ? ' (REQUIRED)' : ''}${r.notes ? ` — ${r.notes}` : ''}`).join('\n')}
-- Photos (image_1, image_2, image_3) are optional file inputs, max 10 MB each, jpg/png/gif/webp/heic.
-- The visitor's IP address and browser are captured by the server; don't send them.
+=== THIS WEBSITE'S UNIQUE WEBHOOK ===
+Endpoint (POST): ${endpoint}
+Webhook key: ${o.key}
 
-SPAM TRAP (important)
-- Add a hidden text input named "${honeypotOf(o)}" that real visitors never see (move it off-screen with CSS, tabindex="-1", autocomplete="off", aria-hidden on its wrapper). It must be sent EMPTY. Bots fill it in and those posts are dropped. Don't use display:none only.
+- This webhook belongs to ${site}${siteUrl ? ` (${siteUrl})` : ''} ONLY. It is unique to this website and this form. Never reuse it on another website, and never use another website's webhook here — every website (and every separate form) gets its own webhook, created in TIGON IOT → Webhook Flows → Add website.
+- The key in the address works like a password: only put it in this website's form code or server settings. Do not publish it in documentation, public repositories or other sites.
+- Leads are only accepted from this website's own address${siteUrl ? ` (${siteUrl})` : ''} when sent from a browser (other origins are rejected).
 
-TRACKING (hidden fields filled by JavaScript before sending)
+=== THIS WEBSITE'S OWN SECRET (signature) ===
+- This webhook has its OWN signing secret. It is created for this webhook only (TIGON IOT → Webhook Flows → Webhooks → this webhook → Setup packet → Developers → "Create secret"), shown once, and must never be shared with or copied to any other website.
+- Signing: header X-Tigon-Signature: sha256=<hex HMAC-SHA256 of the exact raw request body, using this webhook's secret>.
+- The secret must ONLY live on the server side (e.g. wp-config.php / an environment variable / the hosting's secret settings). NEVER put it in browser JavaScript, HTML, or anything a visitor can download.
+${o.hmacRequired
+    ? `- STATUS: signatures are REQUIRED for this webhook. Unsigned requests are rejected (HTTP 401). Therefore the form must NOT post directly from the browser. Build a small server-side handler on this website (for WordPress: a REST route or admin-ajax action in a small plugin / functions.php; other platforms: a serverless function) that receives the form, adds the X-Tigon-Signature header using the secret from server config, and forwards the SAME multipart or JSON body to the endpoint.`
+    : `- STATUS: signatures are currently OPTIONAL for this webhook, so the form may post directly from the browser (no secret in the browser!). If this website can send leads from its server, prefer that: store this webhook's secret in server config, sign every request, and then turn on "Require signature" for this webhook in TIGON IOT so unsigned requests are rejected.`}
+
+=== HOW TO SEND ===
+- Method: POST to ${endpoint}
+- Body: multipart/form-data (a FormData object) so photos upload. application/json or application/x-www-form-urlencoded also work when there are no files.
+- Success: HTTP 200 with JSON {"ok": true, "id": "..."}. Show a thank-you message${o.thankYouUrl ? ` and redirect to ${o.thankYouUrl}` : ''}. Otherwise show the "error" text from the JSON. HTTP 429 = too many tries, ask the visitor to wait a minute.
+- Disable the submit button while sending; re-enable it afterwards.
+
+=== REQUIRED FORM FIELDS (rebuild the form with ALL of these) ===
+Use these EXACT name attributes. Visible fields should have clear labels.${required.length ? ` Mark as required (HTML required + JS check): ${required.join(', ')}.` : ' No field is strictly required by the system, but ask for at least first_name, last_name, email and phone1 (make those required on the form).'}
+${lead.map((r) => {
+    const spec = FORM_SPEC[r.field];
+    return `- ${r.field} — ${r.label}${r.required ? ' (REQUIRED)' : ''}; ${spec ? `${spec.visible ? 'visible' : 'hidden'} ${spec.input}` : 'text'}${r.notes ? `. ${r.notes}` : ''}`;
+  }).join('\n')}
+- form_name must always be sent with the value: "${form}"
+- Photos: image_1, image_2, image_3 are optional, max 10 MB each, jpg / png / gif / webp / heic. Leave out empty file inputs.
+- Do NOT send user_ip or user_agent — the server records them.
+- Any extra fields you keep are stored too, but everything important must use the names above.${mapped.length ? `
+- This webhook already maps these incoming names (you may keep them): ${mapped.map(([k, v]) => `${k} → ${v}`).join(', ')}.` : ''}
+
+=== HIDDEN TRACKING FIELDS (filled by JavaScript right before sending) ===
 - url = window.location.href
 - referrer = document.referrer
-- utm_source, utm_medium, utm_campaign, utm_term, utm_content, gclid, fbclid = from the page's query string. Save the first values you see in localStorage for 30 days and keep sending those (first-touch attribution).
-- ga_client_id = from the "_ga" cookie: "GA1.1.123456.789012" → "123456.789012".
-- form_name = "${o.formName || 'Contact form'}"
+- utm_source, utm_medium, utm_campaign, utm_term, utm_content, gclid, fbclid = from the page's query string. Save the first values seen in localStorage for 30 days and keep sending those (first-touch attribution).
+- ga_client_id = from the "_ga" cookie: "GA1.1.123456.789012" → "123456.789012"${o.ga4MeasurementId ? ` (GA4 property ${o.ga4MeasurementId} is used for this website)` : ''}.
 
-WHAT I NEED FROM YOU
-1. Look at my existing form (I will paste its HTML or describe it) and wire it to send to the address above with the field names above. If my form's field names are different, rename them or map them in the code.
-2. Keep my form's look. Don't remove required-field checks.
-3. Tell me exactly where to paste the code on ${platformLabel(o.platform)}${o.platform && o.platform !== 'custom' ? ' (which block/widget/setting)' : ''}.
-4. Tell me how to test it (submit once with my own details and confirm the thank-you message).${o.hmacRequired ? `
+=== SPAM TRAP (required) ===
+- Add a hidden text input named "${honeypotOf(o)}" that real visitors never see: move its wrapper off-screen with CSS (position:absolute; left:-9999px), tabindex="-1", autocomplete="off", aria-hidden="true" on the wrapper. It must be sent EMPTY. Don't rely on display:none alone. Make sure no real field uses this name.
 
-NOTE: this endpoint requires an HMAC signature header (X-Tigon-Signature: sha256=<hex HMAC-SHA256 of the raw body>) which must be computed on a server, never in browser code. Only do this from server-side code.` : ''}`;
+=== EXAMPLE OF ONE COMPLETE SUBMISSION (JSON form of the same fields) ===
+${JSON.stringify(example, null, 2)}
+
+=== YOUR TASKS ===
+1. Find every lead / contact / quote / inventory-inquiry form on ${site}. Rebuild or edit each one so it contains ALL the fields listed above with the EXACT names (rename existing inputs; add the missing ones; keep the site's look and style).
+2. Add the hidden form_name, tracking fields and the spam trap exactly as described.
+3. Send submissions to THIS website's endpoint above — ${o.hmacRequired ? 'through a server-side handler that signs each request with this webhook\'s own secret' : 'directly from the browser, or (preferred when possible) through a server-side handler that signs each request with this webhook\'s own secret'}.
+4. Keep client-side validation (required fields, email format, phone at least 10 digits, photos ≤ 10 MB) and show friendly error messages.
+5. If a page lists a specific cart, pre-fill brand, model, vin_number and sku_number from that cart (hidden or read-only) so the lead shows which cart was asked about.
+6. Explain exactly where each piece goes on ${platformLabel(o.platform)}${o.platform && o.platform !== 'custom' ? ' (which page, block, widget, plugin file or setting)' : ''}, and where the secret is stored on the server.
+7. Explain how to test: submit once with my own details, confirm the thank-you message, and confirm the lead appears in TIGON IOT → Webhook Flows → Submissions with every field filled in.`;
 }
 
 /** Everything in one downloadable text file (Markdown). */
