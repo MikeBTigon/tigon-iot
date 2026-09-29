@@ -1,12 +1,14 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Box, Button, Card, CardActionArea, CardContent, Chip, Typography } from '@mui/material';
-import { CheckCircle, Download, Warning } from '@mui/icons-material';
+import { Box, Button, ButtonGroup, Card, CardActionArea, CardContent, Chip, Menu, MenuItem, Snackbar, Typography } from '@mui/material';
+import { ArrowDropDown, Bolt, CheckCircle, Download, Warning } from '@mui/icons-material';
 import { cartName, cartTitle } from '../cartLogic';
 import { formatPrice, hasPhotoIssue, isPostedBy, postedAccountCount, workingPhotos } from '../cartUtils';
 import { locationName } from '../constants';
 import { useMp } from '../MpDataContext';
 import { saveAllPhotos } from '../photos';
+import { openFacebookAssisted, quickFbList } from '../quickList';
+import { logEvent } from '../../native/deviceSession';
 import type { MpCart } from '../types';
 import CartPhoto from './CartPhoto';
 
@@ -16,6 +18,19 @@ const CartCard: React.FC<{ cart: MpCart }> = ({ cart }) => {
   const photos = workingPhotos(cart, brokenPhotos);
   const posted = isPostedBy(cart, userKeys);
   const acctCount = postedAccountCount(cart);
+  const [menu, setMenu] = useState<HTMLElement | null>(null);
+  const [note, setNote] = useState('');
+  const uid = userKeys[0] || '';
+  const run = async (fn: () => Promise<string>) => {
+    setMenu(null);
+    try {
+      setNote(await fn());
+      logEvent(uid, 'listing_prepared', { cartId: cart.docId });
+      logEvent(uid, 'marketplace_opened', { cartId: cart.docId });
+    } catch (e) {
+      setNote(e instanceof Error ? e.message : String(e));
+    }
+  };
 
   return (
     <Card sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -44,13 +59,22 @@ const CartCard: React.FC<{ cart: MpCart }> = ({ cart }) => {
           </Box>
         </CardContent>
       </CardActionArea>
-      {photos.length > 0 && (
-        <Box sx={{ px: 1.5, pb: 1.5 }}>
+      <Box sx={{ px: 1.5, pb: 1.5, display: 'flex', flexDirection: 'column', gap: 1 }}>
+        <ButtonGroup fullWidth size="small" variant="contained">
+          <Button startIcon={<Bolt />} onClick={() => run(() => quickFbList(cart, photos, uid))}>Quick FB List</Button>
+          <Button sx={{ width: 40, flex: '0 0 40px' }} aria-label="More Facebook options" onClick={(e) => setMenu(e.currentTarget)}><ArrowDropDown /></Button>
+        </ButtonGroup>
+        <Menu anchorEl={menu} open={!!menu} onClose={() => setMenu(null)}>
+          <MenuItem onClick={() => run(() => openFacebookAssisted(cart, uid))}>Open the Facebook app instead (copy text)</MenuItem>
+          <MenuItem onClick={() => { setMenu(null); navigate(`/mp/prepare/${encodeURIComponent(cart.docId)}`); }}>Prepare listing (choose wording)</MenuItem>
+        </Menu>
+        {photos.length > 0 && (
           <Button size="small" fullWidth variant="outlined" startIcon={<Download />} onClick={() => saveAllPhotos(cart, photos)}>
             Save all photos
           </Button>
-        </Box>
-      )}
+        )}
+      </Box>
+      <Snackbar open={!!note} autoHideDuration={6000} onClose={() => setNote('')} message={note} />
     </Card>
   );
 };

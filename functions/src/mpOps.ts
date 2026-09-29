@@ -146,7 +146,8 @@ export const mpPairDevice = onCall(async (req) => {
   const older = await db().collection('devices').where('installId', '==', installId).limit(20).get();
   for (const o of older.docs) {
     if (o.id !== deviceId && o.get('status') !== 'revoked') {
-      await o.ref.set({status: 'revoked', isActive: false, fcmToken: admin.firestore.FieldValue.delete(), replacedBy: deviceId}, {merge: true});
+      await o.ref.set({status: 'revoked', isActive: false, fcmToken: admin.firestore.FieldValue.delete(),
+        replacedBy: deviceId, retiredReason: 'phone-set-up-again'}, {merge: true});
     }
   }
   await db().collection('devices').doc(deviceId).set({
@@ -165,12 +166,21 @@ export const mpPairDevice = onCall(async (req) => {
     osVersion: String(d.osVersion || '').slice(0, 30),
     appVersion: String(d.appVersion || '').slice(0, 30),
     status: 'active',
+    retiredReason: admin.firestore.FieldValue.delete(),
+    replacedBy: admin.firestore.FieldValue.delete(),
     pairedAt: Date.now(),
     lastSeen: Date.now(),
   }, {merge: true});
 
   await audit(userId, profile?.name || user.email || userId, 'device.paired', deviceId,
     `${deviceNumber ? `#${deviceNumber} ` : ''}${locationId} ${platform} ${model}`.trim());
+
+  // The setup code was made by a signed-in teammate for this @tigongolfcarts.com account, so the address is
+  // trusted: mark it verified, otherwise the phone would stop at "Verify your email".
+  if (!user.emailVerified && (user.email || '').toLowerCase().endsWith('@tigongolfcarts.com')) {
+    await admin.auth().updateUser(userId, {emailVerified: true})
+      .catch((e) => logger.warn('could not mark email verified', e));
+  }
 
   // Already signed in as that person on this phone → nothing else to do.
   if (req.auth?.uid === userId) return {customToken: '', deviceId, deviceName};
@@ -179,9 +189,10 @@ export const mpPairDevice = onCall(async (req) => {
     return {customToken, deviceId, deviceName};
   } catch (err) {
     logger.error('createCustomToken failed — grant the functions service account "Service Account Token Creator"', err);
+    // The phone is registered; the app shows a password box for this account (details.email) to finish.
     throw new HttpsError('failed-precondition',
-      `Phone ${deviceName} was registered, but automatic sign-in is not set up yet. Sign in on this phone as ${user.email} ` +
-      '(email and password), then scan the code again.');
+      `Phone ${deviceName} is registered. Automatic sign-in isn't switched on yet, so enter the password for ${user.email} ` +
+      'below to finish.', {email: user.email || '', deviceName});
   }
 });
 

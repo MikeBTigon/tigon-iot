@@ -1,5 +1,6 @@
 import React from 'react';
 import { APK_URL, PUBLIC_APP_PAGE, useLatestAppBuild } from './appBuild';
+import { POSTER_ZIP_URL } from '../mp/posterBridge';
 import { Alert, Box, Button, Chip, Paper, Step, StepContent, StepLabel, Stepper, Typography } from '@mui/material';
 import { Android, Apple, Download as DownloadIcon } from '@mui/icons-material';
 import { QRCodeSVG } from 'qrcode.react';
@@ -13,8 +14,10 @@ const STEPS: Array<{ label: string; text: React.ReactNode }> = [
   },
   {
     label: 'Download and install',
-    text: <>Tap <b>Download the app</b> (or scan the QR code with the phone's camera). Open the downloaded file and tap
-      <b> Install</b>. If Android asks, allow <b>Install unknown apps</b> for your browser/Files app, then tap Install again.</>,
+    text: <>Tap <b>Download the app</b> (or scan the QR code with the phone's camera). Chrome may say the file
+      "might be harmful" — tap <b>Download anyway</b> (it's our own app, installed outside the Play Store). Open the
+      downloaded file and tap <b>Install</b>. If Android asks, allow <b>Install unknown apps</b> for Chrome/Files, then tap
+      Install again. If Play Protect warns "unknown developer", tap <b>More details → Install anyway</b>.</>,
   },
   {
     label: 'Set up the phone',
@@ -24,7 +27,8 @@ const STEPS: Array<{ label: string; text: React.ReactNode }> = [
   {
     label: 'Turn on notification echo',
     text: <>In the app: <b>Devices → Notification echo → Allow</b>, switch on TIGON IOT, come back, and tap
-      <b> Send test</b>. The test shows on the dashboard with the phone's number.</>,
+      <b> Send test</b>. The test shows on the dashboard with the phone's number. If Android says <b>"Restricted
+      setting"</b>: Settings → Apps → TIGON IOT → ⋮ → <b>Allow restricted settings</b>, then switch it on.</>,
   },
 ];
 
@@ -73,6 +77,26 @@ const AppDownload: React.FC = () => {
             </Step>
           ))}
         </Stepper>
+      </Paper>
+
+      <Paper sx={{ p: 3, mb: 3 }} id="extension">
+        <Typography variant="h6" gutterBottom>Computers: Tigon Poster for Chrome</Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+          On a computer, the Tigon Poster extension fills in the Facebook Marketplace vehicle form (year, make, model,
+          price, description, location) and uploads the cart photos when you click <b>Copy listing &amp; open
+          Marketplace</b> in MP Assistant. It never clicks Publish — you check it and post.
+        </Typography>
+        <Button variant="outlined" startIcon={<DownloadIcon />} href={POSTER_ZIP_URL} sx={{ mb: 1.5 }}>Download Tigon Poster (.zip)</Button>
+        <Typography variant="body2" component="div">
+          <ol style={{ margin: 0, paddingLeft: 20 }}>
+            <li>Download the zip and <b>unzip</b> it (right-click → Extract All). You get a folder named <b>poster</b>.</li>
+            <li>In Chrome open <b>chrome://extensions</b> and switch on <b>Developer mode</b> (top right).</li>
+            <li>Click <b>Load unpacked</b> and choose the <b>poster</b> folder.</li>
+            <li>Refresh TIGON IOT. In MP Assistant → a cart → Prepare listing, step 2 now says
+              <b> "Open Marketplace &amp; fill it in"</b>.</li>
+            <li>Updating later: download the new zip, replace the folder, and click the reload arrow on the extension.</li>
+          </ol>
+        </Typography>
       </Paper>
 
       <Alert severity="info" icon={<Apple />}>

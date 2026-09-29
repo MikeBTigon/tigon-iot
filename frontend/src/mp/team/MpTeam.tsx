@@ -198,7 +198,7 @@ const MpTeam: React.FC = () => {
     let alive = true;
     Promise.all([loadUserEvents(uid), loadUserLeads(uid)])
       .then(([events, leads]) => alive && setMine({ uid, events, leads }))
-      .catch((e) => alive && setError(errText(e)));
+      .catch((e) => { if (alive) { setError(errText(e)); setMine({ uid, events: [], leads: [] }); } });
     return () => { alive = false; };
   }, [uid]);
 
@@ -208,7 +208,7 @@ const MpTeam: React.FC = () => {
     let alive = true;
     Promise.all([loadTeamEvents(range.start, range.end), loadTeamLeads(range.start)])
       .then(([events, leads]) => alive && setTeam({ key: pkey, events, leads }))
-      .catch((e) => alive && setError(errText(e)));
+      .catch((e) => { if (alive) { setError(errText(e)); setTeam({ key: pkey, events: [], leads: [] }); } });
     return () => { alive = false; };
   }, [isManager, pkey, range.start, range.end]);
 
@@ -217,7 +217,7 @@ const MpTeam: React.FC = () => {
     let alive = true;
     loadGoals(pkey)
       .then((list) => alive && setGoals({ key: pkey, list: list.filter((g) => g.period === period) }))
-      .catch((e) => alive && setError(errText(e)));
+      .catch((e) => { if (alive) { setError(errText(e)); setGoals({ key: pkey, list: [] }); } });
     return () => { alive = false; };
   }, [uid, pkey, period, goalsVersion]);
 
@@ -228,7 +228,7 @@ const MpTeam: React.FC = () => {
     let alive = true;
     Promise.all([loadUserEvents(viewUid), loadUserLeads(viewUid)])
       .then(([events, leads]) => alive && setOther({ uid: viewUid, events, leads }))
-      .catch((e) => alive && setError(errText(e)));
+      .catch((e) => { if (alive) { setError(errText(e)); setOther({ uid: viewUid, events: [], leads: [] }); } });
     return () => { alive = false; };
   }, [viewUid, uid]);
 

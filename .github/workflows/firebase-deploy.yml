@@ -48,6 +48,11 @@ jobs:
           GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
         run: scripts/build-android.sh "$GITHUB_WORKSPACE/dist/downloads/tigon-iot.apk"
 
+      - name: Package the Tigon Poster Chrome extension for the Download page
+        run: |
+          mkdir -p dist/downloads
+          (cd mp-assistant && zip -qr "$GITHUB_WORKSPACE/dist/downloads/tigon-poster.zip" poster)
+
       - name: Build Cloud Functions
         working-directory: functions
         run: |
