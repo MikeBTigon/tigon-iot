@@ -53,10 +53,35 @@ export const mpCreatePairingCode = onCall(async (req) => {
     if (!(await mpProfile(forUserId))) throw new HttpsError('not-found', 'That user has no MP profile');
   }
 
+  // Phone setup details chosen on the computer: phone number (#0003), dealership location, Facebook account.
+  const d = (req.data || {}) as Json;
+  const deviceNumber = String(d.deviceNumber || '').trim().slice(0, 12);
+  if (deviceNumber && !/^[A-Za-z0-9-]{1,12}$/.test(deviceNumber)) {
+    throw new HttpsError('invalid-argument', 'Phone number: letters, digits and "-" only (e.g. 0003)');
+  }
+  const locationId = String(d.locationId || '').slice(0, 20);
+  const accountId = String(d.accountId || '').slice(0, 128);
+  let accountName = '';
+  if (accountId) {
+    const acc = await db().collection('mp_accounts').doc(accountId).get();
+    if (!acc.exists) throw new HttpsError('not-found', 'That Facebook account no longer exists');
+    accountName = String(acc.get('name') || '');
+  }
+  const replaceDeviceId = String(d.replaceDeviceId || '').slice(0, 200);
+  if (deviceNumber && !replaceDeviceId) {
+    const dup = await db().collection('devices').where('deviceNumber', '==', deviceNumber).limit(5).get();
+    const active = dup.docs.find((x) => x.get('status') !== 'revoked');
+    if (active) {
+      throw new HttpsError('already-exists',
+        `Phone #${deviceNumber} is already set up (${active.get('deviceName') || active.id}). Pick another number or replace it.`);
+    }
+  }
+
   const token = randomBytes(24).toString('base64url');
   const code = Array.from({length: 8}, () => CODE_ALPHABET[randomInt(CODE_ALPHABET.length)]).join('');
   const expiresAt = Date.now() + PAIRING_TTL_MS;
   await db().collection(PAIRING).doc(sha256(token)).set({
+    deviceNumber, locationId, accountId, accountName, replaceDeviceId,
     userId: forUserId,
     codeHash: sha256(code),
     createdBy: req.auth.uid,
@@ -89,24 +114,48 @@ export const mpPairDevice = onCall(async (req) => {
   }
   if (!ref) throw new HttpsError('not-found', 'Code not found or expired');
 
-  const userId = await db().runTransaction(async (tx) => {
+  const pairing = await db().runTransaction(async (tx) => {
     const snap = await tx.get(ref!);
     if (!snap.exists) throw new HttpsError('not-found', 'Code not found or expired');
     const p = snap.data() as Json;
     if (p.used) throw new HttpsError('already-exists', 'This code was already used');
     if (p.expiresAt < Date.now()) throw new HttpsError('deadline-exceeded', 'This code expired — make a new one');
     tx.update(ref!, {used: true, usedAt: Date.now(), installId});
-    return String(p.userId);
+    return p;
   });
+  const userId = String(pairing.userId);
 
   const user = await admin.auth().getUser(userId);
   const profile = await mpProfile(userId);
   const platform = ['ios', 'android'].includes(d.platform) ? d.platform : 'android';
   const model = String(d.model || '').slice(0, 60);
   const deviceId = `app_${installId}_${userId}`;
+  const deviceNumber = String(pairing.deviceNumber || '');
+  const locationId = String(pairing.locationId || '');
+  const who = profile?.name || user.email?.split('@')[0] || 'Phone';
+  const deviceName = deviceNumber ?
+    `#${deviceNumber} · ${who}` :
+    `${who} ${platform === 'ios' ? 'iPhone' : 'Android'}${model ? ` · ${model}` : ''}`;
+  // Replacing an old phone with the same number: retire the old one.
+  if (pairing.replaceDeviceId && pairing.replaceDeviceId !== deviceId) {
+    await db().collection('devices').doc(String(pairing.replaceDeviceId))
+      .set({status: 'revoked', isActive: false, fcmToken: admin.firestore.FieldValue.delete(), replacedBy: deviceId}, {merge: true})
+      .catch((e) => logger.warn('replace device failed', e));
+  }
+  // The same phone may have been set up before for another person: retire those records.
+  const older = await db().collection('devices').where('installId', '==', installId).limit(20).get();
+  for (const o of older.docs) {
+    if (o.id !== deviceId && o.get('status') !== 'revoked') {
+      await o.ref.set({status: 'revoked', isActive: false, fcmToken: admin.firestore.FieldValue.delete(), replacedBy: deviceId}, {merge: true});
+    }
+  }
   await db().collection('devices').doc(deviceId).set({
     userId,
-    deviceName: `${profile?.name || user.email?.split('@')[0] || 'Phone'} ${platform === 'ios' ? 'iPhone' : 'Android'}${model ? ` · ${model}` : ''}`,
+    deviceName,
+    deviceNumber,
+    locationId,
+    accountId: String(pairing.accountId || ''),
+    accountName: String(pairing.accountName || ''),
     deviceType: 'master',
     isActive: false,
     source: 'tigon-iot-app',
@@ -120,16 +169,20 @@ export const mpPairDevice = onCall(async (req) => {
     lastSeen: Date.now(),
   }, {merge: true});
 
-  let customToken: string;
+  await audit(userId, profile?.name || user.email || userId, 'device.paired', deviceId,
+    `${deviceNumber ? `#${deviceNumber} ` : ''}${locationId} ${platform} ${model}`.trim());
+
+  // Already signed in as that person on this phone → nothing else to do.
+  if (req.auth?.uid === userId) return {customToken: '', deviceId, deviceName};
   try {
-    customToken = await admin.auth().createCustomToken(userId);
+    const customToken = await admin.auth().createCustomToken(userId);
+    return {customToken, deviceId, deviceName};
   } catch (err) {
     logger.error('createCustomToken failed — grant the functions service account "Service Account Token Creator"', err);
     throw new HttpsError('failed-precondition',
-      'Phone was registered, but automatic sign-in is not set up yet. Sign in with email and password instead.');
+      `Phone ${deviceName} was registered, but automatic sign-in is not set up yet. Sign in on this phone as ${user.email} ` +
+      '(email and password), then scan the code again.');
   }
-  await audit(userId, profile?.name || user.email || userId, 'device.paired', deviceId, `${platform} ${model}`.trim());
-  return {customToken, deviceId};
 });
 
 // ---------------------------------------------------------------------------

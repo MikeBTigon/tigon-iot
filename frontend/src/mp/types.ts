@@ -143,6 +143,13 @@ export interface DeviceDoc {
   lastSeen?: number;
   status?: 'active' | 'revoked';
   pairedAt?: number;
+  /** Phone number on the team (e.g. "0003") — not a telephone number. */
+  deviceNumber?: string;
+  /** Dealership location id (DEALERSHIPS, e.g. "T1"). */
+  locationId?: string;
+  /** Facebook account (mp_accounts) this phone posts with. */
+  accountId?: string;
+  accountName?: string;
 }
 
 // ---------------------------------------------------------------------------

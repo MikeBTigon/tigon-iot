@@ -10,18 +10,21 @@ import { useMp } from '../mp/MpDataContext';
 import { writeAudit } from '../mp/audit';
 import type { DeviceDoc } from '../mp/types';
 import { isOnline, lastSeenMs, seenLabel } from './deviceStatus';
+import { locationLabel, phoneSummary } from './phoneSetup';
+import { DEALERSHIPS } from '../mp/constants';
 
 type Action = { kind: 'rename' | 'reassign'; device: DeviceDoc } | null;
 
 /** Managers/admins: every phone on the team — rename, reassign, revoke, delete. */
 const TeamDevicesPanel: React.FC = () => {
-  const { profile, isAdmin, users, userName } = useMp();
+  const { profile, isAdmin, users, userName, accounts } = useMp();
   const isManager = profile?.role === 'admin' || profile?.role === 'manager';
   const [devices, setDevices] = useState<DeviceDoc[]>([]);
   const [error, setError] = useState('');
   const [action, setAction] = useState<Action>(null);
   const [value, setValue] = useState('');
   const [owner, setOwner] = useState('any');
+  const [edit, setEdit] = useState({ deviceNumber: '', locationId: '', accountId: '' });
 
   useEffect(() => {
     if (!isManager) return;
@@ -56,8 +59,17 @@ const TeamDevicesPanel: React.FC = () => {
       if (!action) return;
       const d = action.device;
       if (action.kind === 'rename' && value.trim()) {
-        await updateDoc(doc(db, 'devices', d.id), { deviceName: value.trim() });
-        await writeAudit(profile, 'device.rename', d.id, `${d.deviceName} → ${value.trim()}`);
+        const num = edit.deviceNumber.trim().toUpperCase();
+        if (num && !/^[A-Za-z0-9-]{1,12}$/.test(num)) throw new Error('Phone number: letters, digits and "-" only (e.g. 0003).');
+        const dup = devices.find((x) => x.id !== d.id && x.status !== 'revoked' && num && x.deviceNumber === num);
+        if (dup) throw new Error(`#${num} is already used by ${dup.deviceName}.`);
+        const acc = accounts.find((a) => a.id === edit.accountId);
+        await updateDoc(doc(db, 'devices', d.id), {
+          deviceName: value.trim(), deviceNumber: num, locationId: edit.locationId,
+          accountId: edit.accountId, accountName: acc?.name || '',
+        });
+        await writeAudit(profile, 'device.edit', d.id,
+          `${d.deviceName} → ${value.trim()} · ${phoneSummary({ deviceNumber: num, locationId: edit.locationId, accountName: acc?.name })}`);
       }
       if (action.kind === 'reassign' && value && value !== d.userId) {
         await updateDoc(doc(db, 'devices', d.id), { userId: value, isActive: false });
@@ -118,6 +130,7 @@ const TeamDevicesPanel: React.FC = () => {
                 <TableRow key={d.id} hover sx={{ opacity: revoked ? 0.55 : 1 }}>
                   <TableCell>
                     <Typography variant="body2" sx={{ fontWeight: 600 }}>{d.deviceName}</Typography>
+                    {phoneSummary(d) && <Typography variant="caption" sx={{ display: 'block' }}>{phoneSummary(d)}</Typography>}
                     <Typography variant="caption" color="text.secondary">
                       {[d.platform, d.model].filter(Boolean).join(' · ') || (d.source === 'tigon-iot-app' ? 'TIGON IOT app' : 'IoT app')}
                     </Typography>
@@ -136,7 +149,10 @@ const TeamDevicesPanel: React.FC = () => {
                   </TableCell>
                   <TableCell><Typography variant="caption">{d.appVersion || '—'}</Typography></TableCell>
                   <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
-                    <Tooltip title="Rename"><IconButton size="small" onClick={() => { setAction({ kind: 'rename', device: d }); setValue(d.deviceName); }}><Edit fontSize="small" /></IconButton></Tooltip>
+                    <Tooltip title="Edit (name, number, location, account)"><IconButton size="small" onClick={() => {
+                      setAction({ kind: 'rename', device: d }); setValue(d.deviceName);
+                      setEdit({ deviceNumber: d.deviceNumber || '', locationId: d.locationId || '', accountId: d.accountId || '' });
+                    }}><Edit fontSize="small" /></IconButton></Tooltip>
                     <Tooltip title="Reassign to someone else"><IconButton size="small" onClick={() => { setAction({ kind: 'reassign', device: d }); setValue(d.userId); }}><SwapHoriz fontSize="small" /></IconButton></Tooltip>
                     <Tooltip title={revoked ? 'Restore' : 'Revoke (signs the phone out)'}>
                       <IconButton size="small" color={revoked ? 'success' : 'warning'} onClick={() => toggleRevoke(d)}>{revoked ? <Restore fontSize="small" /> : <Block fontSize="small" />}</IconButton>
@@ -149,13 +165,33 @@ const TeamDevicesPanel: React.FC = () => {
           </TableBody>
         </Table>
       </Box>
-      {!rows.length && <Typography color="text.secondary" sx={{ py: 2 }}>No phones yet — use "Pair a phone".</Typography>}
+      {!rows.length && <Typography color="text.secondary" sx={{ py: 2 }}>No phones yet — use "Set up a phone".</Typography>}
 
       <Dialog open={!!action} onClose={() => setAction(null)} fullWidth maxWidth="xs">
-        <DialogTitle>{action?.kind === 'rename' ? 'Rename phone' : 'Reassign phone'}</DialogTitle>
+        <DialogTitle>{action?.kind === 'rename' ? 'Edit phone' : 'Reassign phone'}</DialogTitle>
         <DialogContent sx={{ pt: '8px !important' }}>
           {action?.kind === 'rename' ? (
-            <TextField fullWidth autoFocus label="Phone name" value={value} onChange={(e) => setValue(e.target.value)} />
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <TextField fullWidth autoFocus label="Phone name" value={value} onChange={(e) => setValue(e.target.value)} />
+              <TextField fullWidth label="Phone number (on the team)" placeholder="0003" value={edit.deviceNumber}
+                onChange={(e) => setEdit({ ...edit, deviceNumber: e.target.value.toUpperCase() })} />
+              <FormControl fullWidth>
+                <InputLabel>Location</InputLabel>
+                <Select label="Location" value={edit.locationId} onChange={(e) => setEdit({ ...edit, locationId: e.target.value })}>
+                  <MenuItem value="">(none)</MenuItem>
+                  {DEALERSHIPS.map((x) => <MenuItem key={x.id} value={x.id}>{x.name}</MenuItem>)}
+                </Select>
+              </FormControl>
+              <FormControl fullWidth>
+                <InputLabel>Facebook account</InputLabel>
+                <Select label="Facebook account" value={edit.accountId} onChange={(e) => setEdit({ ...edit, accountId: e.target.value })}>
+                  <MenuItem value="">(none)</MenuItem>
+                  {[...accounts].sort((a, b) => a.name.localeCompare(b.name)).map((a) => (
+                    <MenuItem key={a.id} value={a.id}>{a.name}{a.group ? ` — ${locationLabel(a.group) || a.group}` : ''}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Box>
           ) : (
             <>
               <FormControl fullWidth>
