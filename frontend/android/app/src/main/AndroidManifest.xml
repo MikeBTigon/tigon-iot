@@ -20,6 +20,13 @@
             </intent-filter>
         </activity>
 
+        <!-- Quick FB List: Facebook Marketplace form inside the app, filled in from the cart -->
+        <activity
+            android:name=".FbListingActivity"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|screenLayout|uiMode"
+            android:theme="@style/AppTheme.NoActionBar"
+            android:exported="false" />
+
         <!-- Notification echo: forwards this phone's notifications to the TIGON IOT dashboard -->
         <service
             android:name=".EchoListenerService"
