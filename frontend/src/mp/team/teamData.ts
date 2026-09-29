@@ -1,12 +1,11 @@
 // Loaders + counting for goals, leaderboard and badges. Queries follow firestore.rules:
 // members only read their own events (userId) and leads (ownerUid); managers read everything.
-import { collection, getDocs, limit, query, where } from 'firebase/firestore';
+import { collection, documentId, getDocs, orderBy, query, where } from 'firebase/firestore';
+import { readAll } from '../firestorePaging';
 import { db } from '../../config/firebase';
 import { COLLECTIONS } from '../constants';
 import type { MpEvent } from '../types';
 import type { Goal, Lead } from '../growthTypes';
-
-const EVENT_LIMIT = 20000;
 
 /** Posts, leads and sales counted for one person in one period. */
 export interface Scores {
@@ -17,10 +16,10 @@ export interface Scores {
 
 export const emptyScores = (): Scores => ({ posts: 0, leads: 0, sales: 0 });
 
-/** All of one person's events (equality filter only — no composite index needed). */
+/** All of one person's events (equality filter + document-id order: no composite index needed; read in pages). */
 export async function loadUserEvents(uid: string): Promise<MpEvent[]> {
-  const snap = await getDocs(query(collection(db, COLLECTIONS.events), where('userId', '==', uid), limit(EVENT_LIMIT)));
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() }) as MpEvent);
+  const docs = await readAll(query(collection(db, COLLECTIONS.events), where('userId', '==', uid), orderBy(documentId())));
+  return docs.map((d) => ({ id: d.id, ...d.data() }) as MpEvent);
 }
 
 /** All leads owned by one person. */
@@ -31,10 +30,10 @@ export async function loadUserLeads(uid: string): Promise<Lead[]> {
 
 /** Managers: every event in [start, end]. */
 export async function loadTeamEvents(start: number, end: number): Promise<MpEvent[]> {
-  const snap = await getDocs(query(
-    collection(db, COLLECTIONS.events), where('ts', '>=', start), where('ts', '<=', end), limit(EVENT_LIMIT),
+  const docs = await readAll(query(
+    collection(db, COLLECTIONS.events), where('ts', '>=', start), where('ts', '<=', end), orderBy('ts'), orderBy(documentId()),
   ));
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() }) as MpEvent);
+  return docs.map((d) => ({ id: d.id, ...d.data() }) as MpEvent);
 }
 
 /** Managers: leads created or sold since `start` (two single-field queries, merged). */

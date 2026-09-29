@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { collection, getDocs, limit, orderBy, query, where } from 'firebase/firestore';
+import { collection, documentId, getDocs, orderBy, query, where } from 'firebase/firestore';
+import { readAll } from '../firestorePaging';
 import {
   Alert, Box, Button, Chip, CircularProgress, Collapse, FormControl, IconButton, InputLabel, MenuItem, Paper, Select,
   Table, TableBody, TableCell, TableHead, TableRow, Tooltip as MuiTooltip, Typography,
@@ -25,7 +26,6 @@ import type { DeviceDay, DeviceDoc, MpEvent, QueueItem } from '../types';
 const RED = '#af1f31';
 const BLUE = '#0e4671';
 const GREY = '#8a8f98';
-const EVENT_LIMIT = 20000;
 
 interface Loaded {
   key: string;
@@ -42,9 +42,9 @@ const SOURCE_LABELS = ['activity events', 'active time', 'posting queue', 'phone
 async function loadAll(uid: string, manager: boolean, start: number): Promise<Omit<Loaded, 'key'>> {
   const startStr = dateKey(start);
   const eventsQ = manager
-    ? query(collection(db, COLLECTIONS.events), where('ts', '>=', start), orderBy('ts', 'desc'), limit(EVENT_LIMIT))
+    ? query(collection(db, COLLECTIONS.events), where('ts', '>=', start), orderBy('ts', 'desc'), orderBy(documentId(), 'desc'))
     // Members: equality only (userId + ts range would need a composite index); ts filtered below.
-    : query(collection(db, COLLECTIONS.events), where('userId', '==', uid), limit(EVENT_LIMIT));
+    : query(collection(db, COLLECTIONS.events), where('userId', '==', uid), orderBy(documentId()));
   const daysQ = manager
     ? query(collection(db, COLLECTIONS.deviceDays), where('date', '>=', startStr))
     : query(collection(db, COLLECTIONS.deviceDays), where('userId', '==', uid));
@@ -53,7 +53,7 @@ async function loadAll(uid: string, manager: boolean, start: number): Promise<Om
     ? query(collection(db, 'devices'))
     : query(collection(db, 'devices'), where('userId', '==', uid));
 
-  const [ev, dd, qu, dv] = await Promise.allSettled([getDocs(eventsQ), getDocs(daysQ), getDocs(queueQ), getDocs(devicesQ)]);
+  const [ev, dd, qu, dv] = await Promise.allSettled([readAll(eventsQ), getDocs(daysQ), getDocs(queueQ), getDocs(devicesQ)]);
   const errors: string[] = [];
   const note = (r: PromiseSettledResult<unknown>, i: number) => {
     if (r.status !== 'rejected') return;
@@ -67,7 +67,7 @@ async function loadAll(uid: string, manager: boolean, start: number): Promise<Om
   [ev, dd, qu, dv].forEach(note);
 
   const events = ev.status === 'fulfilled'
-    ? ev.value.docs.map((d) => ({ id: d.id, ...d.data() }) as MpEvent).filter((e) => e.ts >= start)
+    ? ev.value.map((d) => ({ id: d.id, ...d.data() }) as MpEvent).filter((e) => e.ts >= start)
     : [];
   const days = dd.status === 'fulfilled'
     ? dd.value.docs.map((d) => d.data() as DeviceDay).filter((d) => d.date >= startStr)
@@ -362,9 +362,6 @@ const MpAnalytics: React.FC = () => {
       </Box>
 
       {data?.errors.map((e) => <Alert key={e} severity="warning" sx={{ mb: 2 }}>{e}</Alert>)}
-      {data && data.events.length >= EVENT_LIMIT && (
-        <Alert severity="info" sx={{ mb: 2 }}>Showing the most recent {EVENT_LIMIT.toLocaleString()} events; totals may be incomplete.</Alert>
-      )}
 
       {!data ? (
         <Box sx={{ py: 6, textAlign: 'center' }}><CircularProgress /></Box>
