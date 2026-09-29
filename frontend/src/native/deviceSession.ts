@@ -1,7 +1,7 @@
 // Phone-app device session: registers this install as a device of the signed-in user,
 // sends a heartbeat while the app is open, and logs analytics events.
 // On the website, events are logged with deviceId 'web' and nothing else happens.
-import { addDoc, collection, doc, getDoc, increment, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
+import { addDoc, collection, deleteField, doc, getDoc, increment, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { COLLECTIONS, HEARTBEAT_MS } from '../mp/constants';
 import type { MpEvent, MpEventType } from '../mp/types';
@@ -68,6 +68,10 @@ export async function registerDevice(uid: string, email: string | null) {
       lastSeen: Date.now(),
       ...info,
     });
+  } else if (snap.get('status') === 'revoked' && snap.get('retiredReason') === 'phone-set-up-again' && snap.get('userId') === uid) {
+    // Retired automatically when this same phone was set up for someone else; the owner signed in on it again,
+    // so it's active again. (Phones a manager revoked or replaced stay revoked.)
+    await updateDoc(ref, { status: 'active', retiredReason: deleteField(), replacedBy: deleteField(), lastSeen: Date.now(), ...info });
   } else {
     await updateDoc(ref, { lastSeen: Date.now(), ...info });
   }

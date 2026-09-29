@@ -11,6 +11,7 @@ import GetApp from './pages/GetApp';
 import { MpDataProvider } from './mp/MpDataContext';
 import { mpRoutes, publicRoutes } from './mp/routes';
 import NativeBridge from './native/NativeBridge';
+import VerifyEmailGate from './components/VerifyEmailGate';
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { currentUser } = useAuth();
@@ -20,13 +21,7 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   }
   
   if (!currentUser.emailVerified) {
-    return (
-      <div style={{ padding: '40px', textAlign: 'center' }}>
-        <h2>Email Verification Required</h2>
-        <p>Please check your email and verify your account before accessing the dashboard.</p>
-        <p>Email: {currentUser.email}</p>
-      </div>
-    );
+    return <VerifyEmailGate user={currentUser} />;
   }
   
   return <>{children}</>;

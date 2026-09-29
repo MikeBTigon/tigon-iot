@@ -64,6 +64,9 @@ const EchoCard: React.FC = () => {
           <Button color="inherit" size="small" startIcon={<Settings />} onClick={() => run(() => TigonEcho.openAccessSettings())}>Allow</Button>
         }>
           Step 1: allow <b>notification access</b> — tap Allow, find <b>TIGON IOT</b> and switch it on, then come back.
+          <br />If the switch is greyed out or says <b>"Restricted setting"</b> (Android 13+ for apps installed from the
+          website): open Android <b>Settings → Apps → TIGON IOT</b>, tap <b>⋮</b> (top right) → <b>Allow restricted
+          settings</b>, then try again.
         </Alert>
       )}
       {st && (

@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { Alert, Box, Button, TextField } from '@mui/material';
 import { QrCodeScanner } from '@mui/icons-material';
 import { httpsCallable } from 'firebase/functions';
-import { signInWithCustomToken } from 'firebase/auth';
+import { signInWithCustomToken, signInWithEmailAndPassword } from 'firebase/auth';
+import { authErrorMessage } from '../context/authErrors';
 import { auth, functions } from '../config/firebase';
 import { nativePlatform } from './platform';
 import { installId } from './deviceSession';
@@ -16,6 +17,9 @@ const ScanSetupCode: React.FC<{ onDone: (deviceName: string) => void }> = ({ onD
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  // Phone registered but automatic sign-in isn't enabled on the server: finish with that account's password.
+  const [finish, setFinish] = useState<{ email: string; deviceName: string } | null>(null);
+  const [password, setPassword] = useState('');
 
   const pair = async (payload: { token?: string; code?: string }) => {
     setBusy(true);
@@ -34,7 +38,13 @@ const ScanSetupCode: React.FC<{ onDone: (deviceName: string) => void }> = ({ onD
       if (res.data.customToken) await signInWithCustomToken(auth, res.data.customToken);
       onDone(res.data.deviceName || 'This phone');
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Setup failed.');
+      const details = (e as { details?: { email?: string; deviceName?: string } }).details;
+      if (details?.email) {
+        setFinish({ email: details.email, deviceName: details.deviceName || 'This phone' });
+        setError('');
+      } else {
+        setError(e instanceof Error ? e.message : 'Setup failed.');
+      }
     } finally {
       setBusy(false);
     }
@@ -53,6 +63,39 @@ const ScanSetupCode: React.FC<{ onDone: (deviceName: string) => void }> = ({ onD
       setError(e instanceof Error ? e.message : 'Scan cancelled.');
     }
   };
+
+  const signIn = async () => {
+    if (!finish) return;
+    setBusy(true);
+    setError('');
+    try {
+      await signInWithEmailAndPassword(auth, finish.email, password);
+      onDone(finish.deviceName);
+    } catch (e) {
+      setError(authErrorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (finish) {
+    return (
+      <Box>
+        <Alert severity="info" sx={{ mb: 1.5 }}>
+          <b>{finish.deviceName}</b> is set up. To finish, enter the password for <b>{finish.email}</b>.
+          (An admin can switch on automatic sign-in so this step isn't needed — see Help.)
+        </Alert>
+        <TextField fullWidth size="small" type="password" label={`Password for ${finish.email}`} value={password}
+          onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" sx={{ mb: 1 }}
+          onKeyDown={(e) => { if (e.key === 'Enter' && password) signIn(); }} />
+        <Box sx={{ display: 'flex', gap: 1 }}>
+          <Button variant="contained" onClick={signIn} disabled={busy || !password}>{busy ? 'Signing in…' : 'Sign in and finish'}</Button>
+          <Button onClick={() => { setFinish(null); setPassword(''); setError(''); }} disabled={busy}>Cancel</Button>
+        </Box>
+        {error && <Alert severity="error" sx={{ mt: 1.5 }}>{error}</Alert>}
+      </Box>
+    );
+  }
 
   return (
     <Box>

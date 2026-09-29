@@ -13,8 +13,10 @@ const STEPS: Array<{ label: string; text: React.ReactNode }> = [
   },
   {
     label: 'Download and install',
-    text: <>Tap <b>Download the app</b> (or scan the QR code with the phone's camera). Open the downloaded file and tap
-      <b> Install</b>. If Android asks, allow <b>Install unknown apps</b> for your browser/Files app, then tap Install again.</>,
+    text: <>Tap <b>Download the app</b> (or scan the QR code with the phone's camera). Chrome may say the file
+      "might be harmful" — tap <b>Download anyway</b> (it's our own app, installed outside the Play Store). Open the
+      downloaded file and tap <b>Install</b>. If Android asks, allow <b>Install unknown apps</b> for Chrome/Files, then tap
+      Install again. If Play Protect warns "unknown developer", tap <b>More details → Install anyway</b>.</>,
   },
   {
     label: 'Set up the phone',
@@ -24,7 +26,8 @@ const STEPS: Array<{ label: string; text: React.ReactNode }> = [
   {
     label: 'Turn on notification echo',
     text: <>In the app: <b>Devices → Notification echo → Allow</b>, switch on TIGON IOT, come back, and tap
-      <b> Send test</b>. The test shows on the dashboard with the phone's number.</>,
+      <b> Send test</b>. The test shows on the dashboard with the phone's number. If Android says <b>"Restricted
+      setting"</b>: Settings → Apps → TIGON IOT → ⋮ → <b>Allow restricted settings</b>, then switch it on.</>,
   },
 ];
 
