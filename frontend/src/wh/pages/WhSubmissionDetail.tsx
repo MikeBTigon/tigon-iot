@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
-import { Link as RouterLink, useParams } from 'react-router-dom';
+import { Link as RouterLink, useNavigate, useParams } from 'react-router-dom';
 import {
   Alert, Box, Button, CircularProgress, Collapse, Paper, Stack, Typography,
 } from '@mui/material';
-import { Block, ExpandLess, ExpandMore, Replay, RestartAlt, VerifiedUser } from '@mui/icons-material';
+import { Block, Delete, ExpandLess, ExpandMore, Replay, RestartAlt, VerifiedUser } from '@mui/icons-material';
 import WhShell from '../components/WhShell';
 import StatusChip from '../components/StatusChip';
 import LeadTimeline from '../components/LeadTimeline';
@@ -42,6 +42,21 @@ const Detail: React.FC<{ sub: WhSubmission }> = ({ sub }) => {
     } catch (e) {
       setMsg({ ok: false, text: errText(e) });
     } finally {
+      setBusy(false);
+    }
+  };
+
+  const navigate = useNavigate();
+  const remove = async () => {
+    if (!window.confirm('Permanently delete this lead, its step history and uploaded photos? This can\'t be undone. '
+      + 'Emails already sent, Google Sheets rows, the DMS and MP Leads are not changed.')) return;
+    setBusy(true);
+    setMsg(null);
+    try {
+      await callWh('whDeleteSubmissions', { submissionIds: [sub.id] });
+      navigate('/wh/submissions');
+    } catch (e) {
+      setMsg({ ok: false, text: errText(e) });
       setBusy(false);
     }
   };
@@ -95,6 +110,7 @@ const Detail: React.FC<{ sub: WhSubmission }> = ({ sub }) => {
           <Button variant="outlined" color={sub.isSpam ? 'success' : 'inherit'} startIcon={sub.isSpam ? <VerifiedUser /> : <Block />} onClick={toggleSpam} disabled={busy}>
             {sub.isSpam ? 'Not spam' : 'Mark as spam'}
           </Button>
+          <Button variant="outlined" color="error" startIcon={<Delete />} onClick={remove} disabled={busy}>Delete</Button>
         </>
       )}
     >
