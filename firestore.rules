@@ -40,11 +40,12 @@ service cloud.firestore {
     
     // Notifications collection
     match /notifications/{notificationId} {
+      // Owners see their own; MP managers/admins see every phone's notifications on the dashboard.
       allow read: if isAuthenticated() && 
-                     resource.data.targetUserId == request.auth.uid;
+                     (resource.data.targetUserId == request.auth.uid || isMpManager());
       allow create: if isAuthenticated() && isValidEmail();
       allow update: if isAuthenticated() && 
-                       resource.data.targetUserId == request.auth.uid;
+                       (resource.data.targetUserId == request.auth.uid || isMpManager());
       allow delete: if isAuthenticated() && 
                        resource.data.targetUserId == request.auth.uid;
     }
