@@ -8,6 +8,10 @@ import { Add, ContentCopy, Delete, OpenInNew, Save } from '@mui/icons-material';
 import WhShell from '../components/WhShell';
 import SettingsForm from '../components/SettingsForm';
 import SetupPacket from '../components/SetupPacket';
+import HmacSecretPanel from '../components/HmacSecretPanel';
+import { createWebhookSecret, secretDocId } from '../webhookSecret';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../../config/firebase';
 import StatusChip from '../components/StatusChip';
 import RecentSubmissions from '../components/Wh1Recent';
 import { DayBars, Panel } from '../components/Wh1Ui';
@@ -103,9 +107,12 @@ const Editor: React.FC<{ webhook: WhWebhook }> = ({ webhook }) => {
   };
 
   const setHmac = async (on: boolean) => {
-    if (on && !window.confirm('Require a signature? Posts without a valid X-Tigon-Signature header will be rejected — website forms cannot sign. Create the secret in the setup packet → Developers.')) return;
+    if (on && !window.confirm('Require a signature? Posts without a valid X-Tigon-Signature header will be rejected — website forms cannot sign. A signing secret is created for you below if there isn\'t one yet.')) return;
     setBusy('hmac');
     try {
+      if (on && !(await getDoc(doc(db, WH.integrationSecrets, secretDocId(webhook.id)))).exists()) {
+        await createWebhookSecret(webhook.id);
+      }
       await patchWh(WH.webhooks, webhook.id, { hmacRequired: on });
       await writeAudit(profile, 'wh_webhook_hmac', `${domain?.name || ''} · ${webhook.formName}`, `${webhook.id} · signature ${on ? 'required' : 'off'}`);
     } catch (e) {
@@ -158,8 +165,8 @@ const Editor: React.FC<{ webhook: WhWebhook }> = ({ webhook }) => {
               <FormControlLabel control={<Switch checked={!!webhook.hmacRequired} onChange={(e) => setHmac(e.target.checked)} disabled={busy === 'hmac'} />} label="Require a signature (HMAC)" />
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
                 Only for server-to-server posts. Website forms cannot sign, so leave this off for forms on a website.
-                Create the secret in the setup packet → Developers.
               </Typography>
+              {webhook.hmacRequired && <HmacSecretPanel webhook={webhook} />}
             </Box>
           </Box>
         </Panel>

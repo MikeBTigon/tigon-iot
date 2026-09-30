@@ -299,7 +299,8 @@ service cloud.firestore {
     // Credentials: write-only from the app, read only by Cloud Functions. Managers may set the
     // HMAC signing secret of a webhook (id "webhook_<webhookId>").
     match /wh_integration_secrets/{id} {
-      allow read: if false;
+      // Webhook signing secrets can be viewed/copied by managers (webhook detail page); integration logins can't.
+      allow read: if isMpManager() && id.matches('webhook_[A-Za-z0-9]+');
       allow create, update, delete: if isMpAdmin() || (isMpManager() && id.matches('webhook_.*'));
     }
     match /wh_sheet_buffer/{id} {
