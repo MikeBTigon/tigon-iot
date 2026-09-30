@@ -20,6 +20,7 @@ import {
 import type { SnippetOptions } from '../snippet';
 import { downloadFile } from '../csv';
 import { CodeBlock, CopyButton } from './Wh1Code';
+import HmacSecretPanel from './HmacSecretPanel';
 
 const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
@@ -200,19 +201,14 @@ const SetupPacket: React.FC<{ webhook: WhWebhook; domain?: WhDomain | null; sett
                 'This webhook requires a signature: every request must carry X-Tigon-Signature: sha256=<HMAC-SHA256 of the raw body, hex>. Browser forms cannot sign, so only use this for server-to-server posts.' :
                 'Optional, for server-to-server posts: turn on signing so only systems that know the secret can post. Website forms cannot sign — don\'t turn this on for a form embedded on a website.'}
             </Typography>
-            <Box>
-              <Button variant="outlined" startIcon={<Key />} onClick={rotateSecret} disabled={busy === 'secret'}>
-                {webhook.hmacRequired ? 'Create a new secret (rotate)' : 'Create secret and require signature'}
-              </Button>
-            </Box>
-            {secret && (
-              <Alert severity="warning">
-                <Typography variant="body2" sx={{ mb: 1 }}><b>Copy this secret now — it will not be shown again.</b></Typography>
-                <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
-                  <Typography sx={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>{secret}</Typography>
-                  <CopyButton text={secret} label="Copy secret" />
-                </Box>
-              </Alert>
+            {webhook.hmacRequired ? (
+              <HmacSecretPanel webhook={webhook} />
+            ) : (
+              <Box>
+                <Button variant="outlined" startIcon={<Key />} onClick={rotateSecret} disabled={busy === 'secret'}>
+                  Create secret and require signature
+                </Button>
+              </Box>
             )}
             {(webhook.hmacRequired || secret) && <CodeBlock code={curl.hmac} maxHeight={320} />}
           </Stack>
