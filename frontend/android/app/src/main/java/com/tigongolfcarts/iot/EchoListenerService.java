@@ -18,9 +18,11 @@ import java.util.Set;
  * The person grants access once in Android Settings → Notification access.
  */
 public class EchoListenerService extends NotificationListenerService {
+    // Only Facebook / Messenger / Business Suite notifications are sent; the server keeps just messages,
+    // chats and DMs (see functions/src/fbFilter.ts). TikTok, Gmail, phone/carrier etc. never leave the phone.
     private static final Set<String> FACEBOOK = new HashSet<>(Arrays.asList(
         "com.facebook.katana", "com.facebook.orca", "com.facebook.lite", "com.facebook.mlite",
-        "com.facebook.pages.app", "com.facebook.services"));
+        "com.facebook.pages.app"));
     private static final Set<String> SYSTEM = new HashSet<>(Arrays.asList(
         "android", "com.android.systemui", "com.android.vending", "com.google.android.gms",
         "com.android.providers.downloads"));
@@ -37,7 +39,7 @@ public class EchoListenerService extends NotificationListenerService {
             String pkg = sbn.getPackageName();
             // Never echo our own notifications (they are echoes already) or Android's own.
             if (pkg == null || pkg.equals(getPackageName()) || SYSTEM.contains(pkg)) return;
-            if (EchoStore.prefs(this).getBoolean("onlyFacebook", false) && !FACEBOOK.contains(pkg)) return;
+            if (!FACEBOOK.contains(pkg)) return;
             Notification n = sbn.getNotification();
             if (n == null || sbn.isOngoing() || (n.flags & Notification.FLAG_GROUP_SUMMARY) != 0) return;
             Bundle ex = n.extras;
@@ -54,6 +56,7 @@ public class EchoListenerService extends NotificationListenerService {
             item.put("title", title == null ? "" : title.toString());
             item.put("text", text == null ? "" : text.toString());
             item.put("postedAt", sbn.getPostTime());
+            item.put("cat", n.category == null ? "" : n.category);
             EchoStore.enqueue(this, item);
         } catch (Exception ignored) {
             // never crash the listener

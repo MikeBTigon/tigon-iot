@@ -20,6 +20,7 @@ import MpDashboardCard from '../mp/components/MpDashboardCard';
 import PhoneAlertsCard from '../native/PhoneAlertsCard';
 import { useMp } from '../mp/MpDataContext';
 import NewLeadDialog, { type LeadSourceNotification } from '../mp/crm/NewLeadDialog';
+import { isFacebookMessage } from '../devices/fbFilter';
 
 /** notifications/{id}: written by worker phones (old worker app) and by notification echo (mpEcho). */
 interface Notification {
@@ -41,7 +42,16 @@ interface Notification {
   sourceDeviceNumber?: string;
   /** App the notification came from (Facebook, Messenger, …). */
   sourceApp?: string;
+  sourcePackage?: string;
 }
+
+/**
+ * Dashboard shows Facebook messages, Messenger chats and DMs only. Echoed notifications from other apps
+ * (TikTok, Gmail, carrier…) or Facebook non-messages (friend requests, "waiting for you") are hidden.
+ * Old worker-app notifications carry no app info and are kept.
+ */
+const isWanted = (n: Notification) =>
+  (!n.sourcePackage && !n.sourceApp) || isFacebookMessage(n.sourcePackage || '', n.sourceApp || '', '', n.text || '');
 
 interface DeviceInfo { id: string; deviceNumber?: string; deviceName?: string; userId?: string }
 
@@ -94,7 +104,7 @@ const Dashboard: React.FC = () => {
     return onSnapshot(
       q,
       (snap) => {
-        setNotifications(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Notification).sort((a, b) => when(b) - when(a)));
+        setNotifications(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Notification).filter(isWanted).sort((a, b) => when(b) - when(a)));
         setError('');
       },
       (e) => {
@@ -234,7 +244,7 @@ const Dashboard: React.FC = () => {
                 {all.length ? 'No notifications match these filters' : 'No notifications yet'}
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                Notifications echoed by the phones (and the worker app) appear here.
+                Facebook messages, Messenger chats and DMs from the phones appear here.
               </Typography>
             </Box>
           ) : (
