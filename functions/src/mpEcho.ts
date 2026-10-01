@@ -7,6 +7,7 @@ import * as logger from 'firebase-functions/logger';
 import {HttpsError, onCall, onRequest} from 'firebase-functions/v2/https';
 import * as admin from 'firebase-admin';
 import {createHash, randomBytes, timingSafeEqual} from 'crypto';
+import {isFacebookMessage} from './fbFilter';
 
 const db = () => admin.firestore();
 const sha256 = (s: string) => createHash('sha256').update(s).digest('hex');
@@ -78,6 +79,8 @@ export const mpEcho = onRequest({memory: '256MiB', timeoutSeconds: 30}, async (r
       const title = clip(it.title, 300).trim();
       const text = clip(it.text, 4000).trim();
       if (!title && !text) continue;
+      // Dashboard gets Facebook messages / Messenger chats / DMs only (TikTok, Gmail, carrier, likes… are dropped).
+      if (!isFacebookMessage(clip(it.pkg, 120), clip(it.app, 80), title, text, clip(it.cat, 20))) continue;
       const postedAt = Number(it.postedAt) || Date.now();
       // Same notification sent twice (retry) → same doc.
       const id = `echo_${sha256(`${deviceId}|${clip(it.key, 300)}|${postedAt}|${title}|${text}`).slice(0, 32)}`;
@@ -101,7 +104,7 @@ export const mpEcho = onRequest({memory: '256MiB', timeoutSeconds: 30}, async (r
       batch.set(ref, {lastSeen: Date.now(), lastEchoAt: Date.now()}, {merge: true});
       await batch.commit();
     }
-    res.json({ok: true, created});
+    res.json({ok: true, created, skipped: items.length - created});
   } catch (e) {
     logger.error('mpEcho failed', e);
     res.status(500).json({ok: false});

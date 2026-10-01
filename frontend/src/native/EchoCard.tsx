@@ -56,8 +56,9 @@ const EchoCard: React.FC = () => {
           label={st.access && st.enabled && st.configured ? 'Echoing' : 'Off'} />}
       </Box>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-        This phone forwards the notifications it gets (Facebook, Messenger, …) to the TIGON IOT dashboard, labeled with
-        this phone's number. It keeps working when the app is closed.
+        This phone forwards its <b>Facebook messages, Messenger chats and DMs</b> to the TIGON IOT dashboard, labeled with
+        this phone's number. Other apps (TikTok, Gmail, phone/carrier, Facebook likes and friend requests…) are not sent.
+        It keeps working when the app is closed.
       </Typography>
       {st && !st.access && (
         <Alert severity="warning" sx={{ mb: 2 }} action={
@@ -73,8 +74,6 @@ const EchoCard: React.FC = () => {
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
           <FormControlLabel control={<Switch checked={st.enabled && st.configured} onChange={(e) => toggle(e.target.checked)} />}
             label="Echo notifications to the dashboard" />
-          <FormControlLabel control={<Switch checked={st.onlyFacebook} onChange={(e) => run(() => TigonEcho.configure({ onlyFacebook: e.target.checked }))} />}
-            label="Only Facebook & Messenger" />
           <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center', mt: 1 }}>
             <Button variant="outlined" size="small" startIcon={<Send />} disabled={!st.configured || !st.enabled}
               onClick={() => run(() => TigonEcho.sendTest(), 'Test sent — it shows on the dashboard in a few seconds.')}>
