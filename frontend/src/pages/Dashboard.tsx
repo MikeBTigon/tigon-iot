@@ -48,10 +48,12 @@ interface Notification {
 /**
  * Dashboard shows Facebook messages, Messenger chats and DMs only. Echoed notifications from other apps
  * (TikTok, Gmail, carrier…) or Facebook non-messages (friend requests, "waiting for you") are hidden.
- * Old worker-app notifications carry no app info and are kept.
+ * Only notifications that came from a phone are shown. Old worker-app notifications carry no app info and are kept.
  */
 const isWanted = (n: Notification) =>
-  (!n.sourcePackage && !n.sourceApp) || isFacebookMessage(n.sourcePackage || '', n.sourceApp || '', '', n.text || '');
+  // Phones only: website (webhook) leads, CRM reminders, digests and system alerts carry no phone and are left out.
+  !!(n.sourceDeviceId || n.deviceId) &&
+  ((!n.sourcePackage && !n.sourceApp) || isFacebookMessage(n.sourcePackage || '', n.sourceApp || '', '', n.text || ''));
 
 interface DeviceInfo { id: string; deviceNumber?: string; deviceName?: string; userId?: string }
 
@@ -68,7 +70,7 @@ function toMs(v: unknown): number {
 }
 
 const when = (n: Notification) => toMs(n.createdAt) || toMs(n.timestamp) || n.postedAt || 0;
-const MAX = 500;
+const MAX = 2000;
 
 type StatusFilter = 'all' | 'unhandled' | 'handled';
 
