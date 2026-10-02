@@ -79,6 +79,9 @@ export interface WhSettings {
   // GA4 (Measurement Protocol)
   ga4MeasurementId?: string;
   ga4ApiSecret?: string;
+  /** Shown on Settings → Google (set by whGoogle). */
+  ga4Property?: string;
+  ga4ConnectedAt?: number;
   // Validation / spam / dedupe
   requiredFields?: string[];
   spam?: SpamSettings;

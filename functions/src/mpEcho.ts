@@ -8,6 +8,7 @@ import {HttpsError, onCall, onRequest} from 'firebase-functions/v2/https';
 import * as admin from 'firebase-admin';
 import {createHash, randomBytes, timingSafeEqual} from 'crypto';
 import {isFacebookMessage} from './fbFilter';
+import {markOnline} from './presence';
 
 const db = () => admin.firestore();
 const sha256 = (s: string) => createHash('sha256').update(s).digest('hex');
@@ -54,6 +55,13 @@ export const mpEcho = onRequest({memory: '256MiB', timeoutSeconds: 30}, async (r
     }
     if (dev.get('status') === 'revoked') {
       res.status(410).json({ok: false, error: 'revoked'});
+      return;
+    }
+    // Online check-in (every 5 minutes from the phone's background service, and with every batch of notifications).
+    await markOnline(deviceId, String(dev.get('userId')));
+    if (b.ping === true) {
+      await ref.set({lastSeen: Date.now(), lastPingAt: Date.now()}, {merge: true});
+      res.json({ok: true, ping: true});
       return;
     }
     const items = (Array.isArray(b.items) ? b.items : [b]).slice(0, 20);

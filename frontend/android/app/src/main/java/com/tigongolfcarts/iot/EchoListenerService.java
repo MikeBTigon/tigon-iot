@@ -4,6 +4,8 @@ import android.app.Notification;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.service.notification.NotificationListenerService;
 import android.service.notification.StatusBarNotification;
 
@@ -27,9 +29,33 @@ public class EchoListenerService extends NotificationListenerService {
         "android", "com.android.systemui", "com.android.vending", "com.google.android.gms",
         "com.android.providers.downloads"));
 
+    // "Phone is on" check-in every 5 minutes (online hours + 24h timeline on the Users page), even with the app closed.
+    private static final long PING_MS = 5 * 60 * 1000L;
+    private final Handler handler = new Handler(Looper.getMainLooper());
+    private final Runnable ping = new Runnable() {
+        @Override
+        public void run() {
+            EchoStore.ping(EchoListenerService.this);
+            handler.postDelayed(this, PING_MS);
+        }
+    };
+
     @Override
     public void onListenerConnected() {
         EchoStore.flush(this);
+        handler.removeCallbacks(ping);
+        handler.post(ping);
+    }
+
+    @Override
+    public void onListenerDisconnected() {
+        handler.removeCallbacks(ping);
+    }
+
+    @Override
+    public void onDestroy() {
+        handler.removeCallbacks(ping);
+        super.onDestroy();
     }
 
     @Override

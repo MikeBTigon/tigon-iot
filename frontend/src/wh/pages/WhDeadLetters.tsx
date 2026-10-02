@@ -4,7 +4,9 @@ import { limit, where } from 'firebase/firestore';
 import {
   Alert, Box, Button, Checkbox, Chip, CircularProgress, Paper, Tab, Table, TableBody, TableCell, TableHead, TableRow, Tabs, TextField, Typography,
 } from '@mui/material';
-import { Replay } from '@mui/icons-material';
+import { ArrowBack, Replay } from '@mui/icons-material';
+import SubmissionTabs from '../components/SubmissionTabs';
+import { FAILED_STEPS_PATH, SUBMISSIONS_PATH } from '../submissionViews';
 import WhShell from '../components/WhShell';
 import { errText, useDomains, useWebhooks } from '../components/Wh1Hooks';
 import { useMp } from '../../mp/MpDataContext';
@@ -93,13 +95,14 @@ const WhDeadLetters: React.FC = () => {
       subtitle="Steps that failed — ran out of retries (1 min, 5 min, 30 min, 2 h, 12 h), stopped the lead, or are waiting to retry"
       actions={(
         <>
-          <Button component={RouterLink} to="/wh/submissions">All submissions</Button>
+          <Button variant="outlined" startIcon={<ArrowBack />} component={RouterLink} to={SUBMISSIONS_PATH}>Back to all submissions</Button>
           <Button variant="contained" startIcon={<Replay />} disabled={!selRuns.length || busy} onClick={() => replay(selRuns)}>
             Replay selected{selRuns.length ? ` (${selRuns.length})` : ''}
           </Button>
         </>
       )}
     >
+      <SubmissionTabs current={FAILED_STEPS_PATH} />
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
       {msg && <Alert severity={msg.ok ? 'success' : 'error'} sx={{ mb: 2 }} onClose={() => setMsg(null)}>{msg.text}</Alert>}
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap', mb: 2 }}>

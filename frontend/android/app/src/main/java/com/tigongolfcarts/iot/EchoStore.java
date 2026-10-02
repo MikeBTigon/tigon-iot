@@ -108,6 +108,31 @@ final class EchoStore {
         }
     }
 
+    /** "This phone is on" check-in (no notifications). Runs on the executor thread; failures are ignored. */
+    static void ping(Context c) {
+        final Context app = c.getApplicationContext();
+        EXEC.execute(() -> {
+            SharedPreferences p = prefs(app);
+            if (!isConfigured(app)) return;
+            try {
+                JSONObject body = new JSONObject();
+                body.put("deviceId", p.getString("deviceId", ""));
+                body.put("secret", p.getString("secret", ""));
+                body.put("ping", true);
+                body.put("items", new JSONArray());
+                int status = post(p.getString("endpoint", DEFAULT_ENDPOINT), body.toString());
+                if (status == 401 || status == 410) {
+                    p.edit().putBoolean("enabled", false).putString("lastError", "HTTP " + status).apply();
+                    return;
+                }
+                if (status >= 200 && status < 300) p.edit().putLong("lastPingAt", System.currentTimeMillis()).apply();
+            } catch (Exception ignored) {
+                // offline: the next check-in tries again
+            }
+            flushNow(app);
+        });
+    }
+
     static int queueSize(Context c) {
         try {
             return new JSONArray(prefs(c).getString("queue", "[]")).length();

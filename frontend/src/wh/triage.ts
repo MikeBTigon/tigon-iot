@@ -40,8 +40,8 @@ export interface TriageItem {
 interface SheetsStatus { id: string; lastError?: string; lastErrorAt?: number; pendingRows?: number; deadRows?: number }
 interface TriageDoc { id: string; dismissed?: Record<string, string> }
 
-const ALERT_AREA: Record<MpAlert['kind'], TriageArea> = { device_offline: 'Phones', post_failed: 'Posting', sync_failed: 'DMS sync' };
-const ALERT_TITLE: Record<MpAlert['kind'], string> = { device_offline: 'Phone offline', post_failed: 'Post failed', sync_failed: 'DMS sync failed' };
+const ALERT_AREA: Record<MpAlert['kind'], TriageArea> = { device_offline: 'Phones', post_failed: 'Posting', sync_failed: 'DMS sync', device_low_hours: 'Phones' };
+const ALERT_TITLE: Record<MpAlert['kind'], string> = { device_offline: 'Phone offline', post_failed: 'Post failed', sync_failed: 'DMS sync failed', device_low_hours: 'Phone on too few hours' };
 
 /** Live list of system notifications. `deleted` items are included (flagged) so the triage page can show/restore them. */
 export function useSystemTriage(now: number) {
@@ -102,7 +102,7 @@ export function useSystemTriage(now: number) {
       check({
         key: 'dead-letters', sig: `${dead.length}|${newest}`, severity: 'error', area: 'Flows', title: 'Failed steps (dead letters)',
         text: `${dead.length >= 500 ? '500+' : dead.length} step(s) failed for good. Fix the cause, then replay them.`,
-        at: newest || undefined, to: '/wh/dead',
+        at: newest || undefined, to: '/wh/submissions/failed-steps',
       });
     }
     const dismissed = triage?.dismissed || {};
@@ -110,9 +110,9 @@ export function useSystemTriage(now: number) {
 
     for (const a of alerts || []) {
       out.push({
-        id: `a:${a.id}`, source: 'alert', key: a.id, sig: '', severity: a.kind === 'device_offline' ? 'warning' : 'error',
+        id: `a:${a.id}`, source: 'alert', key: a.id, sig: '', severity: a.kind === 'device_offline' || a.kind === 'device_low_hours' ? 'warning' : 'error',
         area: ALERT_AREA[a.kind] || 'Phones', title: ALERT_TITLE[a.kind] || 'Alert', text: a.text, at: a.createdAt,
-        to: a.kind === 'device_offline' ? '/devices' : a.kind === 'post_failed' ? '/mp/queue' : undefined,
+        to: a.kind === 'device_low_hours' ? (a.userId ? `/users/${a.userId}` : '/users') : a.kind === 'device_offline' ? '/devices' : a.kind === 'post_failed' ? '/mp/queue' : undefined,
       });
     }
     return out.sort((x, y) => (y.at || 0) - (x.at || 0));
