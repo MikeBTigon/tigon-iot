@@ -4,7 +4,7 @@ import {
   Alert, Box, Button, Checkbox, CircularProgress, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, FormControl, InputAdornment, InputLabel, MenuItem, Paper, Select, Table,
   TableBody, TableCell, TableHead, TablePagination, TableRow, TableSortLabel, TextField, Typography,
 } from '@mui/material';
-import { Delete, Download, FilterAlt, FilterAltOff, Refresh, ReportProblem, Search } from '@mui/icons-material';
+import { ArrowBack, Delete, Download, FilterAlt, FilterAltOff, Refresh, ReportProblem, Search } from '@mui/icons-material';
 import WhShell from '../components/WhShell';
 import StatusChip from '../components/StatusChip';
 import { errText, leadName, markSpam, useDomains, useWebhooks } from '../components/Wh1Hooks';
@@ -13,6 +13,8 @@ import { callWh, fmtTime } from '../data';
 import type { WhSubmission } from '../types';
 import { downloadFile, stamp, submissionsCsv } from '../csv';
 import { isDupSub, isSpamSub, loadSubmissions } from '../submissionData';
+import { SUBMISSIONS_PATH, viewByPath } from '../submissionViews';
+import SubmissionTabs from '../components/SubmissionTabs';
 
 const STATUSES: Array<{ value: string; label: string }> = [
   { value: 'leads', label: 'Real leads (no spam)' },
@@ -25,21 +27,22 @@ const PAGE_SIZES = [25, 50, 100, 250];
 interface Filters { q: string; status: string; domain: string; hook: string; from: string; to: string }
 type SortKey = 'name' | 'email' | 'phone' | 'website' | 'form' | 'status' | 'received';
 
-const TITLES: Record<string, { title: string; subtitle: string }> = {
-  spam: { title: 'Spam blocked', subtitle: 'Every submission that was blocked as spam' },
-  duplicate: { title: 'Duplicates', subtitle: 'Every submission that was a repeat of an earlier lead' },
-};
 
 const fromMsOf = (d: string) => (d ? new Date(`${d}T00:00:00`).getTime() : undefined);
 const toMsOf = (d: string) => (d ? new Date(`${d}T23:59:59.999`).getTime() : undefined);
 
-/** Every submission (paged from the server, no cap) with filters applied by the Filter button, sorting and paging. */
-const WhSubmissions: React.FC = () => {
+/**
+ * Every submission (paged from the server, no cap) with filters applied by the Filter button, sorting and paging.
+ * `path` picks the list: /wh/submissions (all), …/leads, …/spam-blocked, …/duplicates — each fixes the status.
+ */
+const WhSubmissions: React.FC<{ path?: string }> = ({ path = SUBMISSIONS_PATH }) => {
   const navigate = useNavigate();
   const { profile } = useMp();
+  const view = viewByPath(path);
+  const fixed = view.path !== SUBMISSIONS_PATH;
   const [params, setParams] = useSearchParams();
   const fromUrl = (): Filters => ({
-    q: params.get('q') || '', status: params.get('status') || '', domain: params.get('domain') || '',
+    q: params.get('q') || '', status: fixed ? view.status : params.get('status') || '', domain: params.get('domain') || '',
     hook: params.get('webhook') || '', from: params.get('from') || '', to: params.get('to') || '',
   });
   // `draft` = what is typed/picked; `applied` = what the list shows (changes only when Filter is pressed).
@@ -122,7 +125,7 @@ const WhSubmissions: React.FC = () => {
     setSelected(new Set());
     const p = new URLSearchParams();
     if (f.q) p.set('q', f.q);
-    if (f.status) p.set('status', f.status);
+    if (f.status && !fixed) p.set('status', f.status);
     if (f.domain) p.set('domain', f.domain);
     if (f.hook) p.set('webhook', f.hook);
     if (f.from) p.set('from', f.from);
@@ -130,7 +133,7 @@ const WhSubmissions: React.FC = () => {
     setParams(p, { replace: true });
   };
   const clearFilters = () => {
-    const empty: Filters = { q: '', status: '', domain: '', hook: '', from: '', to: '' };
+    const empty: Filters = { q: '', status: fixed ? view.status : '', domain: '', hook: '', from: '', to: '' };
     setDraft(empty);
     apply(empty);
   };
@@ -198,19 +201,13 @@ const WhSubmissions: React.FC = () => {
     downloadFile(`leads-${stamp()}.csv`, submissionsCsv(list, (id) => domainName.get(id) || id, (id) => hookName.get(id) || id));
   };
 
-  const heading = TITLES[applied.status] || { title: 'Submissions', subtitle: 'Every lead received from your websites' };
-
   return (
     <WhShell
-      title={heading.title}
-      subtitle={heading.subtitle}
-      actions={(
-        <>
-          {applied.status && <Button onClick={() => { setDraft({ ...draft, status: '' }); apply({ ...applied, status: '' }); }}>All submissions</Button>}
-          <Button variant="outlined" color="error" startIcon={<ReportProblem />} component={RouterLink} to="/wh/dead">Failed steps</Button>
-        </>
-      )}
+      title={view.title}
+      subtitle={view.subtitle}
+      actions={fixed ? <Button variant="outlined" startIcon={<ArrowBack />} component={RouterLink} to={SUBMISSIONS_PATH}>Back to all submissions</Button> : undefined}
     >
+      <SubmissionTabs current={view.path} />
       {loadError && <Alert severity="error" sx={{ mb: 2 }}>Could not load the leads: {loadError}</Alert>}
       {msg && <Alert severity={msg.ok ? 'success' : 'error'} sx={{ mb: 2 }} onClose={() => setMsg(null)}>{msg.text}</Alert>}
       <Box
@@ -222,7 +219,7 @@ const WhSubmissions: React.FC = () => {
           slotProps={{ input: { startAdornment: <InputAdornment position="start"><Search /></InputAdornment> } }} />
         <FormControl size="small" sx={{ minWidth: 150 }}>
           <InputLabel id="sb-status">Status</InputLabel>
-          <Select labelId="sb-status" label="Status" value={draft.status} onChange={(e) => set({ status: e.target.value })}>
+          <Select labelId="sb-status" label="Status" value={draft.status} disabled={fixed} onChange={(e) => set({ status: e.target.value })}>
             <MenuItem value="">Any status</MenuItem>
             {STATUSES.map((s) => <MenuItem key={s.value} value={s.value}>{s.label}</MenuItem>)}
           </Select>

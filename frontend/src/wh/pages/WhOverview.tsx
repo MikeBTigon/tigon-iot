@@ -12,6 +12,7 @@ import { WH } from '../types';
 import type { WhStepRun, WhSubmission } from '../types';
 import { lastDayKeys, topEntries } from '../stats';
 import { FAILED_STEP_STATUSES, keyToDate, summarizeSubs } from '../submissionData';
+import { FAILED_STEPS_PATH } from '../submissionViews';
 import { ensureWhDefaults } from '../bootstrap';
 import { DAY_MS, errText, useDomains, useGlobal, useMasterFlow, useNow, useWebhooks } from '../components/Wh1Hooks';
 import { DayBars, Kpi, Panel, RangeChips, TopList } from '../components/Wh1Ui';
@@ -51,9 +52,9 @@ const WhOverview: React.FC = () => {
     return summarizeSubs(subs, failedRuns, keys, domainFilter || undefined, ids);
   }, [subs, failedRuns, keys, domainFilter, webhooks]);
   // Each box opens the matching list for the same days (and website).
-  const listLink = (extra: string) => {
-    const p = new URLSearchParams(`from=${keyToDate(keys[0])}&to=${keyToDate(keys[keys.length - 1])}${domainFilter ? `&domain=${domainFilter}` : ''}${extra}`);
-    return `/wh/submissions?${p.toString()}`;
+  const listLink = (path: string) => {
+    const p = new URLSearchParams(`from=${keyToDate(keys[0])}&to=${keyToDate(keys[keys.length - 1])}${domainFilter ? `&domain=${domainFilter}` : ''}`);
+    return `${path}?${p.toString()}`;
   };
 
   const setupMissing = global === null || (global !== undefined && (!global.masterFlowId || !global.defaultFlowId)) || (!!global?.masterFlowId && master === null);
@@ -149,14 +150,14 @@ const WhOverview: React.FC = () => {
           </FormControl>
         </Box>
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', md: 'repeat(5, 1fr)' }, gap: 2, mb: 2 }}>
-          <Kpi label="Leads" value={summary.total} hint={`${domainFilter ? 'this website' : 'all websites'} — open`} to={listLink('')} />
-          <Kpi label="Spam blocked" value={summary.spam} hint="open the blocked leads" to={listLink('&status=spam')} />
-          <Kpi label="Duplicates" value={summary.duplicate} hint="open the duplicates" to={listLink('&status=duplicate')} />
+          <Kpi label="Leads" value={summary.total - summary.spam} hint={`${domainFilter ? 'this website' : 'all websites'}, spam left out — open`} to={listLink('/wh/submissions/leads')} />
+          <Kpi label="Spam blocked" value={summary.spam} hint="open the blocked leads" to={listLink('/wh/submissions/spam-blocked')} />
+          <Kpi label="Duplicates" value={summary.duplicate} hint="open the duplicates" to={listLink('/wh/submissions/duplicates')} />
           <Kpi
             label="Failed steps"
             value={summary.failedSteps}
             hint={`${dead ? (dead.length >= 5000 ? '5000+' : dead.length) : 0} out of retries — open`}
-            to={`/wh/dead?from=${keyToDate(keys[0])}${domainFilter ? `&domain=${domainFilter}` : ''}`}
+            to={listLink(FAILED_STEPS_PATH)}
             tone={summary.failedSteps ? 'error' : undefined}
           />
           <Kpi label="Active websites" value={activeSites} hint={`${(webhooks || []).length} webhook(s) — open`} to="/wh/websites" />

@@ -102,7 +102,7 @@ export function useSystemTriage(now: number) {
       check({
         key: 'dead-letters', sig: `${dead.length}|${newest}`, severity: 'error', area: 'Flows', title: 'Failed steps (dead letters)',
         text: `${dead.length >= 500 ? '500+' : dead.length} step(s) failed for good. Fix the cause, then replay them.`,
-        at: newest || undefined, to: '/wh/dead',
+        at: newest || undefined, to: '/wh/submissions/failed-steps',
       });
     }
     const dismissed = triage?.dismissed || {};
