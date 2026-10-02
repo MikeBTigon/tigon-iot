@@ -8,6 +8,7 @@
 //   whDeleteSubmissions callable (manager)     permanently delete submissions (single or bulk)
 //   whAlerts      hourly                       "no leads" and failure-spike alerts
 //   whMaintenance daily 03:15 New York         retention, rate-counter cleanup, Master Digest email
+//   whGoogle      callable (admin)             Google Sheets / Analytics connections (Settings → Google)
 //   whOnSubmission (only when WH_REALTIME=true) runs new submissions immediately
 export {whIngest} from './ingest';
 export {whProcess} from './engine';
@@ -15,6 +16,7 @@ export {whReplay, whTestWebhook, whDeleteSubmissions} from './admin';
 export {whTestEmail} from './steps';
 export {whAlerts} from './alerts';
 export {whMaintenance} from './maintenance';
+export {whGoogle} from './google';
 
 if (process.env.WH_REALTIME === 'true') {
   // eslint-disable-next-line @typescript-eslint/no-require-imports

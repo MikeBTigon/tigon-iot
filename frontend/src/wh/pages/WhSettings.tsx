@@ -7,6 +7,7 @@ import { Save } from '@mui/icons-material';
 import WhShell from '../components/WhShell';
 import SettingsForm from '../components/SettingsForm';
 import Wh2Integrations from '../components/Wh2Integrations';
+import GoogleConnections from '../components/GoogleConnections';
 import { useMp } from '../../mp/MpDataContext';
 import { writeAudit } from '../../mp/audit';
 import { saveWh, useWhCollection, useWhDoc } from '../data';
@@ -28,7 +29,8 @@ const WhSettingsPage: React.FC = () => {
   const { profile } = useMp();
   const global = useWhDoc<GlobalDoc>(WH.settings, 'global');
   const { rows: flows } = useWhCollection<WhFlow>(WH.flows);
-  const [tab, setTab] = useState(0);
+  // 4 = Google connections (shown first; the other tab numbers stay as they were).
+  const [tab, setTab] = useState(() => (new URLSearchParams(window.location.search).get('tab') === 'general' ? 0 : 4));
   const [draft, setDraft] = useState<GlobalDoc | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -96,10 +98,11 @@ const WhSettingsPage: React.FC = () => {
       </> : undefined}
     >
       <Tabs value={tab} onChange={(_e, v) => setTab(v)} variant="scrollable" allowScrollButtonsMobile sx={{ mb: 2, borderBottom: 1, borderColor: 'divider' }}>
-        <Tab label="General" />
-        <Tab label="Integrations" />
-        <Tab label="Security & retention" />
-        <Tab label="Realtime" />
+        <Tab value={4} label="Google connections" />
+        <Tab value={0} label="General" />
+        <Tab value={1} label="Other integrations" />
+        <Tab value={2} label="Security & retention" />
+        <Tab value={3} label="Realtime" />
       </Tabs>
       {msg && <Alert severity={msg.ok ? 'success' : 'error'} sx={{ mb: 2 }} onClose={() => setMsg(null)}>{msg.text}</Alert>}
       {(tab === 0 || tab === 2) && global === undefined && <Box sx={{ py: 6, textAlign: 'center' }}><CircularProgress aria-label="Loading" /></Box>}
@@ -145,6 +148,7 @@ const WhSettingsPage: React.FC = () => {
         </Stack>
       )}
 
+      {tab === 4 && <GoogleConnections />}
       {tab === 1 && <Wh2Integrations />}
 
       {tab === 2 && (

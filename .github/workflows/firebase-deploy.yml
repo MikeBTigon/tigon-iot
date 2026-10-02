@@ -77,7 +77,7 @@ jobs:
           WH_REALTIME: ${{ vars.WH_REALTIME }}
         run: |
           FUNCS="mpSyncInventory mpSyncNow mpCreatePairingCode mpPairDevice mpSendQueueItem mpDispatchQueue mpMonitor mpApprovalDigest mpBackup mpBackupNow mpRunImport mpImportScheduled mpCrmReminders mpWeeklyDigest mpLink mpStorefrontApi mpEchoRegister mpEcho"
-          FUNCS="$FUNCS whIngest whProcess whReplay whTestEmail whTestWebhook whDeleteSubmissions whAlerts whMaintenance"
+          FUNCS="$FUNCS whIngest whProcess whReplay whTestEmail whTestWebhook whDeleteSubmissions whAlerts whMaintenance whGoogle"
           if [ "$ENABLE_AI_WRITER" = "true" ]; then
             FUNCS="$FUNCS mpAiListing mpAiSnap"
             echo "ENABLE_AI_WRITER=true" >> functions/.env

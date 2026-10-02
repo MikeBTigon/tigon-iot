@@ -5,6 +5,7 @@ import {GoogleAuth} from 'google-auth-library';
 import {LEAD_FIELDS, TRACKING_FIELDS, WH} from '../types';
 import {fieldLabel} from '../shared';
 import type {StepContext, StepResult} from '../engineTypes';
+import {healSheetsApi} from '../google';
 import {ctxMergeData, errMsg, fail, formatNy, isTestSubmission, leadUrl, skip, toList} from './util';
 
 export const SHEETS_SERVICE_ACCOUNT = '470095494000-compute@developer.gserviceaccount.com';
@@ -16,6 +17,7 @@ const SHEETS_API = 'https://sheets.googleapis.com/v4/spreadsheets';
 const MAX_ATTEMPTS = 8;
 const BATCH_LIMIT = 2000;
 const STATUS_DOC = 'sheets_status';
+const DEAD_RETRY_MS = 60 * 60 * 1000;
 
 const db = () => admin.firestore();
 
@@ -139,7 +141,10 @@ export async function flushSheetBuffer(): Promise<{rows: number; errors: number}
   let lastError = '';
   try {
     const snap = await db().collection(WH.sheetBuffer).where('dead', '==', false).limit(BATCH_LIMIT).get();
-    const docs = snap.docs.slice().sort((a, b) => Number(a.get('createdAt') || 0) - Number(b.get('createdAt') || 0));
+    // Rows that gave up are tried again every hour, forever — once the sheet works again they go through on their own.
+    const deadSnap = await db().collection(WH.sheetBuffer).where('dead', '==', true).limit(500).get();
+    const retryDead = deadSnap.docs.filter((d) => now - Number(d.get('lastAttemptAt') || 0) > DEAD_RETRY_MS);
+    const docs = [...snap.docs, ...retryDead].sort((a, b) => Number(a.get('createdAt') || 0) - Number(b.get('createdAt') || 0));
     const groups = new Map<string, FirebaseFirestore.QueryDocumentSnapshot[]>();
     for (const d of docs) {
       const key = `${d.get('spreadsheetId')}\u0000${d.get('tab')}`;
@@ -164,14 +169,17 @@ export async function flushSheetBuffer(): Promise<{rows: number; errors: number}
       } catch (e) {
         errors += group.length;
         lastError = `${spreadsheetId} / ${tab}: ${errMsg(e)}`;
+        // Google turned the Sheets API off (or it was never on): switch it back on; the rows go through next minute.
+        if (await healSheetsApi(errMsg(e)).catch(() => false)) lastError += ' — the Google Sheets API was switched on automatically; rows will be retried.';
         logger.warn('wh sheets flush failed', {spreadsheetId, tab, rows: group.length, error: errMsg(e)});
         for (let i = 0; i < group.length; i += 450) {
           const b = db().batch();
           for (const d of group.slice(i, i + 450)) {
             const attempts = Number(d.get('attempts') || 0) + 1;
-            const dead = attempts >= MAX_ATTEMPTS;
-            if (dead) logger.error('wh sheets row gave up', {id: d.id, spreadsheetId, tab, error: errMsg(e)});
-            b.update(d.ref, {attempts, dead, error: errMsg(e), lastAttemptAt: Date.now(), ...(dead ? {deadAt: Date.now()} : {})});
+            const wasDead = d.get('dead') === true;
+            const dead = wasDead || attempts >= MAX_ATTEMPTS;
+            if (dead && !wasDead) logger.error('wh sheets row gave up', {id: d.id, spreadsheetId, tab, error: errMsg(e)});
+            b.update(d.ref, {attempts, dead, error: errMsg(e), lastAttemptAt: Date.now(), ...(dead && !wasDead ? {deadAt: Date.now()} : {})});
           }
           await b.commit();
         }
