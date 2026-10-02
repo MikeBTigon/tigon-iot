@@ -1,18 +1,19 @@
 import React, { useMemo, useState } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
-import { limit, where } from 'firebase/firestore';
+import { limit, orderBy, where } from 'firebase/firestore';
 import {
-  Alert, Box, Button, CircularProgress, FormControl, InputLabel, MenuItem, Paper, Select, Stack, Typography,
+  Alert, Box, Button, CircularProgress, FormControl, InputLabel, MenuItem, Paper, Select, Typography,
 } from '@mui/material';
-import { Add, DeleteSweep, ErrorOutline, PlayCircleOutline } from '@mui/icons-material';
+import { Add, DeleteSweep, PlayCircleOutline } from '@mui/icons-material';
 import WhShell from '../components/WhShell';
 import { useMp } from '../../mp/MpDataContext';
 import { useWhCollection } from '../data';
 import { WH } from '../types';
-import type { WhStepRun } from '../types';
-import { lastDayKeys, summarize, topEntries, useWhStats } from '../stats';
+import type { WhStepRun, WhSubmission } from '../types';
+import { lastDayKeys, topEntries } from '../stats';
+import { FAILED_STEP_STATUSES, keyToDate, summarizeSubs } from '../submissionData';
 import { ensureWhDefaults } from '../bootstrap';
-import { errText, useDomains, useGlobal, useMasterFlow, useNow, useWebhooks } from '../components/Wh1Hooks';
+import { DAY_MS, errText, useDomains, useGlobal, useMasterFlow, useNow, useWebhooks } from '../components/Wh1Hooks';
 import { DayBars, Kpi, Panel, RangeChips, TopList } from '../components/Wh1Ui';
 import TriageList from '../components/TriageList';
 import { deleteTriage, useSystemTriage } from '../triage';
@@ -33,8 +34,13 @@ const WhOverview: React.FC = () => {
   const master = useMasterFlow(global);
   const { rows: domains } = useDomains();
   const { rows: webhooks } = useWebhooks();
-  const { rows: stats, error: statsError } = useWhStats(days);
-  const { rows: dead } = useWhCollection<WhStepRun>(WH.stepRuns, [where('status', '==', 'dead'), limit(500)]);
+  // Counted from the submissions themselves, so the numbers match the lists the boxes open (and deleted leads drop out).
+  const since = now - (days + 1) * DAY_MS;
+  const { rows: subs, error: statsError } = useWhCollection<WhSubmission>(
+    WH.submissions, [where('receivedAt', '>=', since), orderBy('receivedAt', 'desc'), limit(10000)], [since],
+  );
+  const { rows: failedRuns } = useWhCollection<WhStepRun>(WH.stepRuns, [where('status', 'in', FAILED_STEP_STATUSES), limit(5000)]);
+  const dead = useMemo(() => failedRuns?.filter((r) => r.status === 'dead'), [failedRuns]);
 
   const domainName = useMemo(() => new Map((domains || []).map((d) => [d.id, d.name || d.url])), [domains]);
   const hookById = useMemo(() => new Map((webhooks || []).map((w) => [w.id, w])), [webhooks]);
@@ -42,8 +48,13 @@ const WhOverview: React.FC = () => {
   const keys = useMemo(() => lastDayKeys(days, now), [days, now]);
   const summary = useMemo(() => {
     const ids = domainFilter ? new Set((webhooks || []).filter((w) => w.domainId === domainFilter).map((w) => w.id)) : undefined;
-    return summarize(stats, keys, domainFilter || undefined, ids);
-  }, [stats, keys, domainFilter, webhooks]);
+    return summarizeSubs(subs, failedRuns, keys, domainFilter || undefined, ids);
+  }, [subs, failedRuns, keys, domainFilter, webhooks]);
+  // Each box opens the matching list for the same days (and website).
+  const listLink = (extra: string) => {
+    const p = new URLSearchParams(`from=${keyToDate(keys[0])}&to=${keyToDate(keys[keys.length - 1])}${domainFilter ? `&domain=${domainFilter}` : ''}${extra}`);
+    return `/wh/submissions?${p.toString()}`;
+  };
 
   const setupMissing = global === null || (global !== undefined && (!global.masterFlowId || !global.defaultFlowId)) || (!!global?.masterFlowId && master === null);
 
@@ -126,7 +137,7 @@ const WhOverview: React.FC = () => {
       <>
         {setupBox}
         {setupMsg && <Alert severity={setupMsg.ok ? 'success' : 'error'} sx={{ mb: 2 }}>{setupMsg.text}</Alert>}
-        {statsError && <Alert severity="warning" sx={{ mb: 2 }}>Could not load the daily counters: {statsError}</Alert>}
+        {statsError && <Alert severity="warning" sx={{ mb: 2 }}>Could not load the leads: {statsError}</Alert>}
         <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap', mb: 2 }}>
           <RangeChips value={days} onChange={setDays} />
           <FormControl size="small" sx={{ minWidth: 220 }}>
@@ -138,21 +149,21 @@ const WhOverview: React.FC = () => {
           </FormControl>
         </Box>
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', md: 'repeat(5, 1fr)' }, gap: 2, mb: 2 }}>
-          <Kpi label="Leads" value={summary.total} hint={domainFilter ? 'this website' : 'all websites'} to="/wh/submissions" />
-          <Kpi label="Spam blocked" value={domainFilter ? '—' : summary.spam} hint={domainFilter ? 'shown for all websites only' : undefined} />
-          <Kpi label="Duplicates" value={domainFilter ? '—' : summary.duplicate} hint={domainFilter ? 'shown for all websites only' : undefined} />
+          <Kpi label="Leads" value={summary.total} hint={`${domainFilter ? 'this website' : 'all websites'} — open`} to={listLink('')} />
+          <Kpi label="Spam blocked" value={summary.spam} hint="open the blocked leads" to={listLink('&status=spam')} />
+          <Kpi label="Duplicates" value={summary.duplicate} hint="open the duplicates" to={listLink('&status=duplicate')} />
           <Kpi
             label="Failed steps"
-            value={domainFilter ? '—' : summary.failedSteps}
-            hint={dead ? `${dead.length >= 500 ? '500+' : dead.length} dead letter(s) — open` : undefined}
-            to="/wh/dead"
-            tone={dead && dead.length ? 'error' : undefined}
+            value={summary.failedSteps}
+            hint={`${dead ? (dead.length >= 5000 ? '5000+' : dead.length) : 0} out of retries — open`}
+            to={`/wh/dead?from=${keyToDate(keys[0])}${domainFilter ? `&domain=${domainFilter}` : ''}`}
+            tone={summary.failedSteps ? 'error' : undefined}
           />
-          <Kpi label="Active websites" value={activeSites} hint={`${(webhooks || []).length} webhook(s)`} to="/wh/websites" />
+          <Kpi label="Active websites" value={activeSites} hint={`${(webhooks || []).length} webhook(s) — open`} to="/wh/websites" />
         </Box>
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '2fr 1fr' }, gap: 2, mb: 2 }}>
           <Panel title="Leads per day">
-            {stats === undefined ? <CircularProgress size={24} /> : <DayBars data={summary.series} />}
+            {subs === undefined ? <CircularProgress size={24} /> : <DayBars data={summary.series} />}
           </Panel>
           <Panel
             title="Needs attention"
@@ -178,14 +189,7 @@ const WhOverview: React.FC = () => {
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(3, 1fr)' }, gap: 2 }}>
           <Panel title="Top websites"><TopList rows={topSites} empty="No leads in this period." /></Panel>
           <Panel title="Top forms (webhooks)"><TopList rows={topHooks} empty="No leads in this period." /></Panel>
-          <Panel title="Top sources">
-            {domainFilter ? (
-              <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-                <ErrorOutline fontSize="small" color="disabled" />
-                <Typography variant="body2" color="text.secondary">Sources are counted for all websites together — choose "All websites".</Typography>
-              </Stack>
-            ) : <TopList rows={topSources} empty="No leads in this period." />}
-          </Panel>
+          <Panel title="Top sources"><TopList rows={topSources} empty="No leads in this period." /></Panel>
         </Box>
       </>
     );

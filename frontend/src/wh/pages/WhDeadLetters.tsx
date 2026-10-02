@@ -1,8 +1,8 @@
 import React, { useMemo, useState } from 'react';
-import { Link as RouterLink } from 'react-router-dom';
+import { Link as RouterLink, useSearchParams } from 'react-router-dom';
 import { limit, where } from 'firebase/firestore';
 import {
-  Alert, Box, Button, Checkbox, CircularProgress, Paper, Table, TableBody, TableCell, TableHead, TableRow, Typography,
+  Alert, Box, Button, Checkbox, Chip, CircularProgress, Paper, Tab, Table, TableBody, TableCell, TableHead, TableRow, Tabs, TextField, Typography,
 } from '@mui/material';
 import { Replay } from '@mui/icons-material';
 import WhShell from '../components/WhShell';
@@ -13,15 +13,34 @@ import { callWh, fmtTime, useWhCollection } from '../data';
 import { WH } from '../types';
 import type { WhStepRun } from '../types';
 import { STEP_META } from '../steps';
+import StatusChip from '../components/StatusChip';
 
-const MAX = 500;
+const MAX = 2000;
 /** Error text with ids/numbers blanked so similar failures group together. */
 const errorGroup = (e?: string) => (e || 'Unknown error').replace(/\b[0-9a-f]{8,}\b/gi, '…').replace(/\d+/g, '#').slice(0, 120);
 
-/** Steps that failed for good: grouped by step and error, with replay. */
+type View = 'failed' | 'retrying';
+
+/**
+ * Failed steps: steps that failed for good ('dead' = out of retries, 'failed' = stopped the lead) and steps
+ * waiting for their next retry — grouped by step and error, with replay.
+ */
 const WhDeadLetters: React.FC = () => {
   const { profile } = useMp();
-  const { rows, error } = useWhCollection<WhStepRun>(WH.stepRuns, [where('status', '==', 'dead'), limit(MAX)]);
+  const [params] = useSearchParams();
+  const [view, setView] = useState<View>('failed');
+  const [from, setFrom] = useState(params.get('from') || '');
+  const domainOnly = params.get('domain') || '';
+  const { rows: all, error } = useWhCollection<WhStepRun>(WH.stepRuns, [where('status', 'in', ['dead', 'failed', 'retrying']), limit(MAX)]);
+  const fromMs = from ? new Date(`${from}T00:00:00`).getTime() : 0;
+  const inRange = (r: WhStepRun) => (r.finishedAt || r.startedAt || 0) >= fromMs && (!domainOnly || r.domainId === domainOnly);
+  const failedCount = (all || []).filter((r) => r.status !== 'retrying' && inRange(r)).length;
+  const retryCount = (all || []).filter((r) => r.status === 'retrying' && inRange(r)).length;
+  const rows = useMemo(
+    () => all?.filter((r) => (view === 'retrying' ? r.status === 'retrying' : r.status !== 'retrying') && inRange(r)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- inRange depends on fromMs/domainOnly
+    [all, view, fromMs, domainOnly],
+  );
   const { rows: domains } = useDomains();
   const { rows: hooks } = useWebhooks();
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -70,8 +89,8 @@ const WhDeadLetters: React.FC = () => {
 
   return (
     <WhShell
-      title="Dead letters"
-      subtitle="Steps that still failed after every retry (1 min, 5 min, 30 min, 2 h, 12 h)"
+      title="Failed steps"
+      subtitle="Steps that failed — ran out of retries (1 min, 5 min, 30 min, 2 h, 12 h), stopped the lead, or are waiting to retry"
       actions={(
         <>
           <Button component={RouterLink} to="/wh/submissions">All submissions</Button>
@@ -83,8 +102,19 @@ const WhDeadLetters: React.FC = () => {
     >
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
       {msg && <Alert severity={msg.ok ? 'success' : 'error'} sx={{ mb: 2 }} onClose={() => setMsg(null)}>{msg.text}</Alert>}
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap', mb: 2 }}>
+        <Tabs value={view} onChange={(_e, v: View) => { setView(v); setSelected(new Set()); }}>
+          <Tab value="failed" label={`Failed for good (${failedCount})`} />
+          <Tab value="retrying" label={`Waiting to retry (${retryCount})`} />
+        </Tabs>
+        <TextField size="small" type="date" label="Since" value={from} onChange={(e) => setFrom(e.target.value)} slotProps={{ inputLabel: { shrink: true } }} />
+        {from && <Button size="small" onClick={() => setFrom('')}>All dates</Button>}
+        {domainOnly && <Chip label={`One website: ${domainName.get(domainOnly) || domainOnly}`} />}
+      </Box>
       {rows === undefined ? <CircularProgress aria-label="Loading" /> : !rows.length ? (
-        <Alert severity="success">Nothing here — every step eventually succeeded.</Alert>
+        <Alert severity="success">
+          {view === 'retrying' ? 'No steps are waiting to retry.' : 'No failed steps — every step succeeded or is still retrying.'}
+        </Alert>
       ) : (
         <>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
@@ -112,7 +142,8 @@ const WhDeadLetters: React.FC = () => {
                     <TableRow>
                       <TableCell padding="checkbox" />
                       <TableCell>Lead</TableCell><TableCell>Website · form</TableCell><TableCell>Flow</TableCell>
-                      <TableCell align="right">Attempts</TableCell><TableCell>Gave up</TableCell><TableCell />
+                      <TableCell>Status</TableCell><TableCell align="right">Attempts</TableCell>
+                      <TableCell>{view === 'retrying' ? 'Next try' : 'When'}</TableCell><TableCell />
                     </TableRow>
                   </TableHead>
                   <TableBody>
@@ -122,8 +153,9 @@ const WhDeadLetters: React.FC = () => {
                         <TableCell><RouterLink to={`/wh/submissions/${r.submissionId}`}>Open timeline</RouterLink></TableCell>
                         <TableCell>{domainName.get(r.domainId) || '—'} · {hookName.get(r.webhookId) || '—'}</TableCell>
                         <TableCell>{r.flowKind === 'master' ? 'Master flow' : 'Webhook flow'}</TableCell>
+                        <TableCell><StatusChip status={r.status} /></TableCell>
                         <TableCell align="right">{r.attempts}</TableCell>
-                        <TableCell sx={{ whiteSpace: 'nowrap' }}>{fmtTime(r.finishedAt || r.startedAt)}</TableCell>
+                        <TableCell sx={{ whiteSpace: 'nowrap' }}>{fmtTime(view === 'retrying' ? r.nextAttemptAt : r.finishedAt || r.startedAt)}</TableCell>
                         <TableCell><Button size="small" startIcon={<Replay />} disabled={busy} onClick={() => replay([r])}>Replay</Button></TableCell>
                       </TableRow>
                     ))}
