@@ -3,6 +3,7 @@ export interface WhNavItem { label: string; path: string; admin?: boolean }
 
 export const WH_NAV: WhNavItem[] = [
   { label: 'Overview', path: '/wh' },
+  { label: 'System Triage', path: '/wh/triage' },
   { label: 'Add website', path: '/wh/new' },
   { label: 'Websites', path: '/wh/websites' },
   { label: 'Webhooks', path: '/wh/webhooks' },

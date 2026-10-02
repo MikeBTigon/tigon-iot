@@ -163,6 +163,8 @@ service cloud.firestore {
       allow update: if isMpManager() &&
                        request.resource.data.diff(resource.data).affectedKeys()
                          .hasOnly(['acknowledgedBy', 'acknowledgedAt']);
+      // System Triage → Delete.
+      allow delete: if isMpManager();
     }
 
     // Audit log: append-only, admins read.
@@ -291,6 +293,10 @@ service cloud.firestore {
     match /wh_settings/{id} {
       allow read: if isMpManager();
       allow write: if isMpAdmin();
+      // System Triage: managers may delete (hide) / bring back notifications.
+      allow create, update: if id == 'triage' && isMpManager() &&
+                               request.resource.data.keys().hasOnly(['dismissed', 'updatedAt', 'updatedBy']) &&
+                               request.resource.data.dismissed is map;
     }
     match /wh_integrations/{id} {
       allow read: if isMpManager();

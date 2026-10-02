@@ -2,24 +2,22 @@ import React, { useMemo, useState } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
 import { limit, where } from 'firebase/firestore';
 import {
-  Alert, Box, Button, CircularProgress, FormControl, InputLabel, List, ListItem, ListItemIcon, ListItemText, MenuItem,
-  Paper, Select, Stack, Typography,
+  Alert, Box, Button, CircularProgress, FormControl, InputLabel, MenuItem, Paper, Select, Stack, Typography,
 } from '@mui/material';
-import { Add, ErrorOutline, PlayCircleOutline, ReportProblem, TableChart, WarningAmber } from '@mui/icons-material';
+import { Add, DeleteSweep, ErrorOutline, PlayCircleOutline } from '@mui/icons-material';
 import WhShell from '../components/WhShell';
 import { useMp } from '../../mp/MpDataContext';
-import { useWhCollection, useWhDoc } from '../data';
-import { resolveSettings } from '../shared';
+import { useWhCollection } from '../data';
 import { WH } from '../types';
 import type { WhStepRun } from '../types';
 import { lastDayKeys, summarize, topEntries, useWhStats } from '../stats';
 import { ensureWhDefaults } from '../bootstrap';
-import { DAY_MS, ago, errText, useDomains, useGlobal, useMasterFlow, useNow, useWebhooks } from '../components/Wh1Hooks';
+import { errText, useDomains, useGlobal, useMasterFlow, useNow, useWebhooks } from '../components/Wh1Hooks';
 import { DayBars, Kpi, Panel, RangeChips, TopList } from '../components/Wh1Ui';
+import TriageList from '../components/TriageList';
+import { deleteTriage, useSystemTriage } from '../triage';
+import type { TriageItem } from '../triage';
 
-interface SheetsStatus { id: string; lastError?: string; lastErrorAt?: number; pendingRows?: number; deadRows?: number }
-
-interface Attention { key: string; icon: React.ReactNode; text: React.ReactNode; to?: string }
 
 /** Webhook Flows dashboard: leads, spam, failures, top websites/forms/sources and what needs attention. */
 const WhOverview: React.FC = () => {
@@ -36,7 +34,6 @@ const WhOverview: React.FC = () => {
   const { rows: domains } = useDomains();
   const { rows: webhooks } = useWebhooks();
   const { rows: stats, error: statsError } = useWhStats(days);
-  const sheets = useWhDoc<SheetsStatus>(WH.settings, 'sheets_status');
   const { rows: dead } = useWhCollection<WhStepRun>(WH.stepRuns, [where('status', '==', 'dead'), limit(500)]);
 
   const domainName = useMemo(() => new Map((domains || []).map((d) => [d.id, d.name || d.url])), [domains]);
@@ -66,50 +63,22 @@ const WhOverview: React.FC = () => {
 
   const loading = domains === undefined || webhooks === undefined || global === undefined;
 
-  // ---- Needs attention ----
-  const attention: Attention[] = [];
-  if (!loading) {
-    for (const d of domains || []) {
-      if (d.status !== 'active') continue;
-      const s = resolveSettings(global || undefined, master?.settings, d.settings);
-      const limitDays = s.alertNoLeadsDays ?? 3;
-      if (!limitDays) continue;
-      const hooks = (webhooks || []).filter((w) => w.domainId === d.id && w.status === 'active');
-      if (!hooks.length) continue;
-      const last = Math.max(0, ...hooks.map((w) => w.lastReceivedAt || 0));
-      const since = last || d.createdAt || 0;
-      if (now - since > limitDays * DAY_MS) {
-        attention.push({
-          key: `nl-${d.id}`,
-          icon: <WarningAmber color="warning" />,
-          text: <><b>{d.name}</b> — {last ? `no leads since ${ago(last, now)}` : `no leads yet (added ${ago(d.createdAt, now)})`}. Check that the form still works.</>,
-          to: `/wh/websites/${d.id}`,
-        });
-      }
+  // ---- Needs attention (same list as System Triage, websites/Sheets/flows only) ----
+  const triage = useSystemTriage(now);
+  const attention = triage.items.filter((i) => i.source === 'check' && !i.deleted);
+  const [triageBusy, setTriageBusy] = useState(false);
+  const [triageErr, setTriageErr] = useState('');
+  const removeAttention = async (list: TriageItem[]) => {
+    setTriageBusy(true);
+    setTriageErr('');
+    try {
+      await deleteTriage(list, profile?.uid || '');
+    } catch (e) {
+      setTriageErr(errText(e));
+    } finally {
+      setTriageBusy(false);
     }
-  }
-  if (sheets?.lastError) {
-    attention.push({
-      key: 'sheets',
-      icon: <TableChart color="error" />,
-      text: <>Google Sheets: {sheets.lastError}{sheets.lastErrorAt ? ` (${ago(sheets.lastErrorAt, now)})` : ''}. Make sure each sheet is shared with the service account (see Settings).</>,
-      to: '/wh/settings',
-    });
-  }
-  if (sheets && (sheets.deadRows || 0) > 0) {
-    attention.push({ key: 'sheets-dead', icon: <TableChart color="error" />, text: <>{sheets.deadRows} sheet row(s) could not be written after several tries.</> });
-  }
-  if (sheets && (sheets.pendingRows || 0) > 200) {
-    attention.push({ key: 'sheets-pending', icon: <TableChart color="warning" />, text: <>{sheets.pendingRows} rows are waiting to be written to Google Sheets.</> });
-  }
-  if (dead && dead.length) {
-    attention.push({
-      key: 'dead',
-      icon: <ReportProblem color="error" />,
-      text: <>{dead.length >= 500 ? '500+' : dead.length} step(s) failed for good (dead letters). Fix the cause, then replay them.</>,
-      to: '/wh/dead',
-    });
-  }
+  };
 
   const setupBox = setupMissing && (
     <Alert
@@ -185,19 +154,24 @@ const WhOverview: React.FC = () => {
           <Panel title="Leads per day">
             {stats === undefined ? <CircularProgress size={24} /> : <DayBars data={summary.series} />}
           </Panel>
-          <Panel title="Needs attention">
+          <Panel
+            title="Needs attention"
+            action={<Button size="small" component={RouterLink} to="/wh/triage">System Triage</Button>}
+          >
+            {triageErr && <Alert severity="error" sx={{ mb: 1 }}>{triageErr}</Alert>}
             {!attention.length ? (
               <Typography variant="body2" color="text.secondary">All good — nothing needs attention.</Typography>
             ) : (
-              <List dense disablePadding>
-                {attention.slice(0, 12).map((a) => (
-                  <ListItem key={a.key} disableGutters {...(a.to ? { component: RouterLink, to: a.to, sx: { color: 'inherit' } } : {})}>
-                    <ListItemIcon sx={{ minWidth: 36 }}>{a.icon}</ListItemIcon>
-                    <ListItemText primary={a.text} />
-                  </ListItem>
-                ))}
-                {attention.length > 12 && <Typography variant="caption">…and {attention.length - 12} more</Typography>}
-              </List>
+              <>
+                <TriageList items={attention.slice(0, 12)} now={now} busy={triageBusy} onDelete={removeAttention} />
+                <Box sx={{ display: 'flex', alignItems: 'center', mt: 1 }}>
+                  {attention.length > 12 && <Typography variant="caption">…and {attention.length - 12} more</Typography>}
+                  <Box sx={{ flexGrow: 1 }} />
+                  <Button size="small" color="error" startIcon={<DeleteSweep />} disabled={triageBusy} onClick={() => removeAttention(attention)}>
+                    Delete all
+                  </Button>
+                </Box>
+              </>
             )}
           </Panel>
         </Box>

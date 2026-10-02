@@ -48,6 +48,7 @@ import {
   Inbox,
   Email,
   Tune,
+  NotificationImportant,
 } from '@mui/icons-material';
 import { useAuth } from '../../context/AuthContext';
 import { isNativeApp } from '../../native/platform';
@@ -64,6 +65,7 @@ import { WH_NAV, activeWhPath } from '../../wh/nav';
 
 const WH_ICONS: Record<string, React.ReactNode> = {
   '/wh': <Insights />,
+  '/wh/triage': <NotificationImportant />,
   '/wh/new': <AddLink />,
   '/wh/websites': <WebsiteIcon />,
   '/wh/webhooks': <Webhook />,

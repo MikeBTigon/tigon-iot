@@ -13,10 +13,12 @@ import WhDeadLetters from './pages/WhDeadLetters';
 import WhTemplates from './pages/WhTemplates';
 import WhTemplateEditor from './pages/WhTemplateEditor';
 import WhSettings from './pages/WhSettings';
+import WhTriage from './pages/WhTriage';
 
 /** Webhook Flows pages (wrapped in the auth guard by mp/routes.tsx). */
 export const ROUTES: Array<{ path: string; element: ReactNode }> = [
   { path: '/wh', element: <WhOverview /> },
+  { path: '/wh/triage', element: <WhTriage /> },
   { path: '/wh/new', element: <WhAddWebsite /> },
   { path: '/wh/websites', element: <WhWebsites /> },
   { path: '/wh/websites/:id', element: <WhWebsiteDetail /> },
