@@ -1,7 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import { Link as RouterLink, useParams } from 'react-router-dom';
 import {
-  Alert, Box, Button, Chip, CircularProgress, MenuItem, Paper, Stack, TextField, ToggleButton, ToggleButtonGroup, Typography,
+  Alert, Box, Button, Chip, CircularProgress, MenuItem, Paper, Stack, Table, TableBody, TableCell, TableHead, TableRow, TextField,
+  ToggleButton, ToggleButtonGroup, Typography,
 } from '@mui/material';
 import { ArrowBack, Edit, Email, WarningAmber } from '@mui/icons-material';
 import { Bar, BarChart, CartesianGrid, Legend, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
@@ -14,7 +15,8 @@ import TeamDevicesPanel from '../devices/TeamDevicesPanel';
 import OnlineTimeline from '../devices/OnlineTimeline';
 import { isOnline, seenLabel } from '../devices/deviceStatus';
 import { addDays, dateRange, dayLabel, fmtHours, hoursOn, hoursOver, periods, todayNy, weekday } from '../devices/presence';
-import { appPhones, sendPresenceReport, useAllDevices, useOnline, usePresenceSettings } from '../devices/usePresence';
+import { appPhones, sendPresenceReport, useAllDevices, useOnline, usePostings, usePresenceSettings } from '../devices/usePresence';
+import { WEB_DEVICE, otherDevices, postsOn, postsOver } from '../devices/postings';
 
 const COLORS = ['#0e4671', '#b01e2f', '#2e7d32', '#ed6c02', '#7b1fa2', '#00838f', '#5d4037', '#455a64'];
 const phoneName = (p: DeviceDoc) => `${p.deviceNumber ? `#${p.deviceNumber} ` : ''}${p.deviceName}`;
@@ -30,9 +32,11 @@ const UserDetail: React.FC = () => {
   const cfg = usePresenceSettings();
   const devices = useAllDevices();
   const online = useOnline(per.year[0], uid);
+  const posts = usePostings(uid);
   const phones = useMemo(() => appPhones(devices, uid).sort((a, b) => (a.deviceNumber || '').localeCompare(b.deviceNumber || '')), [devices, uid]);
   const [editing, setEditing] = useState(false);
   const [range, setRange] = useState<ChartRange>('month');
+  const [postRange, setPostRange] = useState<ChartRange>('month');
   const [tlMode, setTlMode] = useState<'day' | 'phone'>('day');
   const [tlDate, setTlDate] = useState(todayNy());
   const [tlPhone, setTlPhone] = useState('');
@@ -75,6 +79,38 @@ const UserDetail: React.FC = () => {
     }));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- counts depends on cfg.days
   }, [m, tlMode, tlDate, tlPhone, phones, cfg]);
+
+  // Postings: the person's phones plus any other device they posted from (a computer, an old phone).
+  const pm = posts.data;
+  const postDevices = useMemo(() => {
+    const list = phones.map((p) => ({ id: p.id, label: phoneName(p) }));
+    if (pm) {
+      for (const id of otherDevices(pm, phones.map((p) => p.id))) {
+        const d = devices?.find((x) => x.id === id);
+        list.push({ id, label: id === WEB_DEVICE ? 'Computer (website)' : d ? `${phoneName(d)}${d.status === 'revoked' ? ' (removed)' : ''}` : 'Older phone' });
+      }
+    }
+    return list;
+  }, [phones, pm, devices]);
+
+  const postChart = useMemo(() => {
+    if (!pm) return [];
+    if (postRange === 'year') {
+      const months = Array.from(new Set(per.year.map((d) => d.slice(0, 7))));
+      return months.map((mo) => {
+        const days = per.year.filter((d) => d.startsWith(mo));
+        const row: Record<string, string | number> = { label: new Date(`${mo}-15T12:00:00Z`).toLocaleDateString(undefined, { month: 'short', timeZone: 'UTC' }) };
+        for (const d of postDevices) row[d.id] = postsOver(pm, d.id, days);
+        return row;
+      });
+    }
+    const dates = postRange === 'week' ? per.last7 : per.last30;
+    return dates.map((day) => {
+      const row: Record<string, string | number> = { label: dayLabel(day, postRange === 'week' ? { weekday: 'short', day: 'numeric' } : { month: 'numeric', day: 'numeric' }) };
+      for (const d of postDevices) row[d.id] = postsOn(pm, d.id, day);
+      return row;
+    });
+  }, [pm, postRange, postDevices, per]);
 
   const low = m && counts(per.yesterday) ? phones.filter((p) => hoursOn(m, p.id, per.yesterday) < cfg.minHours) : [];
 
@@ -152,6 +188,14 @@ const UserDetail: React.FC = () => {
                   <Typography variant="caption" color={under ? 'error' : 'text.secondary'} sx={{ display: 'block', mt: 1 }}>
                     {under} day(s) under {cfg.minHours} h this month
                   </Typography>
+                  <Box sx={{ mt: 1, pt: 1, borderTop: 1, borderColor: 'divider', display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 1, textAlign: 'center' }}>
+                    {([['Posts today', [per.today]], ['This week', per.week], ['This month', per.month], ['This year', per.year]] as Array<[string, string[]]>).map(([l, dates]) => (
+                      <Box key={l}>
+                        <Typography variant="caption" color="text.secondary">{l}</Typography>
+                        <Typography sx={{ fontWeight: 700, color: 'primary.main' }}>{pm ? postsOver(pm, p.id, dates) : '…'}</Typography>
+                      </Box>
+                    ))}
+                  </Box>
                 </Paper>
               );
             })}
@@ -187,6 +231,73 @@ const UserDetail: React.FC = () => {
               )}
             </Paper>
           )}
+
+          {/* Postings */}
+          <Paper sx={{ p: 2, mb: 2 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap', mb: 1 }}>
+              <Typography variant="h6" sx={{ flexGrow: 1, fontSize: 18 }}>Marketplace postings per device</Typography>
+              <ToggleButtonGroup size="small" exclusive value={postRange} onChange={(_e, v) => v && setPostRange(v)}>
+                <ToggleButton value="week">7 days</ToggleButton>
+                <ToggleButton value="month">30 days</ToggleButton>
+                <ToggleButton value="year">This year</ToggleButton>
+              </ToggleButtonGroup>
+            </Box>
+            {posts.error && <Alert severity="warning" sx={{ mb: 1 }}>Could not load postings: {posts.error}</Alert>}
+            {!pm ? <CircularProgress size={24} /> : !postDevices.length ? (
+              <Typography variant="body2" color="text.secondary">No postings yet.</Typography>
+            ) : (
+              <>
+                <Box sx={{ overflowX: 'auto', mb: 2 }}>
+                  <Table size="small">
+                    <TableHead>
+                      <TableRow>
+                        <TableCell>Device</TableCell><TableCell align="right">Today</TableCell><TableCell align="right">Yesterday</TableCell>
+                        <TableCell align="right">This week</TableCell><TableCell align="right">This month</TableCell><TableCell align="right">This year</TableCell>
+                        <TableCell align="right">Avg / day (month)</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {postDevices.map((d) => (
+                        <TableRow key={d.id}>
+                          <TableCell sx={{ fontWeight: 600 }}>{d.label}</TableCell>
+                          <TableCell align="right">{postsOn(pm, d.id, per.today)}</TableCell>
+                          <TableCell align="right">{postsOn(pm, d.id, per.yesterday)}</TableCell>
+                          <TableCell align="right">{postsOver(pm, d.id, per.week)}</TableCell>
+                          <TableCell align="right">{postsOver(pm, d.id, per.month)}</TableCell>
+                          <TableCell align="right">{postsOver(pm, d.id, per.year)}</TableCell>
+                          <TableCell align="right">{(postsOver(pm, d.id, per.month) / per.month.length).toFixed(1)}</TableCell>
+                        </TableRow>
+                      ))}
+                      {postDevices.length > 1 && (
+                        <TableRow sx={{ '& td': { fontWeight: 700 } }}>
+                          <TableCell>All devices</TableCell>
+                          {[[per.today], [per.yesterday], per.week, per.month, per.year].map((dates, i) => (
+                            <TableCell key={i} align="right">{postDevices.reduce((s, d) => s + postsOver(pm, d.id, dates), 0)}</TableCell>
+                          ))}
+                          <TableCell align="right">{(postDevices.reduce((s, d) => s + postsOver(pm, d.id, per.month), 0) / per.month.length).toFixed(1)}</TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </Box>
+                <Box sx={{ height: 260 }}>
+                  <ResponsiveContainer>
+                    <BarChart data={postChart}>
+                      <CartesianGrid stroke="#e0e0e0" strokeDasharray="3 3" vertical={false} />
+                      <XAxis dataKey="label" fontSize={11} />
+                      <YAxis allowDecimals={false} fontSize={11} width={36} />
+                      <Tooltip />
+                      {postDevices.length > 1 && <Legend />}
+                      {postDevices.map((d, i) => <Bar key={d.id} dataKey={d.id} name={d.label} stackId="posts" fill={COLORS[i % COLORS.length]} />)}
+                    </BarChart>
+                  </ResponsiveContainer>
+                </Box>
+                <Typography variant="caption" color="text.secondary">
+                  {postRange === 'year' ? 'Postings per month' : 'Postings per day'} (New York time), stacked by device. A posting is a listing marked as posted in MP Assistant.
+                </Typography>
+              </>
+            )}
+          </Paper>
 
           {/* 24-hour timeline */}
           {phones.length > 0 && (
