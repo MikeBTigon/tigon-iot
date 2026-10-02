@@ -5,6 +5,8 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import Devices from './pages/Devices';
+import Users from './pages/Users';
+import UserDetail from './pages/UserDetail';
 import Settings from './pages/Settings';
 import Download from './pages/Download';
 import GetApp from './pages/GetApp';
@@ -50,6 +52,8 @@ function AppContent() {
       </ProtectedRoute>
     }
   />
+  <Route path="/users" element={<ProtectedRoute><Users /></ProtectedRoute>} />
+  <Route path="/users/:uid" element={<ProtectedRoute><UserDetail /></ProtectedRoute>} />
   <Route
     path="/settings"
     element={

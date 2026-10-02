@@ -49,6 +49,7 @@ import {
   Email,
   Tune,
   NotificationImportant,
+  People as PeopleIcon,
 } from '@mui/icons-material';
 import { useAuth } from '../../context/AuthContext';
 import { isNativeApp } from '../../native/platform';
@@ -139,9 +140,12 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
     }
   };
 
+  const canSeeUsers = profile?.role === 'admin' || profile?.role === 'manager';
   const menuItems: NavEntry[] = [
     { text: t('layout.dashboard'), icon: <DashboardIcon />, path: '/dashboard' },
     { text: t('layout.devices'), icon: <DevicesIcon />, path: '/devices' },
+    // People who use TIGON IOT, their phones and online hours (managers and admins).
+    ...(canSeeUsers ? [{ text: 'Users', icon: <PeopleIcon />, path: '/users' }] : []),
     { text: t('layout.settings'), icon: <SettingsIcon />, path: '/settings' },
     { text: t('layout.download'), icon: <DownloadIcon />, path: '/download' },
   ];
@@ -170,6 +174,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
         && !MP_SHORTCUTS.includes(activeMp) && activeMp !== '/mp/help';
     }
     if (path.startsWith('/mp/')) return activeMp === path;
+    if (path === '/users') return location.pathname === '/users' || location.pathname.startsWith('/users/');
     return location.pathname === path;
   };
 

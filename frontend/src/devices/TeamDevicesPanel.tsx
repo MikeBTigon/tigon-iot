@@ -15,8 +15,8 @@ import { DEALERSHIPS } from '../mp/constants';
 
 type Action = { kind: 'rename' | 'reassign'; device: DeviceDoc } | null;
 
-/** Managers/admins: every phone on the team — rename, reassign, revoke, delete. */
-const TeamDevicesPanel: React.FC = () => {
+/** Managers/admins: every phone on the team (or one person's, with `userId`) — rename, reassign, revoke, delete. */
+const TeamDevicesPanel: React.FC<{ userId?: string; title?: string }> = ({ userId, title = 'Team phones' }) => {
   const { profile, isAdmin, users, userName, accounts } = useMp();
   const isManager = profile?.role === 'admin' || profile?.role === 'manager';
   const [devices, setDevices] = useState<DeviceDoc[]>([]);
@@ -38,9 +38,9 @@ const TeamDevicesPanel: React.FC = () => {
   const rows = useMemo(
     () =>
       devices
-        .filter((d) => owner === 'any' || d.userId === owner)
+        .filter((d) => (userId ? d.userId === userId : owner === 'any' || d.userId === owner))
         .sort((a, b) => userName(a.userId).localeCompare(userName(b.userId)) || lastSeenMs(b) - lastSeenMs(a)),
-    [devices, owner, userName],
+    [devices, owner, userName, userId],
   );
 
   if (!isManager) return null;
@@ -94,21 +94,21 @@ const TeamDevicesPanel: React.FC = () => {
     });
 
   const owners = [...new Set(devices.map((d) => d.userId))];
-  const online = devices.filter((d) => d.status !== 'revoked' && isOnline(d)).length;
+  const online = rows.filter((d) => d.status !== 'revoked' && isOnline(d)).length;
 
   return (
     <Paper sx={{ p: 3, mt: 3 }}>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap', mb: 2 }}>
-        <Typography variant="h6" color="primary" sx={{ flexGrow: 1 }}>Team phones</Typography>
+        <Typography variant="h6" color="primary" sx={{ flexGrow: 1 }}>{title}</Typography>
         <Chip size="small" color="success" label={`${online} online`} />
-        <Chip size="small" variant="outlined" label={`${devices.length} total`} />
-        <FormControl size="small" sx={{ minWidth: 180 }}>
+        <Chip size="small" variant="outlined" label={`${rows.length} total`} />
+        {!userId && <FormControl size="small" sx={{ minWidth: 180 }}>
           <InputLabel>Owner</InputLabel>
           <Select label="Owner" value={owner} onChange={(e) => setOwner(e.target.value)}>
             <MenuItem value="any">Everyone</MenuItem>
             {owners.map((u) => <MenuItem key={u} value={u}>{userName(u)}</MenuItem>)}
           </Select>
-        </FormControl>
+        </FormControl>}
       </Box>
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
       <Box sx={{ overflowX: 'auto' }}>

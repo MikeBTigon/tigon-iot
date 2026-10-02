@@ -9,6 +9,8 @@ export interface MpProfile {
   name: string;
   role: MpRole;
   legacyId?: string;
+  /** Dealership location id (DEALERSHIPS), set on the Users page. */
+  location?: string;
   /** Display preferences (language, theme, large text, onboarding). */
   prefs?: UserPrefs;
 }
@@ -237,7 +239,7 @@ export interface DeviceDay {
 
 export interface MpAlert {
   id: string;
-  kind: 'device_offline' | 'post_failed' | 'sync_failed';
+  kind: 'device_offline' | 'post_failed' | 'sync_failed' | 'device_low_hours';
   text: string;
   deviceId?: string;
   queueId?: string;

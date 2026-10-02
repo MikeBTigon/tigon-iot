@@ -100,6 +100,8 @@ service cloud.firestore {
                        (request.resource.data.role == 'sales' ||
                         (request.resource.data.role == 'admin' && isMpBootstrapAdmin()));
       allow update: if isMpAdmin() ||
+                       // Managers (Users page) may change a person's name and location.
+                       (isMpManager() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'location', 'updatedAt'])) ||
                        (isValidEmail() && isOwner(userId) &&
                         request.resource.data.role == resource.data.role &&
                         request.resource.data.email == resource.data.email);
@@ -152,6 +154,14 @@ service cloud.firestore {
       allow read: if isMpManager() || (isMpMember() && resource.data.userId == request.auth.uid);
       allow create: if isMpMember() && request.resource.data.userId == request.auth.uid;
     }
+    // Phone online time per New York day (5-minute slots). Phones write their own; managers read all.
+    match /mp_device_online/{dayId} {
+      allow read: if isMpManager() || (isMpMember() && resource.data.userId == request.auth.uid);
+      allow create, update: if isMpMember() && request.resource.data.userId == request.auth.uid &&
+                               request.resource.data.keys().hasOnly(['deviceId', 'userId', 'date', 'slots', 'updatedAt']) &&
+                               request.resource.data.slots is map;
+    }
+
     match /mp_device_days/{dayId} {
       allow read: if isMpManager() || (isMpMember() && resource.data.userId == request.auth.uid);
       allow create, update: if isMpMember() && request.resource.data.userId == request.auth.uid;

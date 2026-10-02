@@ -4,6 +4,7 @@
 import { addDoc, collection, deleteField, doc, getDoc, increment, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { COLLECTIONS, HEARTBEAT_MS } from '../mp/constants';
+import { ONLINE, nySlot } from '../devices/presence';
 import type { MpEvent, MpEventType } from '../mp/types';
 import { isNativeApp, nativePlatform } from './platform';
 
@@ -94,6 +95,13 @@ export async function heartbeat(uid: string, minutes: number): Promise<DeviceSta
   if (snap.get('status') === 'revoked') return 'revoked';
   if (snap.get('userId') !== uid) return 'reassigned';
   await updateDoc(ref, { lastSeen: Date.now() });
+  // Online-time slot (Users page timeline); the phone's background service also checks in every 5 minutes.
+  const { day, date: nyDate, slot } = nySlot(Date.now());
+  await setDoc(
+    doc(db, ONLINE, `${ref.id}_${day}`),
+    { deviceId: ref.id, userId: uid, date: nyDate, slots: { [String(slot)]: true }, updatedAt: Date.now() },
+    { merge: true },
+  ).catch((e) => console.warn('Online slot failed', e));
   if (minutes > 0) {
     const date = new Date().toISOString().slice(0, 10);
     await setDoc(
