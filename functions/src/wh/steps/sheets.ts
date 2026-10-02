@@ -190,7 +190,8 @@ export async function flushSheetBuffer(): Promise<{rows: number; errors: number}
     await statusRef.set({
       lastFlushAt: Date.now(), lastFlushRows: rows, flushLeaseUntil: 0,
       ...(pending !== null ? {pendingRows: pending} : {}), ...(dead !== null ? {deadRows: dead} : {}),
-      ...(lastError ? {lastError, lastErrorAt: Date.now()} : {}),
+      // A clean flush that wrote rows clears the old error (System Triage / Needs attention).
+      ...(lastError ? {lastError, lastErrorAt: Date.now()} : rows > 0 ? {lastError: admin.firestore.FieldValue.delete(), lastErrorAt: admin.firestore.FieldValue.delete()} : {}),
     }, {merge: true});
   }
   return {rows, errors};

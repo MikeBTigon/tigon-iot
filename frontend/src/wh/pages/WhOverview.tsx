@@ -1,25 +1,24 @@
 import React, { useMemo, useState } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
-import { limit, where } from 'firebase/firestore';
+import { limit, orderBy, where } from 'firebase/firestore';
 import {
-  Alert, Box, Button, CircularProgress, FormControl, InputLabel, List, ListItem, ListItemIcon, ListItemText, MenuItem,
-  Paper, Select, Stack, Typography,
+  Alert, Box, Button, CircularProgress, FormControl, InputLabel, MenuItem, Paper, Select, Typography,
 } from '@mui/material';
-import { Add, ErrorOutline, PlayCircleOutline, ReportProblem, TableChart, WarningAmber } from '@mui/icons-material';
+import { Add, DeleteSweep, PlayCircleOutline } from '@mui/icons-material';
 import WhShell from '../components/WhShell';
 import { useMp } from '../../mp/MpDataContext';
-import { useWhCollection, useWhDoc } from '../data';
-import { resolveSettings } from '../shared';
+import { useWhCollection } from '../data';
 import { WH } from '../types';
-import type { WhStepRun } from '../types';
-import { lastDayKeys, summarize, topEntries, useWhStats } from '../stats';
+import type { WhStepRun, WhSubmission } from '../types';
+import { lastDayKeys, topEntries } from '../stats';
+import { FAILED_STEP_STATUSES, keyToDate, summarizeSubs } from '../submissionData';
 import { ensureWhDefaults } from '../bootstrap';
-import { DAY_MS, ago, errText, useDomains, useGlobal, useMasterFlow, useNow, useWebhooks } from '../components/Wh1Hooks';
+import { DAY_MS, errText, useDomains, useGlobal, useMasterFlow, useNow, useWebhooks } from '../components/Wh1Hooks';
 import { DayBars, Kpi, Panel, RangeChips, TopList } from '../components/Wh1Ui';
+import TriageList from '../components/TriageList';
+import { deleteTriage, useSystemTriage } from '../triage';
+import type { TriageItem } from '../triage';
 
-interface SheetsStatus { id: string; lastError?: string; lastErrorAt?: number; pendingRows?: number; deadRows?: number }
-
-interface Attention { key: string; icon: React.ReactNode; text: React.ReactNode; to?: string }
 
 /** Webhook Flows dashboard: leads, spam, failures, top websites/forms/sources and what needs attention. */
 const WhOverview: React.FC = () => {
@@ -35,9 +34,13 @@ const WhOverview: React.FC = () => {
   const master = useMasterFlow(global);
   const { rows: domains } = useDomains();
   const { rows: webhooks } = useWebhooks();
-  const { rows: stats, error: statsError } = useWhStats(days);
-  const sheets = useWhDoc<SheetsStatus>(WH.settings, 'sheets_status');
-  const { rows: dead } = useWhCollection<WhStepRun>(WH.stepRuns, [where('status', '==', 'dead'), limit(500)]);
+  // Counted from the submissions themselves, so the numbers match the lists the boxes open (and deleted leads drop out).
+  const since = now - (days + 1) * DAY_MS;
+  const { rows: subs, error: statsError } = useWhCollection<WhSubmission>(
+    WH.submissions, [where('receivedAt', '>=', since), orderBy('receivedAt', 'desc'), limit(10000)], [since],
+  );
+  const { rows: failedRuns } = useWhCollection<WhStepRun>(WH.stepRuns, [where('status', 'in', FAILED_STEP_STATUSES), limit(5000)]);
+  const dead = useMemo(() => failedRuns?.filter((r) => r.status === 'dead'), [failedRuns]);
 
   const domainName = useMemo(() => new Map((domains || []).map((d) => [d.id, d.name || d.url])), [domains]);
   const hookById = useMemo(() => new Map((webhooks || []).map((w) => [w.id, w])), [webhooks]);
@@ -45,8 +48,13 @@ const WhOverview: React.FC = () => {
   const keys = useMemo(() => lastDayKeys(days, now), [days, now]);
   const summary = useMemo(() => {
     const ids = domainFilter ? new Set((webhooks || []).filter((w) => w.domainId === domainFilter).map((w) => w.id)) : undefined;
-    return summarize(stats, keys, domainFilter || undefined, ids);
-  }, [stats, keys, domainFilter, webhooks]);
+    return summarizeSubs(subs, failedRuns, keys, domainFilter || undefined, ids);
+  }, [subs, failedRuns, keys, domainFilter, webhooks]);
+  // Each box opens the matching list for the same days (and website).
+  const listLink = (extra: string) => {
+    const p = new URLSearchParams(`from=${keyToDate(keys[0])}&to=${keyToDate(keys[keys.length - 1])}${domainFilter ? `&domain=${domainFilter}` : ''}${extra}`);
+    return `/wh/submissions?${p.toString()}`;
+  };
 
   const setupMissing = global === null || (global !== undefined && (!global.masterFlowId || !global.defaultFlowId)) || (!!global?.masterFlowId && master === null);
 
@@ -66,50 +74,22 @@ const WhOverview: React.FC = () => {
 
   const loading = domains === undefined || webhooks === undefined || global === undefined;
 
-  // ---- Needs attention ----
-  const attention: Attention[] = [];
-  if (!loading) {
-    for (const d of domains || []) {
-      if (d.status !== 'active') continue;
-      const s = resolveSettings(global || undefined, master?.settings, d.settings);
-      const limitDays = s.alertNoLeadsDays ?? 3;
-      if (!limitDays) continue;
-      const hooks = (webhooks || []).filter((w) => w.domainId === d.id && w.status === 'active');
-      if (!hooks.length) continue;
-      const last = Math.max(0, ...hooks.map((w) => w.lastReceivedAt || 0));
-      const since = last || d.createdAt || 0;
-      if (now - since > limitDays * DAY_MS) {
-        attention.push({
-          key: `nl-${d.id}`,
-          icon: <WarningAmber color="warning" />,
-          text: <><b>{d.name}</b> — {last ? `no leads since ${ago(last, now)}` : `no leads yet (added ${ago(d.createdAt, now)})`}. Check that the form still works.</>,
-          to: `/wh/websites/${d.id}`,
-        });
-      }
+  // ---- Needs attention (same list as System Triage, websites/Sheets/flows only) ----
+  const triage = useSystemTriage(now);
+  const attention = triage.items.filter((i) => i.source === 'check' && !i.deleted);
+  const [triageBusy, setTriageBusy] = useState(false);
+  const [triageErr, setTriageErr] = useState('');
+  const removeAttention = async (list: TriageItem[]) => {
+    setTriageBusy(true);
+    setTriageErr('');
+    try {
+      await deleteTriage(list, profile?.uid || '');
+    } catch (e) {
+      setTriageErr(errText(e));
+    } finally {
+      setTriageBusy(false);
     }
-  }
-  if (sheets?.lastError) {
-    attention.push({
-      key: 'sheets',
-      icon: <TableChart color="error" />,
-      text: <>Google Sheets: {sheets.lastError}{sheets.lastErrorAt ? ` (${ago(sheets.lastErrorAt, now)})` : ''}. Make sure each sheet is shared with the service account (see Settings).</>,
-      to: '/wh/settings',
-    });
-  }
-  if (sheets && (sheets.deadRows || 0) > 0) {
-    attention.push({ key: 'sheets-dead', icon: <TableChart color="error" />, text: <>{sheets.deadRows} sheet row(s) could not be written after several tries.</> });
-  }
-  if (sheets && (sheets.pendingRows || 0) > 200) {
-    attention.push({ key: 'sheets-pending', icon: <TableChart color="warning" />, text: <>{sheets.pendingRows} rows are waiting to be written to Google Sheets.</> });
-  }
-  if (dead && dead.length) {
-    attention.push({
-      key: 'dead',
-      icon: <ReportProblem color="error" />,
-      text: <>{dead.length >= 500 ? '500+' : dead.length} step(s) failed for good (dead letters). Fix the cause, then replay them.</>,
-      to: '/wh/dead',
-    });
-  }
+  };
 
   const setupBox = setupMissing && (
     <Alert
@@ -157,7 +137,7 @@ const WhOverview: React.FC = () => {
       <>
         {setupBox}
         {setupMsg && <Alert severity={setupMsg.ok ? 'success' : 'error'} sx={{ mb: 2 }}>{setupMsg.text}</Alert>}
-        {statsError && <Alert severity="warning" sx={{ mb: 2 }}>Could not load the daily counters: {statsError}</Alert>}
+        {statsError && <Alert severity="warning" sx={{ mb: 2 }}>Could not load the leads: {statsError}</Alert>}
         <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap', mb: 2 }}>
           <RangeChips value={days} onChange={setDays} />
           <FormControl size="small" sx={{ minWidth: 220 }}>
@@ -169,49 +149,47 @@ const WhOverview: React.FC = () => {
           </FormControl>
         </Box>
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', md: 'repeat(5, 1fr)' }, gap: 2, mb: 2 }}>
-          <Kpi label="Leads" value={summary.total} hint={domainFilter ? 'this website' : 'all websites'} to="/wh/submissions" />
-          <Kpi label="Spam blocked" value={domainFilter ? '—' : summary.spam} hint={domainFilter ? 'shown for all websites only' : undefined} />
-          <Kpi label="Duplicates" value={domainFilter ? '—' : summary.duplicate} hint={domainFilter ? 'shown for all websites only' : undefined} />
+          <Kpi label="Leads" value={summary.total} hint={`${domainFilter ? 'this website' : 'all websites'} — open`} to={listLink('')} />
+          <Kpi label="Spam blocked" value={summary.spam} hint="open the blocked leads" to={listLink('&status=spam')} />
+          <Kpi label="Duplicates" value={summary.duplicate} hint="open the duplicates" to={listLink('&status=duplicate')} />
           <Kpi
             label="Failed steps"
-            value={domainFilter ? '—' : summary.failedSteps}
-            hint={dead ? `${dead.length >= 500 ? '500+' : dead.length} dead letter(s) — open` : undefined}
-            to="/wh/dead"
-            tone={dead && dead.length ? 'error' : undefined}
+            value={summary.failedSteps}
+            hint={`${dead ? (dead.length >= 5000 ? '5000+' : dead.length) : 0} out of retries — open`}
+            to={`/wh/dead?from=${keyToDate(keys[0])}${domainFilter ? `&domain=${domainFilter}` : ''}`}
+            tone={summary.failedSteps ? 'error' : undefined}
           />
-          <Kpi label="Active websites" value={activeSites} hint={`${(webhooks || []).length} webhook(s)`} to="/wh/websites" />
+          <Kpi label="Active websites" value={activeSites} hint={`${(webhooks || []).length} webhook(s) — open`} to="/wh/websites" />
         </Box>
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '2fr 1fr' }, gap: 2, mb: 2 }}>
           <Panel title="Leads per day">
-            {stats === undefined ? <CircularProgress size={24} /> : <DayBars data={summary.series} />}
+            {subs === undefined ? <CircularProgress size={24} /> : <DayBars data={summary.series} />}
           </Panel>
-          <Panel title="Needs attention">
+          <Panel
+            title="Needs attention"
+            action={<Button size="small" component={RouterLink} to="/wh/triage">System Triage</Button>}
+          >
+            {triageErr && <Alert severity="error" sx={{ mb: 1 }}>{triageErr}</Alert>}
             {!attention.length ? (
               <Typography variant="body2" color="text.secondary">All good — nothing needs attention.</Typography>
             ) : (
-              <List dense disablePadding>
-                {attention.slice(0, 12).map((a) => (
-                  <ListItem key={a.key} disableGutters {...(a.to ? { component: RouterLink, to: a.to, sx: { color: 'inherit' } } : {})}>
-                    <ListItemIcon sx={{ minWidth: 36 }}>{a.icon}</ListItemIcon>
-                    <ListItemText primary={a.text} />
-                  </ListItem>
-                ))}
-                {attention.length > 12 && <Typography variant="caption">…and {attention.length - 12} more</Typography>}
-              </List>
+              <>
+                <TriageList items={attention.slice(0, 12)} now={now} busy={triageBusy} onDelete={removeAttention} />
+                <Box sx={{ display: 'flex', alignItems: 'center', mt: 1 }}>
+                  {attention.length > 12 && <Typography variant="caption">…and {attention.length - 12} more</Typography>}
+                  <Box sx={{ flexGrow: 1 }} />
+                  <Button size="small" color="error" startIcon={<DeleteSweep />} disabled={triageBusy} onClick={() => removeAttention(attention)}>
+                    Delete all
+                  </Button>
+                </Box>
+              </>
             )}
           </Panel>
         </Box>
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(3, 1fr)' }, gap: 2 }}>
           <Panel title="Top websites"><TopList rows={topSites} empty="No leads in this period." /></Panel>
           <Panel title="Top forms (webhooks)"><TopList rows={topHooks} empty="No leads in this period." /></Panel>
-          <Panel title="Top sources">
-            {domainFilter ? (
-              <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-                <ErrorOutline fontSize="small" color="disabled" />
-                <Typography variant="body2" color="text.secondary">Sources are counted for all websites together — choose "All websites".</Typography>
-              </Stack>
-            ) : <TopList rows={topSources} empty="No leads in this period." />}
-          </Panel>
+          <Panel title="Top sources"><TopList rows={topSources} empty="No leads in this period." /></Panel>
         </Box>
       </>
     );

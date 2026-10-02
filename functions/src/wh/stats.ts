@@ -40,6 +40,8 @@ export interface StatBump {
   domainId?: string;
   webhookId?: string;
   source?: string;
+  /** Amount added to the byDomain/byWebhook/bySource entries (default 1; -1 when a lead is deleted). */
+  mapDelta?: number;
 }
 
 /** Increment today's counters. Never throws (stats must not break ingestion). */
@@ -48,9 +50,10 @@ export async function bumpStats(b: StatBump, at = Date.now()) {
   const day = nyDay(at);
   const data: Record<string, unknown> = {day, updatedAt: Date.now()};
   for (const k of ['total', 'spam', 'duplicate', 'failedSteps'] as const) if (b[k]) data[k] = inc(b[k] as number);
-  if (b.domainId) data.byDomain = {[b.domainId]: inc(1)};
-  if (b.webhookId) data.byWebhook = {[b.webhookId]: inc(1)};
-  if (b.source !== undefined) data.bySource = {[sourceKey(b.source)]: inc(1)};
+  const m = b.mapDelta ?? 1;
+  if (b.domainId) data.byDomain = {[b.domainId]: inc(m)};
+  if (b.webhookId) data.byWebhook = {[b.webhookId]: inc(m)};
+  if (b.source !== undefined) data.bySource = {[sourceKey(b.source)]: inc(m)};
   try {
     await admin.firestore().collection(WH.stats).doc('d_' + day).set(data, {merge: true});
   } catch (e) {

@@ -8,6 +8,7 @@ import {SAMPLE_LEAD} from './shared';
 import {clearConfigCache, db, loadWebhook} from './config';
 import {FINISHED_STATUSES, processSubmission, runSingleStep} from './engine';
 import {cleanValue, dedupeKeys} from './fields';
+import {bumpStats} from './stats';
 
 const del = () => admin.firestore.FieldValue.delete();
 
@@ -172,17 +173,31 @@ export async function deleteSubmission(id: string): Promise<boolean> {
   const ref = db().collection(WH.submissions).doc(id);
   const snap = await ref.get();
   if (!snap.exists) return false;
+  let failedSteps = 0;
   for (const coll of [WH.stepRuns, WH.sheetBuffer]) {
     for (;;) {
       const rs = await db().collection(coll).where('submissionId', '==', id).limit(400).get();
       if (rs.empty) break;
       const batch = db().batch();
-      rs.docs.forEach((r) => batch.delete(r.ref));
+      rs.docs.forEach((r) => {
+        if (coll === WH.stepRuns && ['failed', 'dead'].includes(String(r.get('status')))) failedSteps++;
+        batch.delete(r.ref);
+      });
       await batch.commit();
       if (rs.size < 400) break;
     }
   }
   await ref.delete();
+  // Take the lead out of the daily counters too, so the overview numbers match what is left.
+  const sub = snap.data() || {};
+  const isSpam = !!sub.isSpam || sub.status === 'spam';
+  const isTest = sub.isTest === true;
+  await bumpStats({
+    total: -1,
+    ...(isSpam ? {spam: -1} : {domainId: String(sub.domainId || ''), webhookId: String(sub.webhookId || ''), source: String(sub.utm_source || 'direct'), mapDelta: -1}),
+    ...(!isTest && sub.status === 'duplicate' ? {duplicate: -1} : {}),
+    ...(!isTest && failedSteps ? {failedSteps: -failedSteps} : {}),
+  }, Number(sub.receivedAt) || Date.now());
   await admin.storage().bucket().deleteFiles({prefix: `wh_uploads/${snap.get('webhookId')}/${id}/`})
     .catch((e) => logger.warn('wh delete: file delete failed', id, e));
   return true;
