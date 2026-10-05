@@ -4,6 +4,8 @@ import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '../config/firebase';
 import type { DeviceDoc } from '../mp/types';
 import { DEFAULT_PRESENCE, loadOnline } from './presence';
+import { loadPostings } from './postings';
+import type { PostMap } from './postings';
 import type { OnlineMap, PresenceSettings } from './presence';
 
 /** Minimum hours a day, which weekdays count, and where reports go (mp_meta/presence). */
@@ -56,3 +58,17 @@ export async function savePresenceSettings(s: PresenceSettings) {
 /** App phones that count for online hours. */
 export const appPhones = (devices: DeviceDoc[] | undefined, userId?: string) =>
   (devices || []).filter((d) => d.source === 'tigon-iot-app' && d.status !== 'revoked' && (!userId || d.userId === userId));
+
+/** Postings per device per day (everyone, or one person). */
+export function usePostings(userId?: string) {
+  const [state, setState] = useState<{ key: string; data?: PostMap; error: string } | null>(null);
+  const key = userId || '*';
+  useEffect(() => {
+    let live = true;
+    loadPostings(userId)
+      .then((data) => { if (live) setState({ key, data, error: '' }); })
+      .catch((e) => { if (live) setState({ key, data: new Map(), error: e instanceof Error ? e.message : String(e) }); });
+    return () => { live = false; };
+  }, [userId, key]);
+  return state?.key === key ? state : { key, data: undefined, error: '' };
+}

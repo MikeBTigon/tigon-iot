@@ -10,6 +10,8 @@ import {db, loadFlow, loadGlobal} from './config';
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
+/** A website must go this long without a lead before anyone is told (shorter settings are raised to this). */
+export const NO_LEADS_MIN_DAYS = 180;
 
 /** mp_alerts doc (same shape as mpOps raiseAlert) + an IoT notification per recipient. */
 export async function raiseWhAlert(alert: Record<string, unknown> & {kind: string; text: string}, notifyUids?: string[]) {
@@ -38,6 +40,9 @@ export async function raiseWhAlert(alert: Record<string, unknown> & {kind: strin
 
 interface AlertState {
   noLeads?: Record<string, number>;
+  /** Website id → the last lead time it was alerted for (0 = never had one): one alert per quiet stretch. */
+  noLeadsFor?: Record<string, number>;
+  noLeadsCleanup?: number;
   failureSpikeAt?: number;
 }
 
@@ -46,6 +51,27 @@ export async function runAlerts(now = Date.now()) {
   const stateRef = db().collection(WH.settings).doc('alert_state');
   const state = ((await stateRef.get()).data() || {}) as AlertState;
   const noLeads: Record<string, number> = {...(state.noLeads || {})};
+  const noLeadsFor: Record<string, number> = {...(state.noLeadsFor || {})};
+
+  // One-time: remove the old short-window "no leads" alerts (they repeated daily for every quiet website).
+  if (!state.noLeadsCleanup) {
+    for (;;) {
+      const old = await db().collection('mp_alerts').where('kind', '==', 'wh_no_leads').limit(400).get();
+      if (old.empty) break;
+      const b = db().batch();
+      old.docs.forEach((x) => b.delete(x.ref));
+      await b.commit();
+      if (old.size < 400) break;
+    }
+    const notes = await db().collection('notifications').where('source', '==', 'wh_alert').limit(10000).get();
+    const mine = notes.docs.filter((x) => String(x.get('text') || '').startsWith('No website leads'));
+    for (let i = 0; i < mine.length; i += 400) {
+      const b = db().batch();
+      mine.slice(i, i + 400).forEach((x) => b.delete(x.ref));
+      await b.commit();
+    }
+    state.noLeadsCleanup = now;
+  }
   const global = await loadGlobal(true);
   const master = await loadFlow(global.masterFlowId, true);
   const raised: string[] = [];
@@ -55,11 +81,11 @@ export async function runAlerts(now = Date.now()) {
   for (const d of domains.docs) {
     const domain = {...d.data(), id: d.id} as WhDomain & {lastReceivedAt?: number};
     const settings = resolveSettings(global, master?.settings, domain.settings);
-    const days = domain.settings?.alertNoLeadsDays ?? global.alertNoLeadsDays ?? 3;
-    if (!(days > 0)) continue;
+    const set = domain.settings?.alertNoLeadsDays ?? global.alertNoLeadsDays ?? NO_LEADS_MIN_DAYS;
+    if (!(set > 0)) continue;
+    const days = Math.max(set, NO_LEADS_MIN_DAYS);
     const windowStart = now - days * DAY;
     if ((domain.lastReceivedAt || 0) >= windowStart) continue;
-    if (now - (noLeads[d.id] || 0) < DAY) continue;
     // Candidate: confirm from its webhooks (only active ones count; a domain with none isn't expected to get leads).
     const hooks = await db().collection(WH.webhooks).where('domainId', '==', d.id).limit(200).get();
     const active = hooks.docs.map((h) => h.data() as WhWebhook).filter((h) => h.status === 'active');
@@ -67,11 +93,14 @@ export async function runAlerts(now = Date.now()) {
     const last = Math.max(domain.lastReceivedAt || 0, ...active.map((h) => h.lastReceivedAt || 0));
     const since = last || Math.max(domain.createdAt || 0, ...active.map((h) => h.createdAt || 0));
     if (since >= windowStart) continue;
+    // Only one notification per quiet stretch; a new lead starts a new stretch.
+    if (d.id in noLeadsFor && noLeadsFor[d.id] === last) continue;
     const text = last ?
-      `No website leads from ${domain.name || domain.url} in ${Math.floor((now - last) / DAY)} days. Check that the form still works.` :
-      `No website leads from ${domain.name || domain.url} yet (${days}+ days since setup). Check the form is connected.`;
+      `No website leads from ${domain.name || domain.url} in ${Math.floor((now - last) / DAY)} days (6+ months). Check that the form still works.` :
+      `No website leads from ${domain.name || domain.url} in the 6+ months since it was set up. Check the form is connected.`;
     await raiseWhAlert({kind: 'wh_no_leads', domainId: d.id, lastReceivedAt: last || null, text}, settings.notifyUids);
     noLeads[d.id] = now;
+    noLeadsFor[d.id] = last;
     raised.push('wh_no_leads:' + d.id);
   }
 
@@ -101,7 +130,7 @@ export async function runAlerts(now = Date.now()) {
     }
   }
 
-  await stateRef.set({noLeads, failureSpikeAt: state.failureSpikeAt || 0, checkedAt: now}, {merge: true});
+  await stateRef.set({noLeads, noLeadsFor, noLeadsCleanup: state.noLeadsCleanup || 0, failureSpikeAt: state.failureSpikeAt || 0, checkedAt: now}, {merge: true});
   return {raised, failures};
 }
 

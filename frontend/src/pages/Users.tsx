@@ -13,10 +13,11 @@ import EditUserDialog from '../devices/EditUserDialog';
 import { isOnline, lastSeenMs, seenLabel } from '../devices/deviceStatus';
 import { fmtHours, hoursOn, hoursOver, periods, weekday } from '../devices/presence';
 import type { PresenceSettings } from '../devices/presence';
-import { appPhones, savePresenceSettings, sendPresenceReport, useAllDevices, useOnline, usePresenceSettings } from '../devices/usePresence';
+import { appPhones, savePresenceSettings, sendPresenceReport, useAllDevices, useOnline, usePostings, usePresenceSettings } from '../devices/usePresence';
+import { postsOver } from '../devices/postings';
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-type SortKey = 'name' | 'location' | 'phones' | 'today' | 'week' | 'month' | 'year' | 'low';
+type SortKey = 'name' | 'location' | 'phones' | 'today' | 'week' | 'month' | 'year' | 'low' | 'postsWeek' | 'postsMonth';
 
 /** Everyone who signed in to TIGON IOT: their phones, online hours and alerts. Managers and admins. */
 const Users: React.FC = () => {
@@ -27,6 +28,7 @@ const Users: React.FC = () => {
   const cfg = usePresenceSettings();
   const devices = useAllDevices();
   const online = useOnline(per.year[0]);
+  const posts = usePostings();
   const [q, setQ] = useState('');
   const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'name', dir: 'asc' });
   const [editing, setEditing] = useState<MpProfile | null>(null);
@@ -42,16 +44,20 @@ const Users: React.FC = () => {
     return users.map((u) => {
       const phones = appPhones(devices, u.uid);
       const sum = (dates: string[]) => (m ? phones.reduce((s, p) => s + hoursOver(m, p.id, dates), 0) : 0);
+      // Postings by this person from any device (phones + computer).
+      const pm = posts.data;
+      const postSum = (dates: string[]) => (pm ? Array.from(pm.keys()).filter((k) => k.startsWith(`${u.uid}|`)).reduce((s, k) => s + postsOver(pm, k, dates), 0) : 0);
       const low = m && counts(per.yesterday) ? phones.filter((p) => hoursOn(m, p.id, per.yesterday) < cfg.minHours) : [];
       return {
         u, phones, low,
         onlineNow: phones.filter((p) => isOnline(p)).length,
         lastSeen: Math.max(0, ...phones.map((p) => lastSeenMs(p))),
         today: sum([per.today]), week: sum(per.week), month: sum(per.month), year: sum(per.year),
+        postsWeek: postSum(per.week), postsMonth: postSum(per.month),
       };
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- counts depends on cfg.days
-  }, [users, devices, online.data, per, cfg]);
+  }, [users, devices, online.data, posts.data, per, cfg]);
 
   const shown = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -160,6 +166,7 @@ const Users: React.FC = () => {
               <TableRow>
                 {head('name', 'Name')}{head('location', 'Location')}{head('phones', 'Phones')}
                 {head('today', 'Today', 'right')}{head('week', 'This week', 'right')}{head('month', 'This month', 'right')}{head('year', 'This year', 'right')}
+                {head('postsWeek', 'Posts this week', 'right')}{head('postsMonth', 'Posts this month', 'right')}
                 {head('low', `Under ${cfg.minHours} h yesterday`)}<TableCell align="right">Actions</TableCell>
               </TableRow>
             </TableHead>
@@ -180,6 +187,8 @@ const Users: React.FC = () => {
                   {(['today', 'week', 'month', 'year'] as const).map((k) => (
                     <TableCell key={k} align="right">{online.data ? `${fmtHours(r[k])} h` : '…'}</TableCell>
                   ))}
+                  <TableCell align="right">{posts.data ? r.postsWeek : '…'}</TableCell>
+                  <TableCell align="right">{posts.data ? r.postsMonth : '…'}</TableCell>
                   <TableCell>
                     {!r.phones.length || !counts(per.yesterday) ? '—' : r.low.length ?
                       <Chip size="small" color="warning" label={`${r.low.length} of ${r.phones.length}`} /> :
@@ -195,7 +204,7 @@ const Users: React.FC = () => {
                   </TableCell>
                 </TableRow>
               ))}
-              {!shown.length && <TableRow><TableCell colSpan={9}>No users match.</TableCell></TableRow>}
+              {!shown.length && <TableRow><TableCell colSpan={11}>No users match.</TableCell></TableRow>}
             </TableBody>
           </Table>
         </Box>

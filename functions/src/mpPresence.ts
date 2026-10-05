@@ -83,6 +83,40 @@ async function loadOnline(from: string): Promise<Online> {
   return out;
 }
 
+/** Marketplace postings: '<userId>|<deviceId or web>' → date → count (post_marked events + posted queue items without one). */
+type Posts = Map<string, Map<string, number>>;
+const NO_POSTS: Posts = new Map();
+
+async function loadPosts(from: string): Promise<Posts> {
+  const fromMs = Date.parse(`${from}T00:00:00-05:00`);
+  const [events, queue] = await Promise.all([
+    db().collection('mp_events').where('type', '==', 'post_marked').get(),
+    db().collection('mp_queue').where('status', '==', 'posted').get(),
+  ]);
+  const out: Posts = new Map();
+  const add = (uid: string, device: string, ts: number) => {
+    if (!ts || ts < fromMs) return;
+    const key = `${uid}|${device || 'web'}`;
+    const date = nySlot(ts).date;
+    if (!out.has(key)) out.set(key, new Map());
+    out.get(key)!.set(date, (out.get(key)!.get(date) || 0) + 1);
+  };
+  const seen = new Set<string>();
+  for (const e of events.docs) {
+    if (e.get('queueId')) seen.add(String(e.get('queueId')));
+    add(String(e.get('userId') || ''), String(e.get('deviceId') || ''), Number(e.get('ts') || 0));
+  }
+  for (const q of queue.docs) {
+    if (seen.has(q.id)) continue;
+    add(String(q.get('assignedUserId') || ''), String(q.get('deviceId') || ''), Number(q.get('postedAt') || q.get('updatedAt') || 0));
+  }
+  return out;
+}
+const postsFor = (ps: Posts, uid: string, device: string, dates: string[]) => {
+  const m = ps.get(`${uid}|${device}`);
+  return m ? dates.reduce((s, d) => s + (m.get(d) || 0), 0) : 0;
+};
+
 const hours = (o: Online, dev: string, date: string) => hoursOf(o.get(dev)?.get(date));
 const sumHours = (o: Online, dev: string, dates: string[]) => dates.reduce((s, d) => s + hours(o, dev, d), 0);
 const fmt = (h: number) => (h >= 10 ? h.toFixed(0) : h.toFixed(1));
@@ -125,7 +159,8 @@ function hourLabels() {
   return `<table cellspacing="0" cellpadding="0" style="border-collapse:collapse"><tr>${cells}</tr></table>`;
 }
 
-function phoneSection(p: Phone, o: Online, per: Periods, cfg: PresenceSettings) {
+function phoneSection(p: Phone, o: Online, per: Periods, cfg: PresenceSettings, ps: Posts = NO_POSTS) {
+  const posts = (dates: string[]) => postsFor(ps, p.userId, p.id, dates);
   // Today is still running: it is shown but never counted as "under".
   const counts = (d: string) => cfg.days.includes(weekday(d)) && d !== per.t;
   const under = per.month.filter((d) => counts(d) && hours(o, p.id, d) < cfg.minHours).length;
@@ -137,16 +172,18 @@ function phoneSection(p: Phone, o: Online, per: Periods, cfg: PresenceSettings) 
     const low = counts(d) && h < cfg.minHours;
     rows += `<tr><td style="${TD};text-align:left;white-space:nowrap">${label(d)}</td>` +
       `<td style="${TD};font-weight:600;color:${low ? '#c62828' : '#2e7d32'}">${fmt(h)} h${low ? ' ⚠' : ''}</td>` +
-      `<td style="${TD}">${hourStrip(o.get(p.id)?.get(d))}</td></tr>`;
+      `<td style="${TD}">${posts([d])}</td><td style="${TD}">${hourStrip(o.get(p.id)?.get(d))}</td></tr>`;
   }
   return `<h3 style="margin:18px 0 6px;font-size:15px">${esc(phoneLabel(p))}</h3>
 <table cellspacing="0" style="border-collapse:collapse;margin-bottom:6px"><tr>
-<th style="${TH}">This week</th><th style="${TH}">This month</th><th style="${TH}">This year</th><th style="${TH}">Avg / day (month)</th><th style="${TH}">Days under ${cfg.minHours} h (month)</th></tr>
+<th style="${TH}">This week</th><th style="${TH}">This month</th><th style="${TH}">This year</th><th style="${TH}">Avg / day (month)</th><th style="${TH}">Days under ${cfg.minHours} h (month)</th>
+<th style="${TH}">Posts this week</th><th style="${TH}">Posts this month</th><th style="${TH}">Posts this year</th></tr>
 <tr><td style="${TD}">${fmt(sumHours(o, p.id, per.week))} h</td><td style="${TD}">${fmt(sumHours(o, p.id, per.month))} h</td>
 <td style="${TD}">${fmt(sumHours(o, p.id, per.year))} h</td><td style="${TD};color:${avgMonth < cfg.minHours ? '#c62828' : '#2e7d32'}">${fmt(avgMonth)} h</td>
-<td style="${TD};color:${under ? '#c62828' : '#2e7d32'};font-weight:600">${under}</td></tr></table>
-<table cellspacing="0" style="border-collapse:collapse"><tr><th style="${TH}">Day</th><th style="${TH}">Online</th><th style="${TH}">When (midnight → midnight, New York time)</th></tr>
-<tr><td style="${TD}"></td><td style="${TD}"></td><td style="${TD}">${hourLabels()}</td></tr>${rows}</table>`;
+<td style="${TD};color:${under ? '#c62828' : '#2e7d32'};font-weight:600">${under}</td>
+<td style="${TD};font-weight:600">${posts(per.week)}</td><td style="${TD};font-weight:600">${posts(per.month)}</td><td style="${TD};font-weight:600">${posts(per.year)}</td></tr></table>
+<table cellspacing="0" style="border-collapse:collapse"><tr><th style="${TH}">Day</th><th style="${TH}">Online</th><th style="${TH}">Posts</th><th style="${TH}">When (midnight → midnight, New York time)</th></tr>
+<tr><td style="${TD}"></td><td style="${TD}"></td><td style="${TD}"></td><td style="${TD}">${hourLabels()}</td></tr>${rows}</table>`;
 }
 
 const wrap = (title: string, body: string, cfg: PresenceSettings) => `<div style="font-family:Arial,Helvetica,sans-serif;color:#222;max-width:760px">
@@ -155,19 +192,29 @@ const wrap = (title: string, body: string, cfg: PresenceSettings) => `<div style
 Open <a href="https://tigoniot.com/users">tigoniot.com/users</a> for the full timeline.</p>${body}
 <p style="color:#999;font-size:11px;margin-top:18px">Sent by TIGON IOT.</p></div>`;
 
-function userReport(person: Person, phones: Phone[], o: Online, per: Periods, cfg: PresenceSettings) {
+function userReport(person: Person, phones: Phone[], o: Online, per: Periods, cfg: PresenceSettings, ps: Posts = NO_POSTS) {
   const own = phones.filter((p) => p.userId === person.uid);
   const total = own.reduce((s, p) => s + sumHours(o, p.id, per.week), 0);
-  const body = own.length ? own.map((p) => phoneSection(p, o, per, cfg)).join('') : '<p>No phones are set up for this person.</p>';
+  // All of the person's postings (any device, incl. computer and phones they no longer have).
+  const allPosts = (dates: string[]) => Array.from(ps.keys()).filter((k) => k.startsWith(`${person.uid}|`))
+    .reduce((s, k) => s + postsFor(ps, person.uid, k.slice(person.uid.length + 1), dates), 0);
+  const otherPosts = (dates: string[]) => allPosts(dates) - own.reduce((s, p) => s + postsFor(ps, person.uid, p.id, dates), 0);
+  const postTable = `<h3 style="margin:18px 0 6px;font-size:15px">Marketplace postings</h3>
+<table cellspacing="0" style="border-collapse:collapse"><tr><th style="${TH}">Device</th><th style="${TH}">Today</th><th style="${TH}">This week</th><th style="${TH}">This month</th><th style="${TH}">This year</th></tr>
+${own.map((p) => `<tr><td style="${TD};text-align:left">${esc(phoneLabel(p))}</td>${[[per.t], per.week, per.month, per.year].map((ds) => `<td style="${TD}">${postsFor(ps, person.uid, p.id, ds)}</td>`).join('')}</tr>`).join('')}
+${otherPosts(per.year) ? `<tr><td style="${TD};text-align:left">Computer / other devices</td>${[[per.t], per.week, per.month, per.year].map((ds) => `<td style="${TD}">${otherPosts(ds)}</td>`).join('')}</tr>` : ''}
+<tr><td style="${TD};text-align:left;font-weight:700">All devices</td>${[[per.t], per.week, per.month, per.year].map((ds) => `<td style="${TD};font-weight:700">${allPosts(ds)}</td>`).join('')}</tr></table>`;
+  const body = (own.length ? own.map((p) => phoneSection(p, o, per, cfg, ps)).join('') : '<p>No phones are set up for this person.</p>') + postTable;
   const title = `Phone online report — ${person.name}`;
   return {
     subject: `${title} (week of ${label(per.week[0])})`,
-    html: wrap(title, `<p style="font-size:13px">${own.length} phone(s) · ${fmt(total)} h online this week${person.location ? ` · ${esc(LOCATIONS[person.location] || person.location)}` : ''}</p>${body}`, cfg),
-    text: `${title}\n` + own.map((p) => `${phoneLabel(p)}: week ${fmt(sumHours(o, p.id, per.week))} h, month ${fmt(sumHours(o, p.id, per.month))} h, year ${fmt(sumHours(o, p.id, per.year))} h`).join('\n'),
+    html: wrap(title, `<p style="font-size:13px">${own.length} phone(s) · ${fmt(total)} h online this week · ${allPosts(per.week)} posting(s) this week${person.location ? ` · ${esc(LOCATIONS[person.location] || person.location)}` : ''}</p>${body}`, cfg),
+    text: `${title}\n` + own.map((p) => `${phoneLabel(p)}: week ${fmt(sumHours(o, p.id, per.week))} h, month ${fmt(sumHours(o, p.id, per.month))} h, year ${fmt(sumHours(o, p.id, per.year))} h; posts week ${postsFor(ps, person.uid, p.id, per.week)}, month ${postsFor(ps, person.uid, p.id, per.month)}, year ${postsFor(ps, person.uid, p.id, per.year)}`).join('\n') +
+      `\nAll postings: week ${allPosts(per.week)}, month ${allPosts(per.month)}, year ${allPosts(per.year)}`,
   };
 }
 
-function overallReport(people: Map<string, Person>, phones: Phone[], o: Online, per: Periods, cfg: PresenceSettings) {
+function overallReport(people: Map<string, Person>, phones: Phone[], o: Online, per: Periods, cfg: PresenceSettings, ps: Posts = NO_POSTS) {
   const counts = (d: string) => cfg.days.includes(weekday(d)) && d !== per.t;
   const sorted = phones.slice().sort((a, b) => (people.get(a.userId)?.name || '').localeCompare(people.get(b.userId)?.name || '') || a.number.localeCompare(b.number));
   let rows = '';
@@ -179,11 +226,13 @@ function overallReport(people: Map<string, Person>, phones: Phone[], o: Online, 
     const avg = sumHours(o, p.id, per.last7.filter(counts)) / days7;
     rows += `<tr><td style="${TD};text-align:left">${esc(who)}</td><td style="${TD};text-align:left">${esc(phoneLabel(p))}</td>` +
       `<td style="${TD}">${fmt(sumHours(o, p.id, per.last7))} h</td><td style="${TD};color:${avg < cfg.minHours ? '#c62828' : '#2e7d32'};font-weight:600">${fmt(avg)} h</td>` +
-      `<td style="${TD};color:${under7 ? '#c62828' : '#2e7d32'}">${under7}</td><td style="${TD}">${fmt(sumHours(o, p.id, per.month))} h</td><td style="${TD}">${fmt(sumHours(o, p.id, per.year))} h</td></tr>`;
-    lines.push(`${who} — ${phoneLabel(p)}: 7 days ${fmt(sumHours(o, p.id, per.last7))} h, avg ${fmt(avg)} h/day, ${under7} day(s) under ${cfg.minHours} h`);
+      `<td style="${TD};color:${under7 ? '#c62828' : '#2e7d32'}">${under7}</td><td style="${TD}">${fmt(sumHours(o, p.id, per.month))} h</td><td style="${TD}">${fmt(sumHours(o, p.id, per.year))} h</td>` +
+      `<td style="${TD};font-weight:600">${postsFor(ps, p.userId, p.id, per.last7)}</td><td style="${TD}">${postsFor(ps, p.userId, p.id, per.month)}</td><td style="${TD}">${postsFor(ps, p.userId, p.id, per.year)}</td></tr>`;
+    lines.push(`${who} — ${phoneLabel(p)}: 7 days ${fmt(sumHours(o, p.id, per.last7))} h, avg ${fmt(avg)} h/day, ${under7} day(s) under ${cfg.minHours} h, ${postsFor(ps, p.userId, p.id, per.last7)} post(s)`);
   }
   const table = `<table cellspacing="0" style="border-collapse:collapse"><tr><th style="${TH}">Person</th><th style="${TH}">Phone</th><th style="${TH}">Last 7 days</th>` +
-    `<th style="${TH}">Avg / day</th><th style="${TH}">Days under ${cfg.minHours} h</th><th style="${TH}">This month</th><th style="${TH}">This year</th></tr>${rows}</table>`;
+    `<th style="${TH}">Avg / day</th><th style="${TH}">Days under ${cfg.minHours} h</th><th style="${TH}">This month</th><th style="${TH}">This year</th>` +
+    `<th style="${TH}">Posts 7 days</th><th style="${TH}">Posts month</th><th style="${TH}">Posts year</th></tr>${rows}</table>`;
   const title = 'All phones — online report';
   return {
     subject: `${title} (${label(per.last7[0])} – ${label(per.t)})`,
@@ -199,14 +248,15 @@ async function mailSettings(): Promise<WhSettings> {
 async function sendReports(kind: 'user' | 'allUsers' | 'overall', uid = '') {
   const cfg = await presenceSettings();
   const per = periods();
-  const [people, phones, online, settings] = await Promise.all([loadPeople(), loadPhones(), loadOnline(per.year[0]), mailSettings()]);
+  const [people, phones, online, settings, posts] = await Promise.all([loadPeople(), loadPhones(), loadOnline(per.year[0]), mailSettings(), loadPosts(per.year[0])]);
   const msgs = [];
-  if (kind === 'overall') msgs.push(overallReport(people, phones, online, per, cfg));
+  if (kind === 'overall') msgs.push(overallReport(people, phones, online, per, cfg, posts));
   else {
-    const uids = kind === 'user' ? [uid] : Array.from(new Set(phones.map((p) => p.userId)));
+    // Everyone with a phone or a posting this year.
+    const uids = kind === 'user' ? [uid] : Array.from(new Set([...phones.map((p) => p.userId), ...Array.from(posts.keys()).map((k) => k.split('|')[0])])).filter(Boolean);
     for (const u of uids) {
       const person = people.get(u) || {uid: u, name: 'Unknown user', email: '', location: ''};
-      msgs.push(userReport(person, phones, online, per, cfg));
+      msgs.push(userReport(person, phones, online, per, cfg, posts));
     }
   }
   for (const m of msgs) await sendMail(settings, {to: [cfg.reportTo], ...m});
@@ -280,4 +330,4 @@ export const mpPresenceReport = onCall({timeoutSeconds: 300, memory: '512MiB'}, 
 });
 
 /** Tests only. */
-export const _test = {periods, userReport, overallReport, hourStrip, addDays, SLOTS_PER_DAY};
+export const _test = {periods, loadPosts, userReport, overallReport, hourStrip, addDays, SLOTS_PER_DAY};
