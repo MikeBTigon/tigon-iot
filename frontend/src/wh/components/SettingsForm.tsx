@@ -21,7 +21,7 @@ const BUILT_IN: Record<string, string> = {
   honeypotField: 'website',
   perIpPerMinute: '10',
   perKeyPerMinute: '120',
-  alertNoLeadsDays: '3',
+  alertNoLeadsDays: '180',
   dedupeWindowHours: '24',
   dedupeMatchOn: 'Email, Phone',
   emailInheritMode: 'Replace',
@@ -275,7 +275,7 @@ export default function SettingsForm(props: {
       body: <>
         {text(acc('thankYouUrl'), 'Thank-you page', 'Plain HTML forms redirect here after submitting. Leave empty to show a simple thank-you message.', { placeholder: 'https://dealer.com/thank-you', type: 'url' })}
         {chips(acc('allowedOrigins'), 'Extra allowed websites', 'Other site addresses allowed to send to this form (the website address itself is always allowed).', 'https://www.dealer.com')}
-        {num(acc('alertNoLeadsDays'), 'Alert when no leads for (days)', 'Admins get an alert when a website receives no leads for this many days. 0 turns it off.', 0, 365)}
+        {num(acc('alertNoLeadsDays'), 'Alert when no leads for (days)', 'One alert when a website gets no leads for this long — at least 180 days (6 months); shorter values count as 180. 0 turns it off.', 0, 3650)}
       </>,
     },
   ];

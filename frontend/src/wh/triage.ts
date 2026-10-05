@@ -40,8 +40,8 @@ export interface TriageItem {
 interface SheetsStatus { id: string; lastError?: string; lastErrorAt?: number; pendingRows?: number; deadRows?: number }
 interface TriageDoc { id: string; dismissed?: Record<string, string> }
 
-const ALERT_AREA: Record<MpAlert['kind'], TriageArea> = { device_offline: 'Phones', post_failed: 'Posting', sync_failed: 'DMS sync', device_low_hours: 'Phones' };
-const ALERT_TITLE: Record<MpAlert['kind'], string> = { device_offline: 'Phone offline', post_failed: 'Post failed', sync_failed: 'DMS sync failed', device_low_hours: 'Phone on too few hours' };
+const ALERT_AREA: Record<MpAlert['kind'], TriageArea> = { device_offline: 'Phones', post_failed: 'Posting', sync_failed: 'DMS sync', device_low_hours: 'Phones', wh_no_leads: 'Websites', wh_failure_spike: 'Flows' };
+const ALERT_TITLE: Record<MpAlert['kind'], string> = { device_offline: 'Phone offline', post_failed: 'Post failed', sync_failed: 'DMS sync failed', device_low_hours: 'Phone on too few hours', wh_no_leads: 'No website leads in 6 months', wh_failure_spike: 'Many failed steps' };
 
 /** Live list of system notifications. `deleted` items are included (flagged) so the triage page can show/restore them. */
 export function useSystemTriage(now: number) {
@@ -63,8 +63,10 @@ export function useSystemTriage(now: number) {
     for (const d of domains || []) {
       if (d.status !== 'active') continue;
       const s = resolveSettings(global || undefined, master?.settings, d.settings);
-      const limitDays = s.alertNoLeadsDays ?? 3;
-      if (!limitDays) continue;
+      // Same rule as the server: only after 6+ months without a lead.
+      const set = s.alertNoLeadsDays ?? 180;
+      if (!set) continue;
+      const limitDays = Math.max(set, 180);
       const hooks = (webhooks || []).filter((w) => w.domainId === d.id && w.status === 'active');
       if (!hooks.length) continue;
       const last = Math.max(0, ...hooks.map((w) => w.lastReceivedAt || 0));
@@ -112,7 +114,7 @@ export function useSystemTriage(now: number) {
       out.push({
         id: `a:${a.id}`, source: 'alert', key: a.id, sig: '', severity: a.kind === 'device_offline' || a.kind === 'device_low_hours' ? 'warning' : 'error',
         area: ALERT_AREA[a.kind] || 'Phones', title: ALERT_TITLE[a.kind] || 'Alert', text: a.text, at: a.createdAt,
-        to: a.kind === 'device_low_hours' ? (a.userId ? `/users/${a.userId}` : '/users') : a.kind === 'device_offline' ? '/devices' : a.kind === 'post_failed' ? '/mp/queue' : undefined,
+        to: a.kind === 'wh_no_leads' ? (a.domainId ? `/wh/websites/${a.domainId}` : '/wh/websites') : a.kind === 'wh_failure_spike' ? '/wh/submissions/failed-steps' : a.kind === 'device_low_hours' ? (a.userId ? `/users/${a.userId}` : '/users') : a.kind === 'device_offline' ? '/devices' : a.kind === 'post_failed' ? '/mp/queue' : undefined,
       });
     }
     return out.sort((x, y) => (y.at || 0) - (x.at || 0));

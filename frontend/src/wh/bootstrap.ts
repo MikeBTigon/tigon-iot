@@ -106,7 +106,7 @@ export async function ensureWhDefaults(
       dedupeWindowHours: 24,
       dedupeMatchOn: ['email', 'phone1'],
       spam: { honeypotField: 'website', perIpPerMinute: 10, perKeyPerMinute: 120, blockedIps: [], blockedWords: [] },
-      alertNoLeadsDays: 3,
+      alertNoLeadsDays: 180,
       failureSpikePerHour: 20,
       emailTemplateId: defaultTemplateId,
       autoReplyEnabled: false,

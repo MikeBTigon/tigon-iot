@@ -13,6 +13,8 @@ const KIND_LABEL: Record<MpAlert['kind'], string> = {
   post_failed: 'Post failed',
   sync_failed: 'DMS sync failed',
   device_low_hours: 'Phone on too few hours',
+  wh_no_leads: 'No website leads in 6 months',
+  wh_failure_spike: 'Many failed steps',
 };
 
 function acknowledge(a: MpAlert, uid: string) {

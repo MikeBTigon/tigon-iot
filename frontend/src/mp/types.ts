@@ -239,11 +239,12 @@ export interface DeviceDay {
 
 export interface MpAlert {
   id: string;
-  kind: 'device_offline' | 'post_failed' | 'sync_failed' | 'device_low_hours';
+  kind: 'device_offline' | 'post_failed' | 'sync_failed' | 'device_low_hours' | 'wh_no_leads' | 'wh_failure_spike';
   text: string;
   deviceId?: string;
   queueId?: string;
   userId?: string;
+  domainId?: string;
   createdAt: number;
   acknowledgedBy?: string;
   acknowledgedAt?: number;
