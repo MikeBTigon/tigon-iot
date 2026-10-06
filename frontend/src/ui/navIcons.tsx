@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import {
-  AddAPhoto, AdminPanelSettings, Analytics, BarChart, CalendarMonth, CloudUpload, Collections, Description, EmojiEvents,
+  AddAPhoto, AdminPanelSettings, Calculate, Analytics, BarChart, CalendarMonth, CloudUpload, Collections, Description, EmojiEvents,
   FileDownload, Groups, HelpOutline, Home, Insights, Link as LinkIcon, ListAlt, ManageAccounts, MonitorHeart, People,
   PersonSearch, Place, Search, Settings, Storefront, ViewModule,
 } from '@mui/icons-material';
@@ -11,6 +11,7 @@ const ICONS: Record<string, ReactNode> = {
   '/mp/browse': <ViewModule />,
   '/mp/locations': <Place />,
   '/mp/new': <AddAPhoto />,
+  '/mp/finance': <Calculate />,
   '/mp/queue': <ListAlt />,
   '/mp/calendar': <CalendarMonth />,
   '/mp/storefront': <Storefront />,

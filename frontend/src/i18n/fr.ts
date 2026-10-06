@@ -9,6 +9,7 @@ const fr: Resource = {
     browse: 'Parcourir',
     locations: 'Magasins',
     new: 'Nouvelle annonce',
+    finance: 'Financement',
     post: 'Publier et partager',
     queue: 'File',
     calendar: 'Calendrier',

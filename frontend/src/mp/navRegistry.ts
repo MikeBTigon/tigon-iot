@@ -27,6 +27,7 @@ export const MP_NAV: NavGroup[] = [
       { label: 'Browse', path: '/mp/browse', min: 'sales', key: 'nav.browse' },
       { label: 'Locations', path: '/mp/locations', min: 'sales', key: 'nav.locations' },
       { label: 'New listing', path: '/mp/new', min: 'sales', key: 'nav.new' },
+      { label: 'Financing', path: '/mp/finance', min: 'sales', key: 'nav.finance' },
     ],
   },
   {
