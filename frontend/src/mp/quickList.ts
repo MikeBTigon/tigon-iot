@@ -3,7 +3,7 @@
 //   Computer     → the Tigon Poster Chrome extension fills the form in a new tab (when installed).
 //   Otherwise    → assisted: description copied, Facebook opened (photos via "Save all photos").
 import { registerPlugin } from '@capacitor/core';
-import { generateVariations, photoUrl } from './cartLogic';
+import { displayMake, displayModel, generateVariations, photoUrl } from './cartLogic';
 import { MARKETPLACE_CREATE_URL, locationName } from './constants';
 import { posterVersion, sendToPoster } from './posterBridge';
 import { isNativeApp, nativePlatform } from '../native/platform';
@@ -27,7 +27,7 @@ export async function quickFbList(cart: MpCart, photos: string[], userKey: strin
   if (mode === 'in-app') {
     const payload = JSON.stringify({
       cart: {
-        year: cart.year, make: cart.make, model: cart.model, price: cart.price, cityState: locationName(cart.locationId),
+        year: cart.year, make: displayMake(cart), model: displayModel(cart), price: cart.price, cityState: locationName(cart.locationId),
         photos: photos.map((p) => photoUrl(p)).slice(0, 20),
       },
       listing: { title1: listing.title1, description: listing.description },

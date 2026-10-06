@@ -191,7 +191,11 @@
   $("btn-send").addEventListener("click", async () => {
     if (!current) return;
     const listing = variations[Number($("d-variation").value) || 0];
-    const cart = Object.assign({}, current);
+    // Facebook's Make/Model fields get a description of the cart instead of the DMS's "Other".
+    const cart = Object.assign({}, current, {
+      make: TigonCartLogic.displayMake(current),
+      model: TigonCartLogic.displayModel(current),
+    });
     try {
       await chrome.storage.local.set({ [PENDING_KEY]: { cart, listing, ts: Date.now() } });
       setMsg($("send-msg"), `Ready: ${TigonCartLogic.cartName(cart)}. Open the Facebook vehicle form and click "Fill Facebook form".`, "ok");

@@ -6,7 +6,7 @@ import { functions } from '../../config/firebase';
 import { useAuth } from '../../context/AuthContext';
 import { logEvent } from '../../native/deviceSession';
 import { locationName } from '../constants';
-import { photoUrl } from '../cartLogic';
+import { GOLF_CART_HEADLINE, displayMake, displayModel, photoUrl } from '../cartLogic';
 import type { Cart } from '../types';
 
 type Tone = 'friendly' | 'professional' | 'short';
@@ -60,8 +60,8 @@ function buildRequest(cart: Cart, tone: Tone): AiListingRequest {
   const first = cart.photos.find(Boolean);
   const req: AiListingRequest = {
     cart: {
-      make: cart.make,
-      model: cart.model,
+      make: displayMake(cart),
+      model: displayModel(cart),
       year: cart.year,
       color: cart.color,
       seatColor: cart.seatColor,
@@ -158,7 +158,9 @@ const AiListingPanel: React.FC<{ cart: Cart }> = ({ cart }) => {
     setError('');
     try {
       const res = await mpAiListing(buildRequest(cart, tone));
-      setResult(res.data);
+      // Same rule as the built-in writer: "Golf Cart" leads the description.
+      const d = res.data.description || '';
+      setResult(/^\s*golf cart/i.test(d) ? res.data : { ...res.data, description: `${GOLF_CART_HEADLINE}\n\n${d}` });
       void logEvent(currentUser?.uid, 'ai_listing', { cartId: cart.id });
     } catch (e) {
       setError(errorMessage(e));
