@@ -124,7 +124,7 @@ const ht: Resource = {
   },
   requests: {
     title: 'Mande yon chanjman',
-    intro: 'Ou jwenn yon pwoblèm oswa ou gen yon lide pou amelyore TIGON IOT? Di nou isit la epi administratè yo ap gade l.',
+    intro: 'Ou jwenn yon pwoblèm oswa ou gen yon lide pou amelyore TIGON IOT? Di nou isit la epi administratè ak manadjè yo ap gade l.',
     kind: 'Kalite',
     kinds: {
       bug: 'Pwoblèm',
@@ -146,7 +146,7 @@ const ht: Resource = {
     whereLabel: 'Ki kote nan app la',
     wherePlaceholder: 'egz. MP Assistant → Fil, sou telefòn mwen',
     submit: 'Voye demann nan',
-    sent: 'Mèsi! Demann ou an ale bay administratè yo.',
+    sent: 'Mèsi! Demann ou an ale bay administratè ak manadjè yo.',
     failed: 'Nou pa t ka voye demann ou an.',
     myRequests: 'Demann mwen yo',
     allRequests: 'Tout demann yo',

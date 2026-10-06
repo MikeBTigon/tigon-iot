@@ -381,7 +381,7 @@ function warrantyLines(cart: Cart, rng: () => number): string[] {
   return lines;
 }
 
-export const GOLF_CART_HEADLINE = 'Golf Cart for Sale';
+export const GOLF_CART_HEADLINE = 'Golf Cart';
 
 const FINANCING = [
   'Financing available',

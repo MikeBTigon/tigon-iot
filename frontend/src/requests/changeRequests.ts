@@ -33,7 +33,7 @@ export interface NewRequest {
   where: string;
 }
 
-/** Everyone sees their own requests; admins see everyone's (the Firestore rules enforce the same). */
+/** Everyone sees their own requests; admins and managers see everyone's (the Firestore rules enforce the same). */
 export function useChangeRequests(uid: string | undefined, isAdmin: boolean) {
   const [items, setItems] = useState<ChangeRequest[]>([]);
   const [loading, setLoading] = useState(true);

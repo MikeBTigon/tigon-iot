@@ -124,7 +124,7 @@ const en = {
   },
   requests: {
     title: 'Request a change',
-    intro: 'Found a bug or have an idea that would make TIGON IOT better? Tell us here and the admins will take a look.',
+    intro: 'Found a bug or have an idea that would make TIGON IOT better? Tell us here and the admins and managers will take a look.',
     kind: 'Type',
     kinds: {
       bug: 'Bug / problem',
@@ -146,7 +146,7 @@ const en = {
     whereLabel: 'Where in the app',
     wherePlaceholder: 'e.g. MP Assistant → Queue, on my phone',
     submit: 'Send request',
-    sent: 'Thanks! Your request was sent to the admins.',
+    sent: 'Thanks! Your request was sent to the admins and managers.',
     failed: 'Could not send your request.',
     myRequests: 'My requests',
     allRequests: 'All requests',

@@ -374,7 +374,7 @@ var TigonCartLogic = (() => {
     if (bw) lines.push(pick(rng, [`${cap(bw)} on the battery`, `Battery comes with a ${bw}`, `Battery has a ${bw}`]));
     return lines;
   }
-  var GOLF_CART_HEADLINE = "Golf Cart for Sale";
+  var GOLF_CART_HEADLINE = "Golf Cart";
   var FINANCING = [
     "Financing available",
     "Financing available, easy approval",

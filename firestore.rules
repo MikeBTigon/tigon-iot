@@ -63,9 +63,9 @@ service cloud.firestore {
     }
 
     // "Request a change" (sidebar): anyone on the team reports a bug or asks for a feature.
-    // People see their own requests; admins see all of them and set the status.
+    // People see their own requests; admins and managers see all of them and set the status.
     match /change_requests/{id} {
-      allow read: if isValidEmail() && (resource.data.createdBy == request.auth.uid || isMpAdmin());
+      allow read: if isValidEmail() && (resource.data.createdBy == request.auth.uid || isMpManager());
       allow create: if isValidEmail() &&
                        request.resource.data.createdBy == request.auth.uid &&
                        request.resource.data.status == 'new' &&
@@ -75,9 +75,9 @@ service cloud.firestore {
                        request.resource.data.details is string && request.resource.data.details.size() <= 5000 &&
                        request.resource.data.keys().hasOnly(['kind', 'title', 'details', 'where', 'status', 'createdBy',
                          'createdByName', 'createdByEmail', 'platform', 'createdAt']);
-      allow update: if isMpAdmin() &&
+      allow update: if isMpManager() &&
                        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt']);
-      allow delete: if isMpAdmin();
+      allow delete: if isMpManager();
     }
 
     // ---------------------------------------------------------------

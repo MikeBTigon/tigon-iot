@@ -31,12 +31,12 @@ const EMPTY: NewRequest = { kind: 'bug', title: '', details: '', where: '' };
 
 const fmtDate = (r: ChangeRequest) => (r.createdAt ? r.createdAt.toDate().toLocaleString() : '…');
 
-/** Sidebar → Request a change. Anyone can report a bug or ask for a feature; admins see and manage every request here. */
+/** Sidebar → Request a change. Anyone can report a bug or ask for a feature; admins and managers see and manage every request here. */
 const Requests: React.FC = () => {
   const t = useT();
   const { currentUser } = useAuth();
   const { profile } = useMp();
-  const isAdmin = profile?.role === 'admin';
+  const isAdmin = profile?.role === 'admin' || profile?.role === 'manager';
   const { items, loading, error } = useChangeRequests(currentUser?.uid, isAdmin);
   const [form, setForm] = useState<NewRequest>(EMPTY);
   const [sending, setSending] = useState(false);

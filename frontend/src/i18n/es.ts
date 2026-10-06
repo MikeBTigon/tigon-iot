@@ -123,7 +123,7 @@ const es: Resource = {
   },
   requests: {
     title: 'Solicitar un cambio',
-    intro: '¿Encontraste un error o tienes una idea para mejorar TIGON IOT? Cuéntanos aquí y los administradores lo revisarán.',
+    intro: '¿Encontraste un error o tienes una idea para mejorar TIGON IOT? Cuéntanos aquí y los administradores y gerentes lo revisarán.',
     kind: 'Tipo',
     kinds: {
       bug: 'Error / problema',
@@ -145,7 +145,7 @@ const es: Resource = {
     whereLabel: 'Dónde en la app',
     wherePlaceholder: 'p. ej. MP Assistant → Cola, en mi teléfono',
     submit: 'Enviar solicitud',
-    sent: '¡Gracias! Tu solicitud fue enviada a los administradores.',
+    sent: '¡Gracias! Tu solicitud fue enviada a los administradores y gerentes.',
     failed: 'No se pudo enviar tu solicitud.',
     myRequests: 'Mis solicitudes',
     allRequests: 'Todas las solicitudes',

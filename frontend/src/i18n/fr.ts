@@ -123,7 +123,7 @@ const fr: Resource = {
   },
   requests: {
     title: 'Demander un changement',
-    intro: 'Vous avez trouvé un bug ou une idée pour améliorer TIGON IOT ? Dites-le-nous ici et les administrateurs y jetteront un œil.',
+    intro: 'Vous avez trouvé un bug ou une idée pour améliorer TIGON IOT ? Dites-le-nous ici et les administrateurs et les responsables y jetteront un œil.',
     kind: 'Type',
     kinds: {
       bug: 'Bug / problème',
@@ -145,7 +145,7 @@ const fr: Resource = {
     whereLabel: 'Où dans l’app',
     wherePlaceholder: 'ex. MP Assistant → File, sur mon téléphone',
     submit: 'Envoyer la demande',
-    sent: 'Merci ! Votre demande a été envoyée aux administrateurs.',
+    sent: 'Merci ! Votre demande a été envoyée aux administrateurs et aux responsables.',
     failed: 'Impossible d’envoyer votre demande.',
     myRequests: 'Mes demandes',
     allRequests: 'Toutes les demandes',
