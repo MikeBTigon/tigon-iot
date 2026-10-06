@@ -62,6 +62,24 @@ service cloud.firestore {
       allow write: if false; // Only admins
     }
 
+    // "Request a change" (sidebar): anyone on the team reports a bug or asks for a feature.
+    // People see their own requests; admins see all of them and set the status.
+    match /change_requests/{id} {
+      allow read: if isValidEmail() && (resource.data.createdBy == request.auth.uid || isMpAdmin());
+      allow create: if isValidEmail() &&
+                       request.resource.data.createdBy == request.auth.uid &&
+                       request.resource.data.status == 'new' &&
+                       request.resource.data.kind in ['bug', 'feature', 'other'] &&
+                       request.resource.data.title is string &&
+                       request.resource.data.title.size() > 0 && request.resource.data.title.size() <= 150 &&
+                       request.resource.data.details is string && request.resource.data.details.size() <= 5000 &&
+                       request.resource.data.keys().hasOnly(['kind', 'title', 'details', 'where', 'status', 'createdBy',
+                         'createdByName', 'createdByEmail', 'platform', 'createdAt']);
+      allow update: if isMpAdmin() &&
+                       request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt']);
+      allow delete: if isMpAdmin();
+    }
+
     // ---------------------------------------------------------------
     // Tigon MP Assistant (Facebook Marketplace posting) — parallel module
     // ---------------------------------------------------------------

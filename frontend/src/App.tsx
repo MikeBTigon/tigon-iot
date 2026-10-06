@@ -10,6 +10,7 @@ import UserDetail from './pages/UserDetail';
 import Settings from './pages/Settings';
 import Download from './pages/Download';
 import GetApp from './pages/GetApp';
+import Requests from './pages/Requests';
 import { MpDataProvider } from './mp/MpDataContext';
 import { mpRoutes, publicRoutes } from './mp/routes';
 import NativeBridge from './native/NativeBridge';
@@ -54,6 +55,7 @@ function AppContent() {
   />
   <Route path="/users" element={<ProtectedRoute><Users /></ProtectedRoute>} />
   <Route path="/users/:uid" element={<ProtectedRoute><UserDetail /></ProtectedRoute>} />
+  <Route path="/requests" element={<ProtectedRoute><Requests /></ProtectedRoute>} />
   <Route
     path="/settings"
     element={
