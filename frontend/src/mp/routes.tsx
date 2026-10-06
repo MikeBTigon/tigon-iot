@@ -6,6 +6,7 @@ import MpBrowse from './pages/MpBrowse';
 import MpProfiles from './pages/MpProfiles';
 import MpAccounts from './pages/MpAccounts';
 import MpCartDetail from './pages/MpCartDetail';
+import MpFinance from './pages/MpFinance';
 import MpQueue from './pages/MpQueue';
 import MpAnalytics from './pages/MpAnalytics';
 import MpPrepare from './pages/MpPrepare';
@@ -20,6 +21,7 @@ import { ROUTES as WH_ROUTES } from '../wh/routes';
 export const MP_ROUTES = [
   { path: '/mp', element: <MpHome /> },
   { path: '/mp/find', element: <MpFind /> },
+  { path: '/mp/finance', element: <MpFinance /> },
   { path: '/mp/locations', element: <MpLocations /> },
   { path: '/mp/locations/:loc', element: <MpLocations /> },
   { path: '/mp/browse', element: <MpBrowse /> },
