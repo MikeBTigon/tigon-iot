@@ -115,6 +115,9 @@ const en = {
     banner: "You're offline — changes will sync when you're back online.",
     back: 'Back online',
   },
+  announcement: {
+    financingCalculator: 'New: the financing / delivery quote calculator is now in the IOT MP Assistant, under Financing options. Check it out!',
+  },
   common: {
     skip: 'Skip',
     back: 'Back',

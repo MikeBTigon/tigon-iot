@@ -115,6 +115,9 @@ const ht: Resource = {
     banner: 'Ou pa konekte — chanjman yo ap senkronize lè ou tounen sou entènèt.',
     back: 'Ou konekte ankò',
   },
+  announcement: {
+    financingCalculator: 'Nouvo: kalkilatè pri finansman / livrezon an disponib kounye a nan IOT MP Assistant, anba Opsyon finansman. Al gade l!',
+  },
   common: {
     skip: 'Sote',
     back: 'Retounen',

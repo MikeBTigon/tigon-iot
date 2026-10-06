@@ -114,6 +114,9 @@ const es: Resource = {
     banner: 'Estás sin conexión — los cambios se sincronizarán cuando vuelvas a estar en línea.',
     back: 'Conexión restablecida',
   },
+  announcement: {
+    financingCalculator: 'Nuevo: la calculadora de cotizaciones de financiamiento / entrega ya está en IOT MP Assistant, en Opciones de financiamiento. ¡Pruébala!',
+  },
   common: {
     skip: 'Omitir',
     back: 'Atrás',

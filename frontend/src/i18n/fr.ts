@@ -114,6 +114,9 @@ const fr: Resource = {
     banner: 'Vous êtes hors ligne — les modifications seront synchronisées à votre retour en ligne.',
     back: 'De retour en ligne',
   },
+  announcement: {
+    financingCalculator: 'Nouveau : le calculateur de devis financement / livraison est maintenant dans IOT MP Assistant, sous Options de financement. Essayez-le !',
+  },
   common: {
     skip: 'Passer',
     back: 'Retour',
