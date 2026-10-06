@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Alert, Box, Button, Chip, CircularProgress, Paper, Table, TableBody, TableCell, TableRow, Typography } from '@mui/material';
-import { ArrowBack, CheckCircle, Description, Download, RadioButtonUnchecked, Refresh, RocketLaunch, Send } from '@mui/icons-material';
+import { ArrowBack, Calculate, CheckCircle, Description, Download, RadioButtonUnchecked, Refresh, RocketLaunch, Send } from '@mui/icons-material';
 import MpShell from '../components/MpShell';
 import CartPhoto from '../components/CartPhoto';
 import PhotoLightbox from '../components/PhotoLightbox';
@@ -16,6 +16,7 @@ import { cartName, cartTitle } from '../cartLogic';
 import { formatPrice, hasPhotoIssue, postedTs, timeAgo, workingPhotos } from '../cartUtils';
 import { locationName } from '../constants';
 import { savePhoto, saveAllPhotos } from '../photos';
+import { brandFromMake } from '../finance/financeCalc';
 
 const yes = (b: boolean) => (b ? 'Yes' : 'No');
 
@@ -92,7 +93,13 @@ const MpCartDetail: React.FC = () => {
         <Box sx={{ flexGrow: 1 }}>
           <Typography variant="h4">{cartTitle(cart)}</Typography>
           <Typography color="text.secondary">{cartName(cart)}</Typography>
-          <Typography variant="h5" color="primary" sx={{ fontWeight: 700 }}>{formatPrice(cart.price)}</Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+            <Typography variant="h5" color="primary" sx={{ fontWeight: 700 }}>{formatPrice(cart.price)}</Typography>
+            <Button size="small" variant="outlined" startIcon={<Calculate />}
+              onClick={() => navigate(`/mp/finance?${new URLSearchParams({ price: String(cart.price || ''), brand: brandFromMake(cart.make, cart.isUsed), condition: cart.isUsed ? 'used' : 'new', title: cartTitle(cart) }).toString()}`)}>
+              Financing
+            </Button>
+          </Box>
           <Box sx={{ display: 'flex', gap: 1, mt: 1, flexWrap: 'wrap' }}>
             <Chip label={cart.isUsed ? 'Used' : 'New'} color="secondary" />
             <Chip label={`${cart.locationId} · ${locationName(cart.locationId)}`} variant="outlined" />

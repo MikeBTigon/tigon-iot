@@ -50,4 +50,6 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- "Save all photos" on Android 8–9 (10+ saves to the Gallery without a permission). -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
 </manifest>

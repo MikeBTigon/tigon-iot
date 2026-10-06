@@ -10,6 +10,7 @@ const ht: Resource = {
     browse: 'Gade tout',
     locations: 'Magazen yo',
     new: 'Nouvo anons',
+    finance: 'Finansman',
     post: 'Pibliye ak pataje',
     queue: 'Lis atant',
     calendar: 'Kalandriye',

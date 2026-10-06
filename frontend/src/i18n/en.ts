@@ -10,6 +10,7 @@ const en = {
     browse: 'Browse',
     locations: 'Locations',
     new: 'New listing',
+    finance: 'Financing',
     post: 'Post & share',
     queue: 'Queue',
     calendar: 'Calendar',

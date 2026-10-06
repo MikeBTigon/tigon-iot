@@ -60,6 +60,7 @@ import { useSetLanguage } from '../../ui/useSetLanguage';
 import { activeNavPath } from '../../ui/navUtils';
 import GlobalSearch from '../../ui/GlobalSearch';
 import OfflineBanner from '../../ui/OfflineBanner';
+import NotifyHost from '../../ui/NotifyHost';
 import UpdateBanner from '../../native/UpdateBanner';
 import AnnouncementBanner from '../../ui/AnnouncementBanner';
 import { useMp } from '../../mp/MpDataContext';
@@ -409,6 +410,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
         }}
       >
         <OfflineBanner />
+        <NotifyHost />
         <UpdateBanner />
         <AnnouncementBanner />
         {children}

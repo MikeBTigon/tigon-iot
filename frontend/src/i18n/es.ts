@@ -9,6 +9,7 @@ const es: Resource = {
     browse: 'Explorar',
     locations: 'Tiendas',
     new: 'Nuevo anuncio',
+    finance: 'Financiamiento',
     post: 'Publicar y compartir',
     queue: 'Cola',
     calendar: 'Calendario',
