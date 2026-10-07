@@ -256,13 +256,40 @@ function normalizeColor(c: string): string {
   return c.replace(/\s+/g, ' ').trim().toLowerCase();
 }
 
+/** DMS fill-ins that aren't a real make or model ("Other", "N/A", ...). */
+export function isPlaceholder(v: string): boolean {
+  return /^(other|others|n\/?a|none|unknown|tbd|-+|\.)$/i.test((v || '').trim());
+}
+
+/** Words that describe the cart, used in place of a model of "Other": "Lifted 6 Passenger Cart", "Gas Golf Cart". */
+export function cartKind(cart: Cart): string {
+  const parts: string[] = [];
+  if (cart.isLifted) parts.push('Lifted');
+  if (cart.passengers) parts.push(`${cart.passengers} Passenger`);
+  if (parts.length) return `${parts.join(' ')} Cart`;
+  if (cart.isStreetLegal) return 'Street Legal Golf Cart';
+  if (!cart.isElectric) return 'Gas Golf Cart';
+  if (isLithium(cart.batteryType)) return 'Lithium Golf Cart';
+  return 'Golf Cart';
+}
+
+/** Make for listings: '' when the DMS says "Other". */
+export function displayMake(cart: Cart): string {
+  return isPlaceholder(cart.make) ? '' : cart.make;
+}
+
+/** Model for listings and the Facebook Model field: describes the cart when the DMS says "Other". */
+export function displayModel(cart: Cart): string {
+  return isPlaceholder(cart.model) ? cartKind(cart) : cart.model;
+}
+
 export function cartName(cart: Cart): string {
-  return [cart.year, cart.make, cart.model].filter(Boolean).join(' ') || 'Golf Cart';
+  return [cart.year, displayMake(cart), displayModel(cart)].filter(Boolean).join(' ') || 'Golf Cart';
 }
 
 /** Website-style name: Make + Model + Cart Color + Location. */
 export function cartTitle(cart: Cart): string {
-  return [cart.make, cart.model, cart.color, locationCity(cart.locationId)].filter(Boolean).join(' ') || cartName(cart);
+  return [displayMake(cart), displayModel(cart), cart.color, locationCity(cart.locationId)].filter(Boolean).join(' ') || cartName(cart);
 }
 
 function formatWarranty(w: string): string {
@@ -332,10 +359,15 @@ export function buildTitles(cart: Cart, rng: () => number): [string, string] {
   title1 = title1.replace(/\bNew New\b/, 'New');
 
   const name = cartName(cart);
+  const power = cart.isElectric ? (isLithium(cart.batteryType) ? 'Lithium' : 'Electric') : 'Gas';
   const t2opts = [
     `${name}${cart.color ? ' - ' + normalizeColor(cart.color).replace(/\b\w/g, (c) => c.toUpperCase()) : ''}`,
-    `${name} ${cart.isElectric ? (isLithium(cart.batteryType) ? 'Lithium' : 'Electric') : 'Gas'}`,
-    `${cart.make || 'Golf'} ${cart.model || 'Cart'}${cart.isLifted ? ' Lifted' : ''}${cart.passengers ? ` ${cart.passengers} Pass` : ''}`.trim(),
+    isPlaceholder(cart.model)
+      ? [cart.year, displayMake(cart), cartKind(cart).includes(power) ? '' : power, cartKind(cart)].filter(Boolean).join(' ')
+      : `${name} ${power}`,
+    isPlaceholder(cart.model)
+      ? `${displayMake(cart)} ${cartKind(cart)}`.trim()
+      : `${displayMake(cart) || 'Golf'} ${cart.model || 'Cart'}${cart.isLifted ? ' Lifted' : ''}${cart.passengers ? ` ${cart.passengers} Pass` : ''}`.trim(),
   ];
   return [title1, pick(rng, t2opts)];
 }
@@ -348,6 +380,8 @@ function warrantyLines(cart: Cart, rng: () => number): string[] {
   if (bw) lines.push(pick(rng, [`${cap(bw)} on the battery`, `Battery comes with a ${bw}`, `Battery has a ${bw}`]));
   return lines;
 }
+
+export const GOLF_CART_HEADLINE = 'Golf Cart';
 
 const FINANCING = [
   'Financing available',
@@ -382,10 +416,12 @@ function listDescription(cart: Cart): string[] {
 }
 
 function paragraphDescription(cart: Cart, rng: () => number): string[] {
-  const desc = descriptors(cart);
+  const name = cartName(cart);
+  // Skip descriptors the name already says ("Lifted 6 Passenger Cart" in place of a model of "Other").
+  const desc = descriptors(cart).filter((d) => !name.toLowerCase().includes(d));
   const eq = equipment(cart);
   const sentences: string[] = [pick(rng, cart.isUsed ? OPENERS_USED : OPENERS_NEW)];
-  const subject = [...desc, cartName(cart)].join(' ');
+  const subject = [...desc, name].join(' ');
   const article = /^[aeiou8]/i.test(subject) ? 'an' : 'a';
   const head = eq.slice(0, 2);
   const tail = eq.slice(2);
@@ -435,7 +471,8 @@ export function generateListing(cart: Cart, opts: ListingOptions = {}): Listing 
   const main = format === 'list' ? [...body, ...tail].join('\n') : `${body.join(' ')}\n\n${tail.join('\n')}`;
   const loc = locationName(cart.locationId);
   const locationLine = /,/.test(loc) ? loc : '';
-  let description = addImperfections(main, rng);
+  // "Golf Cart" always leads the description (Marketplace search and preview).
+  let description = `${GOLF_CART_HEADLINE}\n\n${addImperfections(main, rng)}`;
   if (locationLine) description += `\n\n${locationLine}`;
   return { title1, title2, description, format };
 }

@@ -20,10 +20,14 @@ var TigonCartLogic = (() => {
   // src/mp/cartLogic.ts
   var cartLogic_exports = {};
   __export(cartLogic_exports, {
+    GOLF_CART_HEADLINE: () => GOLF_CART_HEADLINE,
     buildTitles: () => buildTitles,
+    cartKind: () => cartKind,
     cartName: () => cartName,
     cartTitle: () => cartTitle,
     defaultImageFiles: () => defaultImageFiles,
+    displayMake: () => displayMake,
+    displayModel: () => displayModel,
     findAllDmsCartObjects: () => findAllDmsCartObjects,
     findDmsCartObject: () => findDmsCartObject,
     generateListing: () => generateListing,
@@ -32,6 +36,7 @@ var TigonCartLogic = (() => {
     hashString: () => hashString,
     isDmsCartObject: () => isDmsCartObject,
     isLithium: () => isLithium,
+    isPlaceholder: () => isPlaceholder,
     isUsedCart: () => isUsedCart,
     locationCity: () => locationCity,
     locationName: () => locationName,
@@ -47,6 +52,8 @@ var TigonCartLogic = (() => {
   var PHOTO_BASE = "https://s3.amazonaws.com/prod.docs.s3/carts/";
   var WINDOW_STICKER_BASE = "https://s3.amazonaws.com/prod.docs.s3/cart-window-stickers/";
   var PHOTO_WORKER = "https://tigon-photos.michael-b-2da.workers.dev";
+  var ONLINE_WINDOW_MS = 10 * 60 * 1e3;
+  var HEARTBEAT_MS = 5 * 60 * 1e3;
   var DEALERSHIPS = [
     { id: "T0", name: "TIGON National", cityState: "", phone: "1-844-844-6638", address: "National", maps: "https://www.google.com/maps?cid=913687030872245288", facebook: "https://www.facebook.com/Tigongolfcarts", youtube: "https://www.youtube.com/@TigonGolfCarts", website: "https://tigongolfcarts.com", pinterest: "https://www.pinterest.com/tigongolfcarts/", review: "https://g.page/r/CSiEBX-DEa4MEBM/review" },
     { id: "T1", name: "Hatfield PA", cityState: "Hatfield, PA", phone: "215-595-8736", address: "2333 Bethlehem Pike, Hatfield, PA 19440", lat: 40.29839945958623, lng: -75.28308913039525, maps: "https://www.google.com/maps?cid=8221925612164093496", facebook: "https://www.facebook.com/TigonGolfCartsHatfield/", youtube: "https://www.youtube.com/@TIGONGolfCartsHatfieldPA", website: "https://tigongolfcarts.com/hatfield", pinterest: "https://www.pinterest.com/tigongolfcarts/hatfield-pennsylvania/", review: "https://g.page/r/CTgWulrIJRpyEBM/review" },
@@ -272,11 +279,30 @@ var TigonCartLogic = (() => {
   function normalizeColor(c) {
     return c.replace(/\s+/g, " ").trim().toLowerCase();
   }
+  function isPlaceholder(v) {
+    return /^(other|others|n\/?a|none|unknown|tbd|-+|\.)$/i.test((v || "").trim());
+  }
+  function cartKind(cart) {
+    const parts = [];
+    if (cart.isLifted) parts.push("Lifted");
+    if (cart.passengers) parts.push(`${cart.passengers} Passenger`);
+    if (parts.length) return `${parts.join(" ")} Cart`;
+    if (cart.isStreetLegal) return "Street Legal Golf Cart";
+    if (!cart.isElectric) return "Gas Golf Cart";
+    if (isLithium(cart.batteryType)) return "Lithium Golf Cart";
+    return "Golf Cart";
+  }
+  function displayMake(cart) {
+    return isPlaceholder(cart.make) ? "" : cart.make;
+  }
+  function displayModel(cart) {
+    return isPlaceholder(cart.model) ? cartKind(cart) : cart.model;
+  }
   function cartName(cart) {
-    return [cart.year, cart.make, cart.model].filter(Boolean).join(" ") || "Golf Cart";
+    return [cart.year, displayMake(cart), displayModel(cart)].filter(Boolean).join(" ") || "Golf Cart";
   }
   function cartTitle(cart) {
-    return [cart.make, cart.model, cart.color, locationCity(cart.locationId)].filter(Boolean).join(" ") || cartName(cart);
+    return [displayMake(cart), displayModel(cart), cart.color, locationCity(cart.locationId)].filter(Boolean).join(" ") || cartName(cart);
   }
   function formatWarranty(w) {
     const t = w.trim();
@@ -309,7 +335,7 @@ var TigonCartLogic = (() => {
     if (cart.hasExtendedTop) e.push("an extended roof");
     if (cart.hasSoundSystem) e.push("a sound system");
     if (cart.hasHitch) e.push("a trailer hitch");
-    if (cart.driveTrain && !/^2wd$/i.test(cart.driveTrain)) e.push(cart.driveTrain.toUpperCase());
+    if (cart.driveTrain && !/^(2wd|2x4)$/i.test(cart.driveTrain)) e.push(cart.driveTrain.toUpperCase());
     return e;
   }
   function features(cart) {
@@ -332,10 +358,11 @@ var TigonCartLogic = (() => {
     let title1 = cart.isUsed || a1 !== "New" ? `${a1} ${n1}` : `New ${n1}`;
     title1 = title1.replace(/\bNew New\b/, "New");
     const name = cartName(cart);
+    const power = cart.isElectric ? isLithium(cart.batteryType) ? "Lithium" : "Electric" : "Gas";
     const t2opts = [
       `${name}${cart.color ? " - " + normalizeColor(cart.color).replace(/\b\w/g, (c) => c.toUpperCase()) : ""}`,
-      `${name} ${cart.isElectric ? isLithium(cart.batteryType) ? "Lithium" : "Electric" : "Gas"}`,
-      `${cart.make || "Golf"} ${cart.model || "Cart"}${cart.isLifted ? " Lifted" : ""}${cart.passengers ? ` ${cart.passengers} Pass` : ""}`.trim()
+      isPlaceholder(cart.model) ? [cart.year, displayMake(cart), cartKind(cart).includes(power) ? "" : power, cartKind(cart)].filter(Boolean).join(" ") : `${name} ${power}`,
+      isPlaceholder(cart.model) ? `${displayMake(cart)} ${cartKind(cart)}`.trim() : `${displayMake(cart) || "Golf"} ${cart.model || "Cart"}${cart.isLifted ? " Lifted" : ""}${cart.passengers ? ` ${cart.passengers} Pass` : ""}`.trim()
     ];
     return [title1, pick(rng, t2opts)];
   }
@@ -347,6 +374,7 @@ var TigonCartLogic = (() => {
     if (bw) lines.push(pick(rng, [`${cap(bw)} on the battery`, `Battery comes with a ${bw}`, `Battery has a ${bw}`]));
     return lines;
   }
+  var GOLF_CART_HEADLINE = "Golf Cart";
   var FINANCING = [
     "Financing available",
     "Financing available, easy approval",
@@ -378,10 +406,11 @@ var TigonCartLogic = (() => {
     return out;
   }
   function paragraphDescription(cart, rng) {
-    const desc = descriptors(cart);
+    const name = cartName(cart);
+    const desc = descriptors(cart).filter((d) => !name.toLowerCase().includes(d));
     const eq = equipment(cart);
     const sentences = [pick(rng, cart.isUsed ? OPENERS_USED : OPENERS_NEW)];
-    const subject = [...desc, cartName(cart)].join(" ");
+    const subject = [...desc, name].join(" ");
     const article = /^[aeiou8]/i.test(subject) ? "an" : "a";
     const head = eq.slice(0, 2);
     const tail = eq.slice(2);
@@ -420,7 +449,9 @@ var TigonCartLogic = (() => {
 ${tail.join("\n")}`;
     const loc = locationName(cart.locationId);
     const locationLine = /,/.test(loc) ? loc : "";
-    let description = addImperfections(main, rng);
+    let description = `${GOLF_CART_HEADLINE}
+
+${addImperfections(main, rng)}`;
     if (locationLine) description += `
 
 ${locationLine}`;

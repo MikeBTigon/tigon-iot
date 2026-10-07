@@ -206,6 +206,7 @@ export {mpSyncInventory, mpSyncNow} from './mpAssistant';
 export {mpCreatePairingCode, mpPairDevice, mpSendQueueItem, mpDispatchQueue, mpMonitor} from './mpOps';
 export {mpEchoRegister, mpEcho} from './mpEcho';
 export {mpPresenceDaily, mpPresenceWeekly, mpPresenceReport} from './mpPresence';
+export {mpChangeRequestAlert} from './changeRequests';
 
 // Growth release
 export {mpRunImport, mpImportScheduled} from './mpCreate';

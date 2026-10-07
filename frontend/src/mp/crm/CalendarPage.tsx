@@ -12,6 +12,7 @@ import { useMp } from '../MpDataContext';
 import { COLLECTIONS } from '../constants';
 import { isOpenStatus, QUEUE_STATUS_LABEL } from '../queue';
 import { writeAudit } from '../audit';
+import { displayMake, displayModel } from '../cartLogic';
 import CartPicker from './CartPicker';
 import { fromLocalInput, isManager, startOfDay, toLocalInput, useMpSettings, useNow } from './crmData';
 import type { MpProfile, QueueItem, QueueStatus } from '../types';
@@ -144,7 +145,7 @@ export default function CalendarPage() {
         if (due < rangeStart || due >= rangeEnd) continue;
         list.push({
           kind: 'relist', id: `${c.docId}_${acct}`, ts: due, cartId: c.docId, color: RELIST_COLOR,
-          title: `Relist ${c.make} ${c.model} ${c.color} · ${acctName.get(acct) || 'account'}`.replace(/\s+/g, ' '),
+          title: `Relist ${displayMake(c)} ${displayModel(c)} ${c.color} · ${acctName.get(acct) || 'account'}`.replace(/\s+/g, ' '),
         });
       }
     }

@@ -27,6 +27,7 @@ import {
   Devices as DevicesIcon,
   Settings as SettingsIcon,
   Download as DownloadIcon,
+  RateReview as RequestIcon,
   Storefront as StorefrontIcon,
   Logout as LogoutIcon,
   AccountCircle,
@@ -62,6 +63,7 @@ import GlobalSearch from '../../ui/GlobalSearch';
 import OfflineBanner from '../../ui/OfflineBanner';
 import NotifyHost from '../../ui/NotifyHost';
 import UpdateBanner from '../../native/UpdateBanner';
+import AnnouncementBanner from '../../ui/AnnouncementBanner';
 import { useMp } from '../../mp/MpDataContext';
 import { WH_NAV, activeWhPath } from '../../wh/nav';
 
@@ -148,6 +150,8 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
     // People who use TIGON IOT, their phones and online hours (managers and admins).
     ...(canSeeUsers ? [{ text: 'Users', icon: <PeopleIcon />, path: '/users' }] : []),
     { text: t('layout.settings'), icon: <SettingsIcon />, path: '/settings' },
+    // Bug reports and feature ideas from anyone; admins see every request on the same page.
+    { text: t('layout.requestChange'), icon: <RequestIcon />, path: '/requests' },
     { text: t('layout.download'), icon: <DownloadIcon />, path: '/download' },
   ];
 
@@ -411,6 +415,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
         <OfflineBanner />
         <NotifyHost />
         <UpdateBanner />
+        <AnnouncementBanner />
         {children}
       </Box>
       <GlobalSearch open={searchOpen} onClose={() => setSearchOpen(false)} />

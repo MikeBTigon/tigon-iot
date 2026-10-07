@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { COLLECTIONS, DEALERSHIP_BY_ID, locationName } from './constants';
-import { cartTitle } from './cartLogic';
+import { cartTitle, displayMake, displayModel } from './cartLogic';
 import type { Cart } from './types';
 import type { TextTemplate } from './growthTypes';
 
@@ -20,8 +20,8 @@ export function fillTemplate(body: string, v: TemplateValues): string {
   const store = c ? DEALERSHIP_BY_ID[c.locationId] : undefined;
   const values: Record<string, string> = {
     year: c?.year || '',
-    make: c?.make || '',
-    model: c?.model || '',
+    make: c ? displayMake(c) : '',
+    model: c ? displayModel(c) : '',
     color: c?.color || '',
     price: c && c.price > 0 ? `$${c.price.toLocaleString('en-US')}` : '',
     location: c ? locationName(c.locationId) : '',
