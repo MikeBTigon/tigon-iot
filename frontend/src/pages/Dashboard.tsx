@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Alert, Box, Button, Card, CardContent, Chip, CircularProgress, FormControl, InputAdornment, InputLabel, MenuItem,
-  Paper, Select, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography,
+  Paper, Select, Tab, Tabs, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography,
 } from '@mui/material';
 import {
   CheckCircle as CheckCircleIcon,
@@ -20,61 +20,17 @@ import MpDashboardCard from '../mp/components/MpDashboardCard';
 import PhoneAlertsCard from '../native/PhoneAlertsCard';
 import { useMp } from '../mp/MpDataContext';
 import NewLeadDialog, { type LeadSourceNotification } from '../mp/crm/NewLeadDialog';
-import { isFacebookMessage } from '../devices/fbFilter';
+import { isWanted, toMs, when } from '../devices/notificationFilter';
+import type { DeviceInfo, Notification } from '../devices/notificationFilter';
+import ThisDeviceTab from '../devices/ThisDeviceTab';
 
 /** notifications/{id}: written by worker phones (old worker app) and by notification echo (mpEcho). */
-interface Notification {
-  id: string;
-  targetUserId?: string;
-  sourceDeviceName?: string;
-  text?: string;
-  isHandled?: boolean;
-  handledAt?: unknown;
-  handledBy?: string;
-  handledByName?: string;
-  createdAt?: unknown;
-  timestamp?: unknown;
-  postedAt?: number;
-  /** Worker phone's device doc id, when the notification carries one. */
-  deviceId?: string;
-  sourceDeviceId?: string;
-  /** Team phone number (#0003) of the phone that echoed it. */
-  sourceDeviceNumber?: string;
-  /** App the notification came from (Facebook, Messenger, …). */
-  sourceApp?: string;
-  sourcePackage?: string;
-}
-
-/**
- * Dashboard shows Facebook messages, Messenger chats and DMs only. Echoed notifications from other apps
- * (TikTok, Gmail, carrier…) or Facebook non-messages (friend requests, "waiting for you") are hidden.
- * Only notifications that came from a phone are shown. Old worker-app notifications carry no app info and are kept.
- */
-const isWanted = (n: Notification) =>
-  // Phones only: website (webhook) leads, CRM reminders, digests and system alerts carry no phone and are left out.
-  !!(n.sourceDeviceId || n.deviceId) &&
-  ((!n.sourcePackage && !n.sourceApp) || isFacebookMessage(n.sourcePackage || '', n.sourceApp || '', '', n.text || ''));
-
-interface DeviceInfo { id: string; deviceNumber?: string; deviceName?: string; userId?: string }
-
-/** Firestore Timestamp / Date / ms → ms (0 when unknown). */
-function toMs(v: unknown): number {
-  if (!v) return 0;
-  if (typeof v === 'number') return v;
-  if (v instanceof Date) return v.getTime();
-  const t = v as { toMillis?: () => number; seconds?: number };
-  if (typeof t.toMillis === 'function') return t.toMillis();
-  if (typeof t.seconds === 'number') return t.seconds * 1000;
-  const d = new Date(String(v)).getTime();
-  return Number.isNaN(d) ? 0 : d;
-}
-
-const when = (n: Notification) => toMs(n.createdAt) || toMs(n.timestamp) || n.postedAt || 0;
 const MAX = 2000;
 
 type StatusFilter = 'all' | 'unhandled' | 'handled';
 
-const Dashboard: React.FC = () => {
+/** Organization tab: the organization-wide dashboard (unchanged). */
+const OrganizationDashboard: React.FC = () => {
   const { currentUser } = useAuth();
   const { profile: mpProfile, users, userName } = useMp();
   const isManager = mpProfile?.role === 'admin' || mpProfile?.role === 'manager';
@@ -181,9 +137,8 @@ const Dashboard: React.FC = () => {
   );
 
   return (
-    <DashboardLayout>
+    <>
       <Box>
-        <Typography variant="h4" gutterBottom color="primary" sx={{ mb: 3 }}>Dashboard</Typography>
 
         <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', mb: 4 }}>
           {statCard(stats.total, teamView ? 'Total notifications (all phones)' : 'Total notifications', 'primary.light', <NotificationsIcon sx={{ fontSize: 48, opacity: 0.8 }} />, 'all')}
@@ -303,6 +258,24 @@ const Dashboard: React.FC = () => {
         </Paper>
         <NewLeadDialog notification={leadFrom} onClose={() => setLeadFrom(null)} />
       </Box>
+    </>
+  );
+};
+
+/**
+ * Dashboard with two tabs on every device: "This Device" (always opens here) and "Organization".
+ * The device is worked out at runtime (see ThisDeviceTab), so new devices need no setup.
+ */
+const Dashboard: React.FC = () => {
+  const [tab, setTab] = useState<'device' | 'org'>('device');
+  return (
+    <DashboardLayout>
+      <Typography variant="h4" gutterBottom color="primary" sx={{ mb: 1 }}>Dashboard</Typography>
+      <Tabs value={tab} onChange={(_e, v) => setTab(v)} sx={{ mb: 3, borderBottom: 1, borderColor: 'divider' }}>
+        <Tab value="device" label="This Device" />
+        <Tab value="org" label="Organization" />
+      </Tabs>
+      {tab === 'device' ? <ThisDeviceTab /> : <OrganizationDashboard />}
     </DashboardLayout>
   );
 };
