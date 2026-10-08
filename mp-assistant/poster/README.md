@@ -4,7 +4,7 @@ Assistive Facebook Marketplace autofill. Pulls carts from the TIGON IOT MP Assis
 **It never clicks Post / Publish / Next — you review and post yourself.**
 
 ## Install
-1. `chrome://extensions` → turn on **Developer mode** → **Load unpacked** → pick this `poster/` folder.
+1. `chrome://extensions` → turn on **Developer mode** → **Load unpacked** → pick the unzipped `tigon-poster` folder (the one with `manifest.json` directly inside).
 2. To update: click the reload arrow, then refresh any open Facebook tab.
 
 ## Use
