@@ -14,6 +14,7 @@ import { isWanted } from './notificationFilter';
 import DeviceSettingsCards from './DeviceSettingsCards';
 import PhoneAlertsCard from '../native/PhoneAlertsCard';
 import MpDashboardCard from '../mp/components/MpDashboardCard';
+import DeviceSalesCards from '../mp/sales/DeviceSalesCards';
 import type { Notification } from './notificationFilter';
 
 const PICK_KEY = 'tigon.dashboardDevice';
@@ -83,7 +84,8 @@ const ThisDeviceTab: React.FC = () => {
   // Alerts, MP Assistant and this device's settings show whatever the counts can or can't show.
   const extras = (
     <>
-      <Box sx={{ mt: 3 }}><PhoneAlertsCard /></Box>
+      <Box sx={{ mt: 3 }}><DeviceSalesCards /></Box>
+      <PhoneAlertsCard />
       <MpDashboardCard />
       <DeviceSettingsCards device={current && current.status !== 'revoked' ? current : null} />
     </>

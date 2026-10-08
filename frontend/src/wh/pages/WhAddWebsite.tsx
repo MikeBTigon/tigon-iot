@@ -7,6 +7,7 @@ import {
 } from '@mui/material';
 import { ArrowBack, ArrowForward, CheckCircle } from '@mui/icons-material';
 import { formatUsPhone } from '../phone';
+import StoreSelect from '../components/StoreSelect';
 import WhShell from '../components/WhShell';
 import LeadChannelSelect, { DEFAULT_LEAD_CHANNEL } from '../components/LeadChannelSelect';
 import { CHANNEL_LABEL } from '../../mp/crm/crmData';
@@ -64,6 +65,7 @@ const WhAddWebsite: React.FC = () => {
   const [platform, setPlatform] = useState('wordpress');
   const [leadChannel, setLeadChannel] = useState(DEFAULT_LEAD_CHANNEL);
   const [phoneInput, setPhoneInput] = useState('');
+  const [storeId, setStoreId] = useState('');
   const phone = formatUsPhone(phoneInput);
   const [formName, setFormName] = useState('Contact form');
   const [flowMode, setFlowMode] = useState<'shared' | 'copy'>('shared');
@@ -126,7 +128,7 @@ const WhAddWebsite: React.FC = () => {
       if (gaId.trim()) settings.ga4MeasurementId = gaId.trim().toUpperCase();
       if (gaSecret.trim()) settings.ga4ApiSecret = gaSecret.trim();
       const res = await createWebsite({
-        name, url: url.url as string, platform, leadChannel, phone: phone.phone, formName, flowMode, templateFlow: tplFlow, settings,
+        name, url: url.url as string, platform, leadChannel, phone: phone.phone, locationId: storeId, formName, flowMode, templateFlow: tplFlow, settings,
       }, profile);
       setResult(res);
       setStep(3);
@@ -171,6 +173,7 @@ const WhAddWebsite: React.FC = () => {
               </Select>
             </FormControl>
             <LeadChannelSelect value={leadChannel} onChange={setLeadChannel} />
+            <StoreSelect value={storeId} onChange={setStoreId} />
             <TextField label="Website phone number" value={phoneInput} onChange={(e) => setPhoneInput(e.target.value)} placeholder="215-555-0123"
               type="tel" onBlur={() => { if (phone.phone) setPhoneInput(phone.phone); }} error={!!phoneInput.trim() && !!phone.error}
               helperText={(phoneInput.trim() && phone.error) || (phone.phone ? `Saved as ${phone.phone}` : 'The phone number shown on this website. Type it any way — it is saved as +1-xxx-xxx-xxxx.')} />

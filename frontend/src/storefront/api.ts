@@ -21,6 +21,8 @@ export interface PublicCart {
   photos: string[];
   features: string[];
   description: string;
+  /** Walk-around videos (may be missing on older responses). */
+  videos?: string[];
 }
 
 export interface PublicStorefront {

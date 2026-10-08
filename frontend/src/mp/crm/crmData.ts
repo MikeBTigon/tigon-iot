@@ -15,6 +15,8 @@ import { openExternal } from '../../native/actions';
 import { isOpenStatus } from '../queue';
 import type { MpCart, MpCartDoc, MpProfile, QueueItem } from '../types';
 import type { Customer, Lead, LeadChannel, LeadStatus, MpSettings } from '../growthTypes';
+import type { LeadSalesFields } from '../sales/salesTypes';
+import { firstResponsePatch } from '../sales/speed/speedUtil';
 
 // ---------------------------------------------------------------------------
 // Labels
@@ -178,7 +180,9 @@ export type LeadInput = Omit<Lead, 'id' | 'createdAt' | 'updatedAt'>;
 /** Creates a lead and logs `lead_created`. */
 export async function createLead(profile: MpProfile, data: LeadInput): Promise<string> {
   const now = Date.now();
-  const ref = await addDoc(collection(db, COLLECTIONS.leads), clean({ ...data, createdAt: now, updatedAt: now }));
+  // Contacted while adding it (e.g. a walk-in): it was answered right away.
+  const answered = data.lastContactAt ? { firstResponseAt: data.lastContactAt, responseMinutes: 0 } : {};
+  const ref = await addDoc(collection(db, COLLECTIONS.leads), clean({ ...answered, ...data, createdAt: now, updatedAt: now }));
   await logEvent(profile.uid, 'lead_created', { cartId: data.cartId });
   return ref.id;
 }
@@ -187,9 +191,15 @@ export async function updateLead(id: string, patch: Partial<Lead> & Record<strin
   await updateDoc(doc(db, COLLECTIONS.leads, id), clean({ ...patch, updatedAt: Date.now() }));
 }
 
-/** Records a contact attempt: lastContactAt, and New → Talking. */
-export async function markContacted(lead: Lead) {
-  await updateLead(lead.id, { lastContactAt: Date.now(), ...(lead.status === 'new' ? { status: 'talking' as const } : {}) });
+/**
+ * Records a contact attempt: lastContactAt, New → Talking, and (the first time) the response timer:
+ * firstResponseAt + responseMinutes, and claimedAt when the lead was handed to this person.
+ */
+export async function markContacted(lead: Lead & LeadSalesFields) {
+  const now = Date.now();
+  await updateLead(lead.id, {
+    lastContactAt: now, ...firstResponsePatch(lead, now), ...(lead.status === 'new' ? { status: 'talking' as const } : {}),
+  });
 }
 
 // ---------------------------------------------------------------------------

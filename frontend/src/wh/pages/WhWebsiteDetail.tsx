@@ -6,6 +6,7 @@ import {
 } from '@mui/material';
 import { Add, Delete, Pause, PlayArrow, Save } from '@mui/icons-material';
 import { formatUsPhone } from '../phone';
+import StoreSelect from '../components/StoreSelect';
 import WhShell from '../components/WhShell';
 import LeadChannelSelect, { DEFAULT_LEAD_CHANNEL } from '../components/LeadChannelSelect';
 import { relabelLeads } from '../websites';
@@ -40,6 +41,7 @@ const Editor: React.FC<{ domain: WhDomain }> = ({ domain }) => {
   const [status, setStatus] = useState(domain.status);
   const [leadChannel, setLeadChannel] = useState(domain.leadChannel || DEFAULT_LEAD_CHANNEL);
   const [phoneInput, setPhoneInput] = useState(domain.phone || '');
+  const [storeId, setStoreId] = useState(domain.locationId || '');
   const phone = formatUsPhone(phoneInput);
   const [settings, setSettings] = useState<WhSettings>(domain.settings || {});
   const [busy, setBusy] = useState('');
@@ -52,7 +54,7 @@ const Editor: React.FC<{ domain: WhDomain }> = ({ domain }) => {
   const series = useMemo(() => summarize(stats, lastDayKeys(30, now), domain.id).series, [stats, now, domain.id]);
   const url = normalizeSiteUrl(urlInput);
   const dirty = name !== domain.name || urlInput !== domain.url || platform !== (domain.platform || 'custom') || status !== domain.status ||
-    leadChannel !== (domain.leadChannel || DEFAULT_LEAD_CHANNEL) || phoneInput !== (domain.phone || '') ||
+    leadChannel !== (domain.leadChannel || DEFAULT_LEAD_CHANNEL) || phoneInput !== (domain.phone || '') || storeId !== (domain.locationId || '') ||
     JSON.stringify(settings) !== JSON.stringify(domain.settings || {});
 
   // "Add another form" uses the flow of this website's newest webhook, else the default flow.
@@ -66,7 +68,7 @@ const Editor: React.FC<{ domain: WhDomain }> = ({ domain }) => {
     setBusy('save');
     setMsg(null);
     try {
-      await patchWh(WH.domains, domain.id, { name: name.trim(), url: url.url, platform, status, settings, leadChannel, phone: phone.phone });
+      await patchWh(WH.domains, domain.id, { name: name.trim(), url: url.url, platform, status, settings, leadChannel, phone: phone.phone, locationId: storeId });
       setPhoneInput(phone.phone);
       setUrlInput(url.url);
       let relabeled = 0;
@@ -150,6 +152,7 @@ const Editor: React.FC<{ domain: WhDomain }> = ({ domain }) => {
               </Select>
             </FormControl>
             <LeadChannelSelect value={leadChannel} onChange={setLeadChannel} id="wd-channel" />
+            <StoreSelect value={storeId} onChange={setStoreId} />
             <TextField label="Website phone number" value={phoneInput} onChange={(e) => setPhoneInput(e.target.value)} type="tel" placeholder="215-555-0123"
               onBlur={() => { if (phone.phone) setPhoneInput(phone.phone); }} error={!!phone.error}
               helperText={phone.error || 'Saved as +1-xxx-xxx-xxxx.'} />

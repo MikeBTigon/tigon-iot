@@ -134,7 +134,7 @@ service cloud.firestore {
       // Anyone on the team can record where they posted a cart, or mark it sold.
       allow update: if isMpMember() &&
                        request.resource.data.diff(resource.data).affectedKeys()
-                         .hasOnly(['postedBy', 'postedAccounts', 'soldLocally', 'soldAt', 'soldBy']);
+                         .hasOnly(['postedBy', 'postedAccounts', 'soldLocally', 'soldAt', 'soldBy', 'videos', 'videoUpdatedAt']);
       // Listings created in the app (snap-to-list, CSV import) by team members.
       allow create: if isMpMember() && request.resource.data.source == 'manual' &&
                        request.resource.data.createdBy == request.auth.uid;
@@ -282,6 +282,68 @@ service cloud.firestore {
     match /mp_accounts/{accountId} {
       allow read: if isMpMember();
       allow write: if isMpAdmin();
+    }
+
+    // ---- Sell more release (speed to lead, texting, quotes, booking, trade-ins, referrals…) ----------
+    // Texts: anyone on the team may queue a text in their own name; delivery and status are server-only.
+    match /mp_sms/{id} {
+      allow read: if isMpManager() ||
+                     (isMpMember() && (resource.data.createdBy == request.auth.uid || resource.data.ownerUid == request.auth.uid));
+      allow create: if isMpMember() && request.resource.data.createdBy == request.auth.uid &&
+                       request.resource.data.status == 'queued' &&
+                       request.resource.data.to is string && request.resource.data.to.matches('^[+]1[0-9]{10}$') &&
+                       request.resource.data.body is string && request.resource.data.body.size() > 0 &&
+                       request.resource.data.body.size() <= 1200;
+    }
+    match /mp_sms_optout/{phone} {
+      allow read: if isMpMember();
+      allow write: if isMpManager();
+    }
+    match /mp_sms_inbound/{id} {
+      allow read: if isMpMember();
+    }
+    // Follow-up to-dos: owners work their own, managers everyone's.
+    match /mp_tasks/{id} {
+      allow read: if isMpManager() || (isMpMember() && resource.data.ownerUid == request.auth.uid);
+      allow create: if isMpMember() && (request.resource.data.ownerUid == request.auth.uid || isMpManager());
+      allow update: if isMpManager() ||
+                       (isMpMember() && resource.data.ownerUid == request.auth.uid &&
+                        request.resource.data.ownerUid == request.auth.uid);
+      allow delete: if isMpManager();
+    }
+    // Quotes (public view at /q/{code} goes through mpSalesPublic).
+    match /mp_quotes/{code} {
+      allow read: if isMpMember();
+      allow create: if isMpMember() && request.resource.data.salespersonUid == request.auth.uid;
+      allow update: if isMpMember() && (resource.data.salespersonUid == request.auth.uid || isMpManager());
+      allow delete: if isMpManager();
+    }
+    // Appointments, trade-ins, pre-qualifications: the whole team works them.
+    match /mp_appointments/{id} {
+      allow read, create, update: if isMpMember();
+      allow delete: if isMpManager();
+    }
+    match /mp_trade_ins/{id} {
+      allow read, create, update: if isMpMember();
+      allow delete: if isMpManager();
+    }
+    match /mp_prequal/{id} {
+      allow read, create, update: if isMpMember();
+      allow delete: if isMpManager();
+    }
+    // Referral codes: team creates them; rewards are counted by the server, managers mark them paid.
+    match /mp_referrals/{code} {
+      allow read: if isMpMember();
+      allow create: if isMpMember() && request.resource.data.leads == 0 && request.resource.data.sales == 0 &&
+                       request.resource.data.rewardsOwed == 0 && request.resource.data.rewardsPaid == 0;
+      allow update: if isMpManager();
+      allow delete: if isMpManager();
+    }
+    match /mp_price_changes/{id} {
+      allow read: if isMpMember();
+    }
+    match /mp_reviews/{id} {
+      allow read: if isMpMember();
     }
 
     // ---- Webhook Flows (website forms → flows) -----------------------------

@@ -5,6 +5,9 @@ import {HttpsError, onCall} from 'firebase-functions/v2/https';
 import {onSchedule} from 'firebase-functions/v2/scheduler';
 import * as admin from 'firebase-admin';
 import {createHash} from 'crypto';
+import {handleCartSold, nextPriceHistory, priceDropOf, stockedAtOf} from './sales/inventory';
+import {loadSalesSettings} from './sales/settings';
+import {cartSummary} from './sales/util';
 
 const DMS_API_BASE = 'https://api.tigondms.com/wp-website';
 const DEFAULT_IMAGE_BASE = 'https://s3.amazonaws.com/prod.docs.s3/default-cart-web-images/';
@@ -143,7 +146,9 @@ export async function syncInventory(trigger: string): Promise<SyncResult> {
       inStock.push(c);
     }
 
-    const existing = await db.collection(CARTS).select('payloadHash', 'serial', 'dmsId', 'source').get();
+    const existing = await db.collection(CARTS)
+      .select('payloadHash', 'serial', 'dmsId', 'source', 'price', 'priceHistory', 'firstSeenAt', 'stockedAt').get();
+    const sales = await loadSalesSettings(true);
     const existingById = new Map(existing.docs.map((d) => [d.id, d]));
 
     const imageCache = new Map<string, boolean>();
@@ -166,10 +171,32 @@ export async function syncInventory(trigger: string): Promise<SyncResult> {
       }
       const payload = JSON.stringify(doc);
       const payloadHash = createHash('sha1').update(payload).digest('hex');
-      if (existingById.get(id)?.get('payloadHash') === payloadHash) {
+      const prev = existingById.get(id);
+      // Days on lot: when the app first saw the cart (existing docs: when the doc was created).
+      const firstSeenAt = Number(prev?.get('firstSeenAt')) || prev?.createTime?.toMillis() || started;
+      if (prev?.get('payloadHash') === payloadHash) {
         unchanged++;
+        if (!prev.get('firstSeenAt') || !prev.get('stockedAt')) {
+          writer.set(prev.ref, {firstSeenAt, stockedAt: stockedAtOf(c, firstSeenAt, started).at}, {merge: true});
+          if (++ops >= 450) await flush();
+        }
         continue;
       }
+      const price = Number(c.retailPrice) || 0;
+      const priceFields: Json = {price};
+      const history = nextPriceHistory(prev?.get('priceHistory'), price, started);
+      if (history) priceFields.priceHistory = history;
+      // Price drops (ideas 11): only when we knew the old price (first sync after this release just records it).
+      const drop = prev && prev.get('price') !== undefined ? priceDropOf(prev.get('price'), price, sales.priceDrop.minDropPct) : null;
+      if (drop) {
+        priceFields.lastPriceDropAt = started;
+        writer.create(db.collection('mp_price_changes').doc(`${id.replace(/[^A-Za-z0-9_-]/g, '_')}_${started}`), {
+          cartId: id, cartTitle: cartSummary({payload}).title, oldPrice: drop.oldPrice, newPrice: drop.newPrice, dropPct: drop.pct,
+          at: started, locationId: locationOf(c), leadsTexted: 0, accountsToEdit: [],
+        });
+        ops++;
+      }
+      const stocked = stockedAtOf(c, firstSeenAt, started);
       writer.set(db.collection(CARTS).doc(id), {
         payload,
         payloadHash,
@@ -179,6 +206,10 @@ export async function syncInventory(trigger: string): Promise<SyncResult> {
         locationId: locationOf(c),
         isUsed: isUsed(c),
         source: 'dms-api',
+        firstSeenAt,
+        stockedAt: stocked.at,
+        stockedAtSource: stocked.source,
+        ...priceFields,
       }, {merge: true});
       written++;
       if (++ops >= 450) await flush();
@@ -201,6 +232,19 @@ export async function syncInventory(trigger: string): Promise<SyncResult> {
     if (inStock.length === 0 || (dmsCount > 20 && stale.length > dmsCount * 0.5)) {
       warning = `Skipped removing ${stale.length} carts: DMS returned ${inStock.length} in-stock carts, which looks incomplete.`;
     } else {
+      // Sold-cart clean-up (idea 13): tell posters and text interested leads before the cart is gone.
+      for (let i = 0; i < stale.length; i += 100) {
+        const full = await db.getAll(...stale.slice(i, i + 100).map((d) => d.ref));
+        for (const snap of full) {
+          // Carts marked sold in the app were already handled by mpCartSold.
+          if (!snap.exists || snap.get('soldLocally') === true) continue;
+          try {
+            await handleCartSold(snap.id, snap.data() || {}, sales, 'dms');
+          } catch (e) {
+            logger.warn('mpSync: sold clean-up failed', snap.id, e);
+          }
+        }
+      }
       for (const d of stale) {
         writer.delete(d.ref);
         removedSold++;

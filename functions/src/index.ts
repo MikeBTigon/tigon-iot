@@ -216,6 +216,7 @@ export * from './mpTeam';
 
 // Webhook Flows (website forms → flows → Master Flow)
 export * from './wh';
+export * from './sales';
 
 // AI functions use the ANTHROPIC_API_KEY secret, so they are only exported (and therefore only
 // deployed) when AI is turned on: the deploy workflow writes ENABLE_AI_WRITER=true to functions/.env,

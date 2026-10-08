@@ -33,6 +33,22 @@ export interface MpCartDoc {
   source?: string;
   createdBy?: string;
   soldLocally?: boolean;
+  /** Set when the doc was created in the app (manual listings). */
+  createdAt?: number;
+  /** Inventory (Sell more): when the sync first saw the cart, and when it came into stock (best guess). */
+  firstSeenAt?: number;
+  stockedAt?: number;
+  /** Last retail prices (oldest first, max 10) and the time of the last price drop. */
+  priceHistory?: PricePoint[];
+  lastPriceDropAt?: number;
+  /** Walk-around videos (Firebase Storage download URLs). */
+  videos?: string[];
+  videoUpdatedAt?: number;
+}
+
+export interface PricePoint {
+  price: number;
+  at: number;
 }
 
 export interface MpAccount {
@@ -97,6 +113,12 @@ export interface MpCart extends Cart {
   source?: string;
   createdBy?: string;
   soldLocally?: boolean;
+  /** When the cart came into stock (DMS date, else first seen by the app / created) — for days on lot. */
+  stockedAt?: number;
+  priceHistory?: PricePoint[];
+  lastPriceDropAt?: number;
+  videos?: string[];
+  videoUpdatedAt?: number;
 }
 
 export interface MpSyncStatus {

@@ -76,9 +76,17 @@ jobs:
         env:
           ENABLE_AI_WRITER: ${{ vars.ENABLE_AI_WRITER }}
           WH_REALTIME: ${{ vars.WH_REALTIME }}
+          GOOGLE_PLACES_KEY: ${{ secrets.GOOGLE_PLACES_KEY }}
+          TWILIO_ACCOUNT_SID: ${{ secrets.TWILIO_ACCOUNT_SID }}
+          TWILIO_AUTH_TOKEN: ${{ secrets.TWILIO_AUTH_TOKEN }}
         run: |
           FUNCS="mpSyncInventory mpSyncNow mpCreatePairingCode mpPairDevice mpSendQueueItem mpDispatchQueue mpMonitor mpApprovalDigest mpBackup mpBackupNow mpRunImport mpImportScheduled mpCrmReminders mpWeeklyDigest mpLink mpStorefrontApi mpEchoRegister mpEcho mpPresenceDaily mpPresenceWeekly mpPresenceReport mpChangeRequestAlert"
           FUNCS="$FUNCS whIngest whProcess whReplay whTestEmail whTestWebhook whDeleteSubmissions whAlerts whMaintenance whGoogle"
+          FUNCS="$FUNCS mpSalesLeadCreated mpSalesLeadUpdated mpSalesTick mpSalesHourly mpSalesPublic mpPriceChanged mpCartSold mpSimilarApi mpReviewsRefresh mpSmsQueued mpSmsInbound mpSmsAdmin"
+          # Optional keys for "Sell more": Google reviews (Places API) and Twilio texting.
+          if [ -n "$GOOGLE_PLACES_KEY" ]; then echo "GOOGLE_PLACES_KEY=$GOOGLE_PLACES_KEY" >> functions/.env; fi
+          if [ -n "$TWILIO_ACCOUNT_SID" ]; then echo "TWILIO_ACCOUNT_SID=$TWILIO_ACCOUNT_SID" >> functions/.env; fi
+          if [ -n "$TWILIO_AUTH_TOKEN" ]; then echo "TWILIO_AUTH_TOKEN=$TWILIO_AUTH_TOKEN" >> functions/.env; fi
           if [ "$ENABLE_AI_WRITER" = "true" ]; then
             FUNCS="$FUNCS mpAiListing mpAiSnap"
             echo "ENABLE_AI_WRITER=true" >> functions/.env

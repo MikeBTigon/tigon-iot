@@ -15,12 +15,16 @@ import {
 } from './crmData';
 import { timeAgo } from '../cartUtils';
 import type { Lead, LeadChannel, LeadStatus } from '../growthTypes';
+import type { LeadSalesFields } from '../sales/salesTypes';
+import { useSalesSettings } from '../sales/salesData';
+import SpeedChip from '../sales/speed/SpeedChip';
+import { needsClaim } from '../sales/speed/speedUtil';
 
 type DueFilter = 'all' | 'due' | 'overdue';
 
 /** One lead in the inbox / kanban. */
-function LeadCard({ lead, now, owner, onOpen, draggable }: {
-  lead: Lead; now: number; owner?: string; onOpen: () => void; draggable?: boolean;
+function LeadCard({ lead, now, owner, onOpen, draggable, marks }: {
+  lead: Lead & LeadSalesFields; now: number; owner?: string; onOpen: () => void; draggable?: boolean; marks?: number[];
 }) {
   const fu = followUpState(lead, now);
   return (
@@ -35,6 +39,8 @@ function LeadCard({ lead, now, owner, onOpen, draggable }: {
       {lead.cartTitle && <Typography variant="body2" color="text.secondary" noWrap>{lead.cartTitle}</Typography>}
       <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', mt: 0.5 }}>
         <Chip size="small" variant="outlined" label={CHANNEL_LABEL[lead.channel] || lead.channel} />
+        <SpeedChip lead={lead} now={now} marks={marks} showAnswered={false} />
+        {needsClaim(lead) && <Chip size="small" color="warning" variant="outlined" label="Not claimed" />}
         {fu === 'overdue' && <Chip size="small" color="error" label={`Overdue · ${shortDateTime(lead.followUpAt!)}`} />}
         {fu === 'today' && <Chip size="small" color="warning" label={`Due today ${new Date(lead.followUpAt!).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`} />}
         {fu === 'later' && <Chip size="small" variant="outlined" label={`Follow up ${shortDateTime(lead.followUpAt!)}`} />}
@@ -53,7 +59,10 @@ export default function LeadsPage() {
   const { profile, users, userName } = useMp();
   const manager = isManager(profile);
   const { leads, error } = useLeads(profile);
-  const now = useNow();
+  // The response timer ticks every 30 seconds.
+  const now = useNow(30_000);
+  const { settings: salesSettings } = useSalesSettings();
+  const marks = salesSettings.speed.alertMinutes;
   const theme = useTheme();
   const wide = useMediaQuery(theme.breakpoints.up('md'));
   const [search, setSearch] = useState('');
@@ -139,7 +148,7 @@ export default function LeadsPage() {
           <Chip size="small" label={list.length} />
         </Box>
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-          {list.map((l) => <LeadCard key={l.id} lead={l} now={now} owner={ownerLabel(l)} onOpen={() => setOpen(l)} draggable />)}
+          {list.map((l) => <LeadCard key={l.id} lead={l} now={now} owner={ownerLabel(l)} onOpen={() => setOpen(l)} draggable marks={marks} />)}
           {!list.length && <Typography variant="body2" color="text.disabled" sx={{ p: 1 }}>Nothing here</Typography>}
         </Box>
       </Box>
@@ -195,7 +204,7 @@ export default function LeadsPage() {
             ))}
           </Tabs>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-            {byStatus(tab).map((l) => <LeadCard key={l.id} lead={l} now={now} owner={ownerLabel(l)} onOpen={() => setOpen(l)} />)}
+            {byStatus(tab).map((l) => <LeadCard key={l.id} lead={l} now={now} owner={ownerLabel(l)} onOpen={() => setOpen(l)} marks={marks} />)}
             {!byStatus(tab).length && <Typography color="text.secondary" sx={{ py: 3, textAlign: 'center' }}>No {LEAD_STATUS_LABEL[tab].toLowerCase()} leads.</Typography>}
           </Box>
         </>

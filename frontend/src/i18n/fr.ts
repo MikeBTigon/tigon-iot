@@ -3,6 +3,18 @@ import type { Resource } from './en';
 
 const fr: Resource = {
   nav: {
+    sellMore: "Vendre plus",
+    today: "Aujourd'hui",
+    appointments: "Rendez-vous",
+    texts: "Textos",
+    quotes: "Devis",
+    tradeIns: "Reprises",
+    prequal: "Préqualification",
+    aged: "Stock ancien",
+    referrals: "Parrainages",
+    funnel: "Entonnoir de vente",
+    reviews: "Avis Google",
+    salesSettings: "Réglages ventes",
     sell: 'Vendre',
     home: 'Accueil',
     find: 'Trouver une voiturette',

@@ -3,6 +3,18 @@ import type { Resource } from './en';
 
 const es: Resource = {
   nav: {
+    sellMore: "Vender más",
+    today: "Hoy",
+    appointments: "Citas",
+    texts: "Mensajes",
+    quotes: "Cotizaciones",
+    tradeIns: "Intercambios",
+    prequal: "Precalificación",
+    aged: "Inventario antiguo",
+    referrals: "Referidos",
+    funnel: "Embudo de ventas",
+    reviews: "Reseñas de Google",
+    salesSettings: "Ajustes de ventas",
     sell: 'Vender',
     home: 'Inicio',
     find: 'Buscar carrito',

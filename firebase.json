@@ -54,6 +54,27 @@
         }
       },
       {
+        "source": "/api/public/**",
+        "function": {
+          "functionId": "mpSalesPublic",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/api/sms/**",
+        "function": {
+          "functionId": "mpSmsInbound",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/api/similar/**",
+        "function": {
+          "functionId": "mpSimilarApi",
+          "region": "us-central1"
+        }
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }

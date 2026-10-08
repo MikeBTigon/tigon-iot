@@ -46,6 +46,11 @@ export function cartFromDoc(docId: string, data: Partial<MpCartDoc>): MpCart {
     source: data.source,
     createdBy: data.createdBy,
     soldLocally: data.soldLocally === true,
+    stockedAt: Number(data.stockedAt) || Number(data.firstSeenAt) || Number(data.createdAt) || undefined,
+    priceHistory: Array.isArray(data.priceHistory) ? data.priceHistory : undefined,
+    lastPriceDropAt: Number(data.lastPriceDropAt) || undefined,
+    videos: Array.isArray(data.videos) ? data.videos.filter((v) => typeof v === 'string' && v) : undefined,
+    videoUpdatedAt: Number(data.videoUpdatedAt) || undefined,
   };
 }
 

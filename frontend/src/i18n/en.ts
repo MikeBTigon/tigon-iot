@@ -4,6 +4,18 @@
  */
 const en = {
   nav: {
+    sellMore: "Sell more",
+    today: "Today",
+    appointments: "Appointments",
+    texts: "Texts",
+    quotes: "Quotes",
+    tradeIns: "Trade-ins",
+    prequal: "Pre-qualification",
+    aged: "Aged inventory",
+    referrals: "Referrals",
+    funnel: "Sales funnel",
+    reviews: "Google reviews",
+    salesSettings: "Sell more settings",
     sell: 'Sell',
     home: 'Home',
     find: 'Find a Cart',

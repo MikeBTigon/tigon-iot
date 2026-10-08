@@ -35,6 +35,7 @@ import {
   ListAlt,
   PersonSearch,
   Calculate,
+  Today as TodayIcon,
   Search as SearchIcon,
   DarkMode,
   LightMode,
@@ -93,7 +94,7 @@ interface NavEntry {
 }
 
 /** Marketplace shortcuts that get their own sidebar entry (the rest of /mp/* highlights "MP Assistant"). */
-const MP_SHORTCUTS = ['/mp/new', '/mp/queue', '/mp/leads', '/mp/finance'];
+const MP_SHORTCUTS = ['/mp/today', '/mp/new', '/mp/queue', '/mp/leads', '/mp/finance'];
 
 const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
   const t = useT();
@@ -159,6 +160,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
   // Parallel module: Facebook Marketplace posting (Tigon MP Assistant) + its most-used pages.
   const marketplaceItems: NavEntry[] = [
     { text: t('layout.mpAssistant'), icon: <StorefrontIcon />, path: '/mp' },
+    { text: t('nav.today'), icon: <TodayIcon />, path: '/mp/today' },
     { text: t('nav.new'), icon: <AddAPhoto />, path: '/mp/new' },
     { text: t('nav.queue'), icon: <ListAlt />, path: '/mp/queue' },
     { text: t('nav.leads'), icon: <PersonSearch />, path: '/mp/leads' },

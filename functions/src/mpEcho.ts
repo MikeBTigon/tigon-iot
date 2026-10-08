@@ -9,6 +9,8 @@ import * as admin from 'firebase-admin';
 import {createHash, randomBytes, timingSafeEqual} from 'crypto';
 import {isFacebookMessage} from './fbFilter';
 import {markOnline} from './presence';
+import {echoAfterSave, echoBeforeFilter} from './sales/echoHooks';
+import {pendingSmsFor, recordSmsResults} from './sales/texting';
 
 const db = () => admin.firestore();
 const sha256 = (s: string) => createHash('sha256').update(s).digest('hex');
@@ -59,9 +61,12 @@ export const mpEcho = onRequest({memory: '256MiB', timeoutSeconds: 30}, async (r
     }
     // Online check-in (every 5 minutes from the phone's background service, and with every batch of notifications).
     await markOnline(deviceId, String(dev.get('userId')));
+    // Texting phone: report texts it sent, and pick up the next ones to send.
+    if (Array.isArray(b.smsResults) && b.smsResults.length) await recordSmsResults(deviceId, b.smsResults.slice(0, 50));
     if (b.ping === true) {
       await ref.set({lastSeen: Date.now(), lastPingAt: Date.now()}, {merge: true});
-      res.json({ok: true, ping: true});
+      const sms = b.canSms === true ? await pendingSmsFor(deviceId) : [];
+      res.json({ok: true, ping: true, ...(b.canSms === true ? {sms} : {})});
       return;
     }
     const items = (Array.isArray(b.items) ? b.items : [b]).slice(0, 20);
@@ -83,10 +88,14 @@ export const mpEcho = onRequest({memory: '256MiB', timeoutSeconds: 30}, async (r
     const deviceNumber = String(dev.get('deviceNumber') || '');
     const batch = db().batch();
     let created = 0;
+    const saved: Array<{item: Record<string, unknown>; id: string}> = [];
+    const devData = dev.data() || {};
     for (const it of items) {
       const title = clip(it.title, 300).trim();
       const text = clip(it.text, 4000).trim();
       if (!title && !text) continue;
+      // Missed calls → text-back / lead (never shown on the dashboard).
+      if (await echoBeforeFilter(devData, deviceId, it)) continue;
       // Dashboard gets Facebook messages / Messenger chats / DMs only (TikTok, Gmail, carrier, likes… are dropped).
       if (!isFacebookMessage(clip(it.pkg, 120), clip(it.app, 80), title, text, clip(it.cat, 20))) continue;
       const postedAt = Number(it.postedAt) || Date.now();
@@ -106,11 +115,19 @@ export const mpEcho = onRequest({memory: '256MiB', timeoutSeconds: 30}, async (r
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
         source: 'tigon-iot-echo',
       });
+      saved.push({item: it, id});
       created++;
     }
     if (created) {
       batch.set(ref, {lastSeen: Date.now(), lastEchoAt: Date.now()}, {merge: true});
       await batch.commit();
+      // Facebook buyer messages → leads.
+      for (const x of saved) await echoAfterSave(devData, deviceId, x.item, x.id);
+    }
+    const sms = b.canSms === true ? await pendingSmsFor(deviceId) : [];
+    if (b.canSms === true) {
+      res.json({ok: true, created, skipped: items.length - created, sms});
+      return;
     }
     res.json({ok: true, created, skipped: items.length - created});
   } catch (e) {
