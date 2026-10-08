@@ -18,6 +18,7 @@ const BookPublicPage = lazy(() => import('./closing/BookPublicPage'));
 const TradePublicPage = lazy(() => import('./closing/TradePublicPage'));
 const PrequalPublicPage = lazy(() => import('./closing/PrequalPublicPage'));
 const ReferralPublicPage = lazy(() => import('./marketing/ReferralPublicPage'));
+const SimilarPublicPage = lazy(() => import('./inventory/SimilarPublicPage'));
 
 const page = (el: ReactNode) => <Suspense fallback={null}>{el}</Suspense>;
 
@@ -43,4 +44,5 @@ export const PUBLIC_ROUTES: Array<{ path: string; element: ReactNode }> = [
   { path: '/trade', element: page(<TradePublicPage />) },
   { path: '/prequal', element: page(<PrequalPublicPage />) },
   { path: '/r/:code', element: page(<ReferralPublicPage />) },
+  { path: '/similar/:cartId', element: page(<SimilarPublicPage />) },
 ];

@@ -15,6 +15,8 @@ export interface SheetInput {
   showRoadrunner: boolean;
   /** Optional cart line, e.g. "2024 Evolution D5 Ranger 4" */
   cartTitle?: string;
+  /** Trade-in value (already taken off otd.loanAmount, like the down payment). */
+  tradeIn?: number;
 }
 
 const money = (n: number) => n.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
@@ -42,14 +44,20 @@ async function build(input: SheetInput, scale: number) {
   }
 
   // Three boxes
-  const boxes: Array<[string, number]> = [['Out-the-door price', input.otd.otd], ['Down payment', input.downPayment], ['Amount to finance', input.otd.loanAmount]];
+  const boxes: Array<[string, number]> = [
+    ['Out-the-door price', input.otd.otd],
+    ...(input.tradeIn ? [['Trade-in', input.tradeIn] as [string, number]] : []),
+    ['Down payment', input.downPayment],
+    ['Amount to finance', input.otd.loanAmount],
+  ];
   const gap = 12;
-  const bw = (W - 2 * M - 2 * gap) / 3;
+  const bw = (W - 2 * M - (boxes.length - 1) * gap) / boxes.length;
+  const last = boxes.length - 1;
   boxes.forEach(([label, v], i) => {
     const x = M + i * (bw + gap);
     doc.setDrawColor(220, 220, 220).setFillColor(248, 248, 248).roundedRect(x, y, bw, 54, 6, 6, 'FD');
     doc.setFont('helvetica', 'normal').setFontSize(10).setTextColor(100, 100, 100).text(label, x + 12, y + 18);
-    doc.setFont('helvetica', 'bold').setFontSize(18).setTextColor(i === 2 ? RED[0] : 30, i === 2 ? RED[1] : 30, i === 2 ? RED[2] : 30).text(money(v), x + 12, y + 42);
+    doc.setFont('helvetica', 'bold').setFontSize(boxes.length > 3 ? 15 : 18).setTextColor(i === last ? RED[0] : 30, i === last ? RED[1] : 30, i === last ? RED[2] : 30).text(money(v), x + 12, y + 42);
   });
   y += 70;
 

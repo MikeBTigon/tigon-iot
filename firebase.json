@@ -68,6 +68,13 @@
         }
       },
       {
+        "source": "/api/similar/**",
+        "function": {
+          "functionId": "mpSimilarApi",
+          "region": "us-central1"
+        }
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }

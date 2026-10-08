@@ -4,9 +4,17 @@ import {
   Alert, Autocomplete, Box, Button, Checkbox, Chip, CircularProgress, Collapse, Divider, FormControlLabel, InputAdornment, MenuItem, Paper,
   Stack, Table, TableBody, TableCell, TableHead, TableRow, TextField, ToggleButton, ToggleButtonGroup, Typography,
 } from '@mui/material';
-import { Calculate, ExpandLess, ExpandMore, PictureAsPdf, RestartAlt } from '@mui/icons-material';
+import { Calculate, ExpandLess, ExpandMore, PictureAsPdf, RestartAlt, Send } from '@mui/icons-material';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../../config/firebase';
 import MpShell from '../components/MpShell';
-import { DEALERSHIPS } from '../constants';
+import { COLLECTIONS, DEALERSHIPS } from '../constants';
+import { cartFromDoc } from '../cartUtils';
+import { cartTitle as titleOfCart, photoUrl } from '../cartLogic';
+import type { MpCartDoc } from '../types';
+import type { Lead } from '../growthTypes';
+import type { LeadSalesFields } from '../sales/salesTypes';
+import SendQuoteDialog, { type QuoteDraft } from '../sales/closing/SendQuoteDialog';
 import {
   BRANDS, LENDER_LABEL, TIERS, brandLabel, buildResults, computeOtd, customerSheetRows, deliveryFee, estimateDriveMinutes, fmtDuration,
   prepFeeFor, rateLabel, taxRateFor, termsFor,
@@ -49,7 +57,7 @@ const MpFinance: React.FC = () => {
   const [params] = useSearchParams();
   const initBrand = (BRANDS.find((b) => b.id === params.get('brand'))?.id || 'evolution') as Brand;
   const [brand, setBrand] = useState<Brand>(initBrand);
-  const [cartTitle] = useState(params.get('title') || '');
+  const [titleParam] = useState(params.get('title') || '');
   const [price, setPrice] = useState(params.get('price') || '');
   const [condition, setCondition] = useState<Condition>((params.get('condition') as Condition) || (initBrand === 'other' ? 'used' : 'new'));
   const [evoModel, setEvoModel] = useState<EvoModel>('other');
@@ -65,11 +73,38 @@ const MpFinance: React.FC = () => {
   const [taxManual, setTaxManual] = useState<string | null>(null);
   const [down, setDown] = useState('');
   const [termFilter, setTermFilter] = useState<number | 'all'>('all');
-  const [showTiers, setShowTiers] = useState(false);
+  const [showTiersPick, setShowTiers] = useState<boolean | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   const [zipsReady, setZipsReady] = useState(false);
   const [zipError, setZipError] = useState('');
   const [busyPdf, setBusyPdf] = useState(false);
+  // Opened for a lead (?lead=) or a cart (?cartId=): trade-in value, credit tier, cart photo/video for the quote.
+  const leadId = params.get('lead') || '';
+  const cartId = params.get('cartId') || '';
+  const [leadDoc, setLeadDoc] = useState<(Lead & LeadSalesFields) | null>(null);
+  const [cartInfo, setCartInfo] = useState<{ title: string; photo: string; video: string; storeId: string } | null>(null);
+  const [trade, setTrade] = useState<string | null>(null);
+  const [sendOpen, setSendOpen] = useState(params.get('send') === '1');
+
+  useEffect(() => {
+    if (!leadId) return;
+    getDoc(doc(db, COLLECTIONS.leads, leadId))
+      .then((s) => { if (s.exists()) setLeadDoc({ id: s.id, ...s.data() } as Lead & LeadSalesFields); })
+      .catch(() => notify('Could not load that lead.', 'error'));
+  }, [leadId]);
+  useEffect(() => {
+    if (!cartId) return;
+    getDoc(doc(db, COLLECTIONS.carts, cartId)).then((s) => {
+      if (!s.exists()) return;
+      const data = s.data() as MpCartDoc & { videos?: unknown };
+      const c = cartFromDoc(s.id, data);
+      const videos = Array.isArray(data.videos) ? data.videos.filter((v): v is string => typeof v === 'string' && /^https:\/\//.test(v)) : [];
+      setCartInfo({ title: titleOfCart(c), photo: c.photos[0] ? photoUrl(c.photos[0]) : '', video: videos[0] || '', storeId: c.locationId });
+    }).catch(() => undefined);
+  }, [cartId]);
+  const tradeText = trade ?? (leadDoc?.tradeValue ? String(leadDoc.tradeValue) : '');
+  const tradeIn = Math.max(num(tradeText), 0);
+  const creditTier = leadDoc?.creditTier;
 
   useEffect(() => {
     loadZips().then(() => setZipsReady(true)).catch((e) => setZipError(e instanceof Error ? e.message : String(e)));
@@ -104,8 +139,11 @@ const MpFinance: React.FC = () => {
   const taxMissing = taxManual === null && autoRate === null && !!taxPlace;
 
   const otd = computeOtd({
-    cartPrice: num(price), accessories: num(accessories), prepFee, deliveryFee: delivery, military, taxRate, downPayment: num(down),
+    cartPrice: num(price), accessories: num(accessories), prepFee, deliveryFee: delivery, military, taxRate, downPayment: num(down) + tradeIn,
   });
+  const cartTitle = titleParam || cartInfo?.title || '';
+  // A pre-qualified customer's tier opens the Tier B–E table.
+  const showTiers = showTiersPick ?? (!!creditTier && creditTier !== 'A');
   const canFinance = num(price) > 0 && otd.loanAmount > 0;
   const results = useMemo(() => buildResults(brand, Math.max(otd.loanAmount, 0), condition, termFilter), [brand, otd.loanAmount, condition, termFilter]);
   const terms = termsFor(brand);
@@ -116,6 +154,7 @@ const MpFinance: React.FC = () => {
       const name = await downloadCustomerSheet({
         brand: brandLabel(brand), otd, downPayment: num(down), cartPrice: num(price), accessories: num(accessories), prepFee,
         deliveryFee: delivery, rows: customerSheetRows(results), showRoadrunner: !!results.roadrunner, cartTitle: cartTitle || undefined,
+        tradeIn: tradeIn || undefined,
       });
       notify(`Customer sheet ready: ${name}`, 'success');
     } catch (e) {
@@ -124,6 +163,17 @@ const MpFinance: React.FC = () => {
       setBusyPdf(false);
     }
   };
+
+  const quoteDraft = (): QuoteDraft => ({
+    cartId: cartId || undefined, cartTitle, photo: cartInfo?.photo || undefined, videoUrl: cartInfo?.video || undefined, brand: brandLabel(brand),
+    cartPrice: num(price), accessories: num(accessories), prepFee, deliveryFee: delivery, militaryDiscount: otd.militaryDiscount, salesTax: otd.salesTax,
+    otd: otd.otd, downPayment: num(down), tradeIn, loanAmount: Math.max(otd.loanAmount, 0),
+    rows: canFinance ? customerSheetRows(results).map((q) => ({
+      lender: LENDER_LABEL[q.option.lender], rateLabel: rateLabel(q.option), term: q.option.term, payment: q.payment, totalOfPayments: q.totalOfPayments,
+      ...(q.option.note ? { note: q.option.note } : {}),
+    })) : [],
+  });
+  const quoteStore = leadDoc?.locationId || cartInfo?.storeId || (storeId !== 'other' ? storeId : '');
 
   // ---- result rows ----
   const Row: React.FC<{ q: Quote; label?: React.ReactNode }> = ({ q, label }) => {
@@ -174,10 +224,21 @@ const MpFinance: React.FC = () => {
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2, flexWrap: 'wrap' }}>
         <Calculate color="primary" />
         <Typography variant="h5" color="primary" sx={{ fontWeight: 700, flexGrow: 1 }}>Financing calculator</Typography>
+        <Button variant="outlined" startIcon={<Send />} disabled={!num(price)} onClick={() => setSendOpen(true)}>Send quote</Button>
         <Button variant="contained" startIcon={busyPdf ? <CircularProgress size={16} color="inherit" /> : <PictureAsPdf />} disabled={!canFinance || busyPdf} onClick={pdf}>
           Customer sheet (PDF)
         </Button>
       </Box>
+      {leadDoc && (
+        <Alert severity="info" sx={{ mb: 2 }}>
+          For <b>{leadDoc.name || 'this lead'}</b>
+          {creditTier ? <> · credit tier <b>{creditTier}</b> (from pre-qualification) — the Sheffield <b>Tier {creditTier}</b> row applies</> : ''}
+          {leadDoc.tradeValue ? <> · trade-in {money(leadDoc.tradeValue)}</> : ''}
+        </Alert>
+      )}
+      {sendOpen && num(price) > 0 && (
+        <SendQuoteDialog open onClose={() => setSendOpen(false)} draft={quoteDraft()} lead={leadDoc} storeId={quoteStore} />
+      )}
       {cartTitle && <Alert severity="info" sx={{ mb: 2 }}>{cartTitle}</Alert>}
       {zipError && <Alert severity="warning" sx={{ mb: 2 }}>Could not load the ZIP code table ({zipError}). Type the drive time and tax rate by hand.</Alert>}
 
@@ -251,6 +312,9 @@ const MpFinance: React.FC = () => {
             </Box>
             <TextField size="small" label="Down payment" value={down} onChange={(e) => setDown(e.target.value)} inputMode="decimal"
               slotProps={{ input: { startAdornment: <InputAdornment position="start">$</InputAdornment> } }} />
+            <TextField size="small" label="Trade-in value" value={tradeText} onChange={(e) => setTrade(e.target.value)} inputMode="decimal"
+              helperText={trade === null && leadDoc?.tradeValue ? 'From the lead\'s trade-in' : 'Lowers the amount financed, like a down payment'}
+              slotProps={{ input: { startAdornment: <InputAdornment position="start">$</InputAdornment> } }} />
           </Stack>
 
           <Table size="small" sx={{ mt: 2 }}>
@@ -262,6 +326,7 @@ const MpFinance: React.FC = () => {
                 <TableRow key={l}><TableCell sx={{ border: 0, py: 0.25 }}>{l}</TableCell><TableCell align="right" sx={{ border: 0, py: 0.25 }}>{money(v)}</TableCell></TableRow>
               ))}
               <TableRow><TableCell sx={{ fontWeight: 800 }}>Out-the-door price</TableCell><TableCell align="right" sx={{ fontWeight: 800 }}>{money(otd.otd)}</TableCell></TableRow>
+              {tradeIn > 0 && <TableRow><TableCell sx={{ border: 0, py: 0.25 }}>Trade-in</TableCell><TableCell align="right" sx={{ border: 0, py: 0.25 }}>−{money(tradeIn)}</TableCell></TableRow>}
               {num(down) > 0 && <TableRow><TableCell sx={{ border: 0, py: 0.25 }}>Down payment</TableCell><TableCell align="right" sx={{ border: 0, py: 0.25 }}>−{money(num(down))}</TableCell></TableRow>}
               <TableRow><TableCell sx={{ fontWeight: 800, color: 'primary.main' }}>Loan amount</TableCell><TableCell align="right" sx={{ fontWeight: 800, color: 'primary.main' }}>{money(Math.max(otd.loanAmount, 0))}</TableCell></TableRow>
             </TableBody>
@@ -273,7 +338,7 @@ const MpFinance: React.FC = () => {
           {!num(price) ? (
             <Alert severity="info">Enter the cart price to see every financing option for {brandLabel(brand)}.</Alert>
           ) : !canFinance ? (
-            <Alert severity="success">The down payment covers the out-the-door price — nothing to finance.</Alert>
+            <Alert severity="success">The {tradeIn > 0 ? 'trade-in and down payment cover' : 'down payment covers'} the out-the-door price — nothing to finance.</Alert>
           ) : (
             <>
               <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap', mb: 2 }}>
@@ -303,10 +368,10 @@ const MpFinance: React.FC = () => {
               {(results.promos.length > 0 || results.grid.length > 0) && (
                 <Group title="Sheffield Financial">
                   {results.promos.map((q) => <Row key={q.option.id} q={q} />)}
-                  {tierA.map((q) => <Row key={q.option.id} q={q} label={`Standard rate ${rateLabel(q.option)} (Tier A)`} />)}
+                  {tierA.map((q) => <Row key={q.option.id} q={q} label={`Standard rate ${rateLabel(q.option)} (Tier A)${creditTier === 'A' ? ' — this customer' : ''}`} />)}
                   {results.grid.length > 0 && (
                     <Box sx={{ p: 1 }}>
-                      <Button size="small" onClick={() => setShowTiers((v) => !v)} endIcon={showTiers ? <ExpandLess /> : <ExpandMore />}>
+                      <Button size="small" onClick={() => setShowTiers(!showTiers)} endIcon={showTiers ? <ExpandLess /> : <ExpandMore />}>
                         {showTiers ? 'Hide Tiers B to E' : 'Show Tiers B to E'}
                       </Button>
                       <Collapse in={showTiers}>
@@ -315,8 +380,8 @@ const MpFinance: React.FC = () => {
                             <TableHead><TableRow><TableCell>Tier</TableCell>{Array.from(new Set(results.grid.map((q) => q.option.term))).map((t) => <TableCell key={t} align="right">{t} mo</TableCell>)}</TableRow></TableHead>
                             <TableBody>
                               {TIERS.filter((t) => t !== 'A').map((t) => (
-                                <TableRow key={t}>
-                                  <TableCell sx={{ fontWeight: 700 }}>{t}</TableCell>
+                                <TableRow key={t} sx={t === creditTier ? { bgcolor: 'rgba(14,70,113,0.10)' } : undefined}>
+                                  <TableCell sx={{ fontWeight: 700, whiteSpace: 'nowrap' }}>{t}{t === creditTier ? ' ← this customer' : ''}</TableCell>
                                   {Array.from(new Set(results.grid.map((q) => q.option.term))).map((term) => {
                                     const q = gridQuote(t, term);
                                     return (

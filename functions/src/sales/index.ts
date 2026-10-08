@@ -2,5 +2,6 @@
 // Add a track's own triggers here (and to FUNCS in .github/workflows/firebase-deploy.yml).
 export {mpSalesLeadCreated, mpSalesLeadUpdated, mpSalesTick, mpSalesHourly} from './hooks';
 export {mpSalesPublic} from './public';
+export {mpSmsQueued, mpSmsInbound, mpSmsAdmin} from './texting';
 export {mpReviewsRefresh} from './marketing';
 export {mpPriceChanged, mpCartSold, mpSimilarApi} from './inventory';

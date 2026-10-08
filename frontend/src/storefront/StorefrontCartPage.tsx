@@ -76,6 +76,13 @@ const StorefrontCartPage: React.FC = () => {
                   <DirectionsCar sx={{ fontSize: 96 }} />
                 </Box>
               )}
+              {(cart.videos || []).map((v) => (
+                <Box key={v} sx={{ mt: 1.5 }}>
+                  <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 0.5 }}>Walk-around video</Typography>
+                  <Box component="video" src={v} controls playsInline preload="metadata"
+                    sx={{ width: '100%', maxHeight: 480, display: 'block', borderRadius: 1, bgcolor: 'black' }} />
+                </Box>
+              ))}
             </Box>
             <Paper sx={{ p: 2 }}>
               <Typography variant="h5" component="h1" fontWeight={800}>{name}</Typography>

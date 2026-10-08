@@ -6,6 +6,8 @@ import android.content.SharedPreferences;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -16,6 +18,8 @@ import java.util.concurrent.Executors;
 /**
  * Notification echo settings + a small offline queue. Everything the listener captures is posted to
  * https://tigoniot.com/api/echo (Cloud Function mpEcho) with this phone's device id and echo secret.
+ * On the store's texting phone every request also says canSms=true, reports sent texts (smsResults) and
+ * receives the next texts to send ("sms" in the reply, see SmsSender).
  */
 final class EchoStore {
     static final String PREFS = "tigon_echo";
@@ -70,7 +74,9 @@ final class EchoStore {
                 body.put("deviceId", p.getString("deviceId", ""));
                 body.put("secret", p.getString("secret", ""));
                 body.put("items", batch);
-                int status = post(p.getString("endpoint", DEFAULT_ENDPOINT), body.toString());
+                int reported = addSms(app, body);
+                Resp r = post(p.getString("endpoint", DEFAULT_ENDPOINT), body.toString());
+                int status = r.status;
                 if (status == 401 || status == 410) {
                     // Secret replaced or phone revoked: stop until the app registers again.
                     p.edit().putBoolean("enabled", false).putString("lastError", "HTTP " + status).apply();
@@ -80,6 +86,7 @@ final class EchoStore {
                     p.edit().putString("lastError", "HTTP " + status).apply();
                     return; // keep the queue, retry on the next notification / app open
                 }
+                if (status >= 200 && status < 300) handleSms(app, r, reported);
                 JSONArray rest = new JSONArray();
                 for (int i = batch.length(); i < q.length(); i++) rest.put(q.get(i));
                 q = rest;
@@ -91,7 +98,18 @@ final class EchoStore {
         }
     }
 
-    private static int post(String endpoint, String json) throws Exception {
+    /** HTTP status + reply body ('' for errors). */
+    static final class Resp {
+        final int status;
+        final String body;
+
+        Resp(int status, String body) {
+            this.status = status;
+            this.body = body;
+        }
+    }
+
+    private static Resp post(String endpoint, String json) throws Exception {
         HttpURLConnection con = (HttpURLConnection) new URL(endpoint).openConnection();
         try {
             con.setRequestMethod("POST");
@@ -102,9 +120,46 @@ final class EchoStore {
             try (OutputStream os = con.getOutputStream()) {
                 os.write(json.getBytes(StandardCharsets.UTF_8));
             }
-            return con.getResponseCode();
+            int status = con.getResponseCode();
+            String body = "";
+            if (status >= 200 && status < 300) {
+                try (InputStream in = con.getInputStream()) {
+                    ByteArrayOutputStream out = new ByteArrayOutputStream();
+                    byte[] buf = new byte[8192];
+                    int n;
+                    while ((n = in.read(buf)) > 0 && out.size() < 512 * 1024) out.write(buf, 0, n);
+                    body = new String(out.toByteArray(), StandardCharsets.UTF_8);
+                } catch (Exception ignored) {
+                    body = "";
+                }
+            }
+            return new Resp(status, body);
         } finally {
             con.disconnect();
+        }
+    }
+
+    /** Texting phone: say we can text and attach results to report. Returns how many results were attached. */
+    private static int addSms(Context app, JSONObject body) throws Exception {
+        if (!SmsSender.isEnabled(app)) return 0;
+        SmsSender.sweep(app);
+        boolean can = SmsSender.canSend(app);
+        if (can) body.put("canSms", true);
+        JSONArray results = SmsSender.peekResults(app);
+        if (results.length() > 0) body.put("smsResults", results);
+        return results.length();
+    }
+
+    /** Texting phone: results were delivered; send the texts the server handed out. */
+    private static void handleSms(Context app, Resp r, int reported) {
+        SmsSender.clearResults(app, reported);
+        if (!SmsSender.canSend(app) || r.body == null || r.body.isEmpty()) return;
+        try {
+            JSONObject reply = new JSONObject(r.body);
+            JSONArray sms = reply.optJSONArray("sms");
+            if (sms != null && sms.length() > 0) SmsSender.sendAll(app, sms);
+        } catch (Exception ignored) {
+            // not JSON: nothing to send
         }
     }
 
@@ -120,12 +175,17 @@ final class EchoStore {
                 body.put("secret", p.getString("secret", ""));
                 body.put("ping", true);
                 body.put("items", new JSONArray());
-                int status = post(p.getString("endpoint", DEFAULT_ENDPOINT), body.toString());
+                int reported = addSms(app, body);
+                Resp r = post(p.getString("endpoint", DEFAULT_ENDPOINT), body.toString());
+                int status = r.status;
                 if (status == 401 || status == 410) {
                     p.edit().putBoolean("enabled", false).putString("lastError", "HTTP " + status).apply();
                     return;
                 }
-                if (status >= 200 && status < 300) p.edit().putLong("lastPingAt", System.currentTimeMillis()).apply();
+                if (status >= 200 && status < 300) {
+                    p.edit().putLong("lastPingAt", System.currentTimeMillis()).apply();
+                    handleSms(app, r, reported);
+                }
             } catch (Exception ignored) {
                 // offline: the next check-in tries again
             }
