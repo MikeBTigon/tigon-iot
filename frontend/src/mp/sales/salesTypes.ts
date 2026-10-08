@@ -112,6 +112,11 @@ export interface LeadSalesFields {
   creditTier?: 'A' | 'B' | 'C' | 'D' | 'E';
   /** T5 — referral that brought this lead. */
   referralCode?: string;
+  /** T5 — this buyer's own referral code (made when the lead is sold). */
+  myReferralCode?: string;
+  referralCountedAt?: number;
+  referralRewardAt?: number;
+  referralRewardAmount?: number;
   /** Similar-model interest (for price drops / sold-similar). */
   interestModel?: string;
 }
