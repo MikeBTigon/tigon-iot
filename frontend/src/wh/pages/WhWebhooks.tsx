@@ -3,7 +3,7 @@ import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import { doc, writeBatch } from 'firebase/firestore';
 import {
   Alert, Box, Button, Checkbox, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, FormControl,
-  FormControlLabel, InputAdornment, InputLabel, MenuItem, Paper, Radio, RadioGroup, Select, Table, TableBody, TableCell,
+  FormControlLabel, InputAdornment, InputLabel, Link, MenuItem, Paper, Radio, RadioGroup, Select, Table, TableBody, TableCell,
   TableHead, TablePagination, TableRow, TextField, Typography,
 } from '@mui/material';
 import { Add, Download, Search } from '@mui/icons-material';
@@ -59,6 +59,11 @@ const WhWebhooks: React.FC = () => {
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   const domainName = useMemo(() => new Map((domains || []).map((d) => [d.id, d.name])), [domains]);
+  // Full https:// address of each website (a bare "example.com" gets https:// added).
+  const domainUrl = useMemo(() => new Map((domains || []).map((d) => {
+    const u = String(d.url || '').trim();
+    return [d.id, !u ? '' : /^https?:\/\//i.test(u) ? u : `https://${u}`];
+  })), [domains]);
   const flowName = useMemo(() => new Map((flows || []).map((f) => [f.id, f.name])), [flows]);
   const assignable = useMemo(() => (flows || []).filter((f) => f.type !== 'master').sort((a, b) => a.name.localeCompare(b.name)), [flows]);
 
@@ -66,9 +71,9 @@ const WhWebhooks: React.FC = () => {
     const needle = q.trim().toLowerCase();
     return (hooks || [])
       .filter((w) => (!domainF || w.domainId === domainF) && (!statusF || w.status === statusF) && (!flowF || w.flowId === flowF))
-      .filter((w) => !needle || `${w.formName} ${domainName.get(w.domainId) || ''} ${w.key} ${w.id}`.toLowerCase().includes(needle))
+      .filter((w) => !needle || `${w.formName} ${domainName.get(w.domainId) || ''} ${domainUrl.get(w.domainId) || ''} ${w.key} ${w.id}`.toLowerCase().includes(needle))
       .sort((a, b) => (domainName.get(a.domainId) || '').localeCompare(domainName.get(b.domainId) || '') || a.formName.localeCompare(b.formName));
-  }, [hooks, q, domainF, statusF, flowF, domainName]);
+  }, [hooks, q, domainF, statusF, flowF, domainName, domainUrl]);
 
   const safePage = Math.min(page, Math.max(0, Math.ceil(filtered.length / PAGE) - 1));
   const pageRows = filtered.slice(safePage * PAGE, safePage * PAGE + PAGE);
@@ -190,6 +195,7 @@ const WhWebhooks: React.FC = () => {
                 <TableCell padding="checkbox"><Checkbox checked={pageAllSelected} indeterminate={!pageAllSelected && pageRows.some((w) => selected.has(w.id))} onChange={togglePage} inputProps={{ 'aria-label': 'Select page' }} /></TableCell>
                 <TableCell>Form</TableCell>
                 <TableCell>Website</TableCell>
+                <TableCell>URL</TableCell>
                 <TableCell>Flow</TableCell>
                 <TableCell>Recipients</TableCell>
                 <TableCell>Last lead</TableCell>
@@ -207,13 +213,19 @@ const WhWebhooks: React.FC = () => {
                     <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>{w.key.slice(0, 8)}…{w.hmacRequired ? ' · signed' : ''}</Typography>
                   </TableCell>
                   <TableCell>{domainName.get(w.domainId) || '(deleted website)'}</TableCell>
+                  <TableCell sx={{ whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
+                    {domainUrl.get(w.domainId) ? (
+                      // Plain followed link (no nofollow); opens the website in a new tab.
+                      <Link href={domainUrl.get(w.domainId)} target="_blank" rel="noopener">{domainUrl.get(w.domainId)}</Link>
+                    ) : '—'}
+                  </TableCell>
                   <TableCell>{flowName.get(w.flowId) || '(missing flow)'}</TableCell>
                   <TableCell sx={{ maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{(w.settings?.emailTo || []).join(', ') || <Typography variant="caption" color="text.secondary">inherited</Typography>}</TableCell>
                   <TableCell sx={{ whiteSpace: 'nowrap' }}>{ago(w.lastReceivedAt, now)}</TableCell>
                   <TableCell><StatusChip status={w.status} /></TableCell>
                 </TableRow>
               ))}
-              {!pageRows.length && <TableRow><TableCell colSpan={7}>{hooks.length ? 'No webhooks match these filters.' : 'No webhooks yet — add a website to create one.'}</TableCell></TableRow>}
+              {!pageRows.length && <TableRow><TableCell colSpan={8}>{hooks.length ? 'No webhooks match these filters.' : 'No webhooks yet — add a website to create one.'}</TableCell></TableRow>}
             </TableBody>
           </Table>
           <TablePagination
