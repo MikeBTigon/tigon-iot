@@ -6,6 +6,7 @@ import {
   Select, Stack, Step, StepLabel, Stepper, TextField, Typography,
 } from '@mui/material';
 import { ArrowBack, ArrowForward, CheckCircle } from '@mui/icons-material';
+import { formatUsPhone } from '../phone';
 import WhShell from '../components/WhShell';
 import LeadChannelSelect, { DEFAULT_LEAD_CHANNEL } from '../components/LeadChannelSelect';
 import { CHANNEL_LABEL } from '../../mp/crm/crmData';
@@ -62,6 +63,8 @@ const WhAddWebsite: React.FC = () => {
   const [urlInput, setUrlInput] = useState('');
   const [platform, setPlatform] = useState('wordpress');
   const [leadChannel, setLeadChannel] = useState(DEFAULT_LEAD_CHANNEL);
+  const [phoneInput, setPhoneInput] = useState('');
+  const phone = formatUsPhone(phoneInput);
   const [formName, setFormName] = useState('Contact form');
   const [flowMode, setFlowMode] = useState<'shared' | 'copy'>('shared');
   const [templateId, setTemplateId] = useState('');
@@ -84,7 +87,7 @@ const WhAddWebsite: React.FC = () => {
   const badEmails = emailList.filter((e) => !EMAIL_RE.test(e));
   const badGa = gaId.trim() && !/^G-[A-Z0-9]{4,}$/i.test(gaId.trim());
 
-  const step0Error = !name.trim() ? 'Enter a name for the website.' : url.error || (!formName.trim() ? 'Enter a form name.' : '');
+  const step0Error = !name.trim() ? 'Enter a name for the website.' : url.error || (!formName.trim() ? 'Enter a form name.' : phone.error);
   const step1Error = badEmails.length ? `Not an email address: ${badEmails.join(', ')}` : badGa ? 'The Measurement ID looks like G-XXXXXXXXXX.' :
     flowMode === 'copy' && !chosenTemplateId && !(defaultsMissing && isAdmin) ? 'Choose a flow to copy.' : '';
 
@@ -123,7 +126,7 @@ const WhAddWebsite: React.FC = () => {
       if (gaId.trim()) settings.ga4MeasurementId = gaId.trim().toUpperCase();
       if (gaSecret.trim()) settings.ga4ApiSecret = gaSecret.trim();
       const res = await createWebsite({
-        name, url: url.url as string, platform, leadChannel, formName, flowMode, templateFlow: tplFlow, settings,
+        name, url: url.url as string, platform, leadChannel, phone: phone.phone, formName, flowMode, templateFlow: tplFlow, settings,
       }, profile);
       setResult(res);
       setStep(3);
@@ -168,6 +171,9 @@ const WhAddWebsite: React.FC = () => {
               </Select>
             </FormControl>
             <LeadChannelSelect value={leadChannel} onChange={setLeadChannel} />
+            <TextField label="Website phone number" value={phoneInput} onChange={(e) => setPhoneInput(e.target.value)} placeholder="215-555-0123"
+              type="tel" onBlur={() => { if (phone.phone) setPhoneInput(phone.phone); }} error={!!phoneInput.trim() && !!phone.error}
+              helperText={(phoneInput.trim() && phone.error) || (phone.phone ? `Saved as ${phone.phone}` : 'The phone number shown on this website. Type it any way — it is saved as +1-xxx-xxx-xxxx.')} />
             <TextField label="Form name" value={formName} onChange={(e) => setFormName(e.target.value)}
               helperText='Which form on the site this is, e.g. "Contact form", "Trade-in form", "Get a quote".' error={touched && !formName.trim()} />
             {touched && step0Error && <Alert severity="error">{step0Error}</Alert>}
@@ -235,6 +241,7 @@ const WhAddWebsite: React.FC = () => {
               ['Website', `${name.trim()} — ${url.url}`],
               ['Builder', PLATFORMS.find((p) => p.value === platform)?.label || platform],
               ['Lead channel', CHANNEL_LABEL[leadChannel as keyof typeof CHANNEL_LABEL] || leadChannel],
+              ['Phone number', phone.phone || 'none'],
               ['Form', formName.trim()],
               ['Flow', summaryFlow],
               ['Email leads to', emailList.join(', ') || 'default recipients'],
