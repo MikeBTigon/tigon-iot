@@ -78,6 +78,8 @@ export interface PublicCart {
   photos: string[];
   features: string[];
   description: string;
+  /** Walk-around videos (Firebase Storage download URLs). */
+  videos: string[];
 }
 
 const photoUrl = (f: string) => (/^https?:\/\//i.test(f) ? f : PHOTO_BASE + f);
@@ -168,6 +170,7 @@ export function publicCart(id: string, data: Json): PublicCart | null {
     photos: photos.map(photoUrl),
     features,
     description: description.replace(/\.\s*\./g, '.').replace(/\s+/g, ' '),
+    videos: cleanList(data.videos).filter((u) => /^https:\/\//i.test(u)),
   };
 }
 

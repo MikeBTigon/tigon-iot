@@ -47,6 +47,28 @@ export interface SmsDoc {
   sentAt?: number;
   /** Twilio message SID. */
   sid?: string;
+  /** Owner of the lead (lets the salesperson see automatic texts to their lead). */
+  ownerUid?: string;
+  /** When the texting phone / Twilio picked it up (stuck-text recovery). */
+  takenAt?: number;
+}
+
+/** Automatic first-contact texts carry the opt-out notice. */
+export const OPT_OUT_NOTICE = 'Reply STOP to opt out.';
+const NOTICE_KINDS: SmsKind[] = ['auto_lead', 'missed_call'];
+export function withOptOutNotice(kind: SmsKind, body: string): string {
+  if (!NOTICE_KINDS.includes(kind) || /\bSTOP\b/.test(body)) return body;
+  return `${body.replace(/\s+$/, '')} ${OPT_OUT_NOTICE}`;
+}
+
+/** Lead owner for a text (so the salesperson can read it). */
+async function leadOwner(leadId?: string): Promise<string> {
+  if (!leadId) return '';
+  try {
+    return String((await db().collection(C.leads).doc(leadId).get()).get('ownerUid') || '');
+  } catch {
+    return '';
+  }
 }
 
 export const isOptedOut = async (to: string) => (await db().collection(C.smsOptOut).doc(to).get()).exists;
@@ -54,8 +76,9 @@ export const isOptedOut = async (to: string) => (await db().collection(C.smsOptO
 /** Queues a text. Returns the mp_sms id, or null when it can't/shouldn't be sent (bad number, opted out, duplicate). */
 export async function queueSms(input: SmsInput): Promise<string | null> {
   const to = e164(input.to);
-  const body = String(input.body || '').trim().slice(0, 1200);
-  if (!to || !body) return null;
+  const raw = String(input.body || '').trim().slice(0, 1170);
+  if (!to || !raw) return null;
+  const body = withOptOutNotice(input.kind, raw);
   if (await isOptedOut(to)) return null;
   const now = Date.now();
   let sendAt = Math.max(input.sendAt || now, now);
@@ -63,9 +86,11 @@ export async function queueSms(input: SmsInput): Promise<string | null> {
     const s = await loadSalesSettings();
     sendAt = afterQuiet(sendAt, s.sms.quietStart, s.sms.quietEnd);
   }
+  const ownerUid = await leadOwner(input.leadId);
   const doc: SmsDoc = {
     to, body, kind: input.kind, storeId: input.storeId || '', createdBy: input.createdBy || '',
     status: 'queued', sendAt, attempts: 0, createdAt: now,
+    ...(ownerUid ? {ownerUid} : {}),
     ...(input.leadId ? {leadId: input.leadId} : {}),
     ...(input.customerId ? {customerId: input.customerId} : {}),
     ...(input.appointmentId ? {appointmentId: input.appointmentId} : {}),
