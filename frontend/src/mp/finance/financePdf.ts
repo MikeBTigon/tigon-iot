@@ -1,4 +1,5 @@
 // Customer sheet (spec §6): one US Letter page, built with jsPDF + AutoTable and shrunk until it fits.
+import type { jsPDF } from 'jspdf';
 import type { Otd, Quote } from './financeCalc';
 import { LENDER_LABEL, rateLabel } from './financeCalc';
 import { isNativeApp } from '../../native/platform';
@@ -136,14 +137,99 @@ export async function downloadCustomerSheet(input: SheetInput) {
     if (built.fits) break;
     built = await build(input, s);
   }
-  const name = `${input.brand.replace(/[^\w]+/g, '_')}-financing-${Math.round(input.otd.otd)}.pdf`;
+  return savePdf(built.doc, `${input.brand.replace(/[^\w]+/g, '_')}-financing-${Math.round(input.otd.otd)}.pdf`);
+}
+
+/** One-option sheet: everything about the financing option the salesperson selected. */
+export async function downloadOptionSheet(input: Omit<SheetInput, 'rows' | 'showRoadrunner'> & { choice: Quote }) {
+  const [{ jsPDF }, { default: autoTable }] = await Promise.all([import('jspdf'), import('jspdf-autotable')]);
+  const doc = new jsPDF({ unit: 'pt', format: 'letter' });
+  const W = doc.internal.pageSize.getWidth();
+  const M = 40;
+  const q = input.choice;
+  const o = q.option;
+
+  doc.setFillColor(...RED);
+  doc.rect(0, 0, W, 70, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFont('helvetica', 'bold').setFontSize(22).text('Your financing quote', M, 42);
+  doc.setFont('helvetica', 'normal').setFontSize(11);
+  doc.text(`${input.brand} · ${new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`, W - M, 42, { align: 'right' });
+  let y = 92;
+  doc.setTextColor(40, 40, 40);
+  if (input.cartTitle) {
+    doc.setFont('helvetica', 'bold').setFontSize(13).text(input.cartTitle, M, y);
+    y += 18;
+  }
+
+  // Headline: the monthly payment for this option.
+  doc.setDrawColor(220, 220, 220).setFillColor(248, 248, 248).roundedRect(M, y, W - 2 * M, 78, 6, 6, 'FD');
+  doc.setFont('helvetica', 'normal').setFontSize(11).setTextColor(100, 100, 100)
+    .text(`${LENDER_LABEL[o.lender]} · ${rateLabel(o)} · ${o.term} months${o.tier ? ` · Tier ${o.tier}` : ''}`, M + 14, y + 22);
+  doc.setFont('helvetica', 'bold').setFontSize(30).setTextColor(...RED).text(`${money(q.payment)}/mo`, M + 14, y + 58);
+  doc.setFont('helvetica', 'normal').setFontSize(11).setTextColor(60, 60, 60)
+    .text(`for ${o.term} months · total ${money(q.totalOfPayments)}`, W - M - 14, y + 58, { align: 'right' });
+  y += 96;
+
+  const rows: Array<[string, string]> = [
+    ['Cart price', money(input.cartPrice)],
+    ...(input.accessories ? [['Accessories', money(input.accessories)] as [string, string]] : []),
+    ...(input.prepFee ? [['Dealer prep fee', money(input.prepFee)] as [string, string]] : []),
+    ...(input.deliveryFee ? [['Delivery', money(input.deliveryFee)] as [string, string]] : []),
+    ...(input.otd.militaryDiscount ? [['Military discount', `−${money(input.otd.militaryDiscount)}`] as [string, string]] : []),
+    ...(input.otd.salesTax ? [['Sales tax', money(input.otd.salesTax)] as [string, string]] : []),
+    ['Out-the-door price', money(input.otd.otd)],
+    ...(input.tradeIn ? [['Trade-in', `−${money(input.tradeIn)}`] as [string, string]] : []),
+    ...(input.downPayment ? [['Down payment', `−${money(input.downPayment)}`] as [string, string]] : []),
+    ['Loan amount', money(input.otd.loanAmount)],
+    ...(q.programFee ? [[`Program fee (${+(o.feePct * 100).toFixed(2)}% + $10)`, money(q.programFee)] as [string, string]] : []),
+    ...(o.orig ? [['Origination fee', money(o.orig)] as [string, string]] : []),
+    ['Amount financed', money(q.amountFinanced)],
+    ['Interest rate', rateLabel(o)],
+    ['Term', `${o.term} months`],
+    ['Monthly payment', money(q.payment)],
+    ["Total you'll pay (all payments)", money(q.totalOfPayments)],
+    ['Total fees & interest', money(q.totalFeesAndInterest)],
+    ...(o.note ? [['Good to know', o.note] as [string, string]] : []),
+  ];
+  const bold = new Set(['Out-the-door price', 'Amount financed', 'Monthly payment']);
+  autoTable(doc, {
+    startY: y,
+    margin: { left: M, right: M },
+    body: rows,
+    theme: 'plain',
+    styles: { fontSize: 11, cellPadding: { top: 4, bottom: 4, left: 8, right: 8 }, textColor: [40, 40, 40] },
+    columnStyles: { 1: { halign: 'right' } },
+    didParseCell: (d) => {
+      if (bold.has(String(d.row.raw && (d.row.raw as string[])[0]))) d.cell.styles.fontStyle = 'bold';
+      if (d.row.index % 2 === 0) d.cell.styles.fillColor = [250, 250, 250];
+    },
+  });
+  y = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 14;
+
+  const note = 'This payment is an estimate only. Your actual interest rate and monthly payment are set by the lender after a credit review, based on the credit tier you\'re approved for.';
+  doc.setFont('helvetica', 'normal').setFontSize(9.5);
+  const noteLines = doc.splitTextToSize(note, W - 2 * M - 24);
+  const nh = 22 + noteLines.length * 12;
+  doc.setFillColor(255, 247, 230).setDrawColor(240, 190, 90).roundedRect(M, y, W - 2 * M, nh, 6, 6, 'FD');
+  doc.setTextColor(90, 60, 0).setFont('helvetica', 'bold').text('Please note: this is an estimate.', M + 12, y + 16);
+  doc.setFont('helvetica', 'normal').text(noteLines, M + 12, y + 30);
+  y += nh + 12;
+  doc.setFontSize(8.5).setTextColor(120, 120, 120);
+  doc.text(doc.splitTextToSize('All financing is subject to credit approval by the lender. Program terms can change without notice.', W - 2 * M), M, y + 4);
+
+  const slug = `${LENDER_LABEL[o.lender]}-${o.term}mo`.replace(/[^\w]+/g, '_');
+  return savePdf(doc, `${input.brand.replace(/[^\w]+/g, '_')}-${slug}-${Math.round(input.otd.otd)}.pdf`);
+}
+
+async function savePdf(doc: jsPDF, name: string) {
   if (!isNativeApp()) {
-    built.doc.save(name);
+    doc.save(name);
     return name;
   }
   // Phone app: save to the app's documents, then open the share sheet (Save to Files / Drive, or send to the customer).
   const [{ Filesystem, Directory }, { Share }] = await Promise.all([import('@capacitor/filesystem'), import('@capacitor/share')]);
-  const data = built.doc.output('datauristring').split(',')[1];
+  const data = doc.output('datauristring').split(',')[1];
   const saved = await Filesystem.writeFile({ path: `financing/${name}`, data, directory: Directory.Cache, recursive: true });
   await Share.share({ title: name, files: [saved.uri] });
   return name;
