@@ -79,6 +79,7 @@ jobs:
         run: |
           FUNCS="mpSyncInventory mpSyncNow mpCreatePairingCode mpPairDevice mpSendQueueItem mpDispatchQueue mpMonitor mpApprovalDigest mpBackup mpBackupNow mpRunImport mpImportScheduled mpCrmReminders mpWeeklyDigest mpLink mpStorefrontApi mpEchoRegister mpEcho mpPresenceDaily mpPresenceWeekly mpPresenceReport mpChangeRequestAlert"
           FUNCS="$FUNCS whIngest whProcess whReplay whTestEmail whTestWebhook whDeleteSubmissions whAlerts whMaintenance whGoogle"
+          FUNCS="$FUNCS mpSalesLeadCreated mpSalesLeadUpdated mpSalesTick mpSalesHourly mpSalesPublic"
           if [ "$ENABLE_AI_WRITER" = "true" ]; then
             FUNCS="$FUNCS mpAiListing mpAiSnap"
             echo "ENABLE_AI_WRITER=true" >> functions/.env

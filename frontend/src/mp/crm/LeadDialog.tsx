@@ -17,6 +17,7 @@ import {
   shortDateTime, toLocalInput, updateLead, type LeadInput,
 } from './crmData';
 import type { Lead, LeadChannel, LeadStatus } from '../growthTypes';
+import LeadSalesPanel from '../sales/LeadSalesPanel';
 import type { MpCart } from '../types';
 
 export interface LeadDialogProps {
@@ -177,6 +178,7 @@ function LeadBody({ onClose, lead, initial, notificationId, onSaved }: LeadDialo
           <FormControlLabel sx={{ mt: 1 }} control={<Checkbox checked={markHandled} onChange={(e) => setMarkHandled(e.target.checked)} />}
             label="Mark the notification handled" />
         )}
+        {lead && <LeadSalesPanel lead={lead} />}
         {error && <Alert severity="error" sx={{ mt: 1 }}>{error}</Alert>}
       </DialogContent>
       <DialogActions sx={{ flexWrap: 'wrap', gap: 1 }}>

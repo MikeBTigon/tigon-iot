@@ -16,6 +16,7 @@ import { ROUTES as CRM_ROUTES } from './crm/routes';
 import { ROUTES as TEAM_ROUTES } from './team/routes';
 import { ROUTES as HELP_ROUTES } from './help/routes';
 import { ROUTES as WH_ROUTES } from '../wh/routes';
+import { ROUTES as SALES_ROUTES, PUBLIC_ROUTES as SALES_PUBLIC_ROUTES } from './sales/routes';
 
 /** MP Assistant routes; each element is wrapped by the caller's route guard. */
 export const MP_ROUTES = [
@@ -34,7 +35,7 @@ export const MP_ROUTES = [
   { path: '/mp/prepare/:cartId', element: <MpPrepare /> },
 ];
 
-const AREA_ROUTES = [...CREATE_ROUTES, ...SHARE_ROUTES, ...CRM_ROUTES, ...TEAM_ROUTES, ...HELP_ROUTES, ...WH_ROUTES];
+const AREA_ROUTES = [...CREATE_ROUTES, ...SHARE_ROUTES, ...CRM_ROUTES, ...TEAM_ROUTES, ...HELP_ROUTES, ...WH_ROUTES, ...SALES_ROUTES];
 
 export function mpRoutes(guard: (el: React.ReactNode) => React.ReactNode) {
   return [...MP_ROUTES, ...AREA_ROUTES].map((r) => <Route key={r.path} path={r.path} element={guard(r.element)} />);
@@ -42,5 +43,5 @@ export function mpRoutes(guard: (el: React.ReactNode) => React.ReactNode) {
 
 /** Public (no sign-in) routes such as storefronts. */
 export function publicRoutes() {
-  return PUBLIC_ROUTES.map((r) => <Route key={r.path} path={r.path} element={r.element} />);
+  return [...PUBLIC_ROUTES, ...SALES_PUBLIC_ROUTES].map((r) => <Route key={r.path} path={r.path} element={r.element} />);
 }

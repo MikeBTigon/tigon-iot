@@ -2,7 +2,8 @@ import type { ReactNode } from 'react';
 import {
   AddAPhoto, AdminPanelSettings, Calculate, Analytics, BarChart, CalendarMonth, CloudUpload, Collections, Description, EmojiEvents,
   FileDownload, Groups, HelpOutline, Home, Insights, Link as LinkIcon, ListAlt, ManageAccounts, MonitorHeart, People,
-  PersonSearch, Place, Search, Settings, Storefront, ViewModule,
+  PersonSearch, Place, Search, Settings, Storefront, ViewModule, Today, Event, Sms, RequestQuote, SwapHoriz, CreditScore,
+  HourglassBottom, CardGiftcard, FilterAlt, StarRate, Tune,
 } from '@mui/icons-material';
 
 const ICONS: Record<string, ReactNode> = {
@@ -30,6 +31,17 @@ const ICONS: Record<string, ReactNode> = {
   '/mp/exports': <FileDownload />,
   '/mp/settings': <Settings />,
   '/mp/help': <HelpOutline />,
+  '/mp/today': <Today />,
+  '/mp/appointments': <Event />,
+  '/mp/texts': <Sms />,
+  '/mp/quotes': <RequestQuote />,
+  '/mp/trade-ins': <SwapHoriz />,
+  '/mp/prequal': <CreditScore />,
+  '/mp/aged': <HourglassBottom />,
+  '/mp/referrals': <CardGiftcard />,
+  '/mp/funnel': <FilterAlt />,
+  '/mp/reviews': <StarRate />,
+  '/mp/sales-settings': <Tune />,
 };
 
 /** Icon for an MP nav path (generic chart icon when none is set). */

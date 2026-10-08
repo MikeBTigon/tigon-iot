@@ -30,9 +30,9 @@ const isBot = (ua: string) => !ua || BOT_RE.test(ua);
 // Store info (copy of the essentials of frontend/src/mp/constants.ts DEALERSHIPS)
 // ---------------------------------------------------------------------------
 
-interface Store {id: string; name: string; cityState: string; phone: string; address: string; maps: string}
+export interface Store {id: string; name: string; cityState: string; phone: string; address: string; maps: string}
 
-const STORES: Store[] = [
+export const STORES: Store[] = [
   {id: 'T0', name: 'TIGON National', cityState: '', phone: '1-844-844-6638', address: '', maps: 'https://www.google.com/maps?cid=913687030872245288'},
   {id: 'T1', name: 'Hatfield PA', cityState: 'Hatfield, PA', phone: '215-595-8736', address: '2333 Bethlehem Pike, Hatfield, PA 19440', maps: 'https://www.google.com/maps?cid=8221925612164093496'},
   {id: 'T2', name: 'Ocean View NJ', cityState: 'Ocean View, NJ', phone: '609-840-0404', address: '101 NJ-50, Ocean View, NJ 08230', maps: 'https://www.google.com/maps?cid=6446924254429489274'},
@@ -49,7 +49,7 @@ const STORES: Store[] = [
   {id: 'T13', name: 'Swanton OH', cityState: 'Swanton, OH', phone: '419-402-8400', address: '10420 Airport Hwy, Swanton, OH 43558', maps: 'https://www.google.com/maps?cid=16517552730289967239'},
   {id: 'T14', name: 'Rio Grande NJ', cityState: 'Rio Grande, NJ', phone: '609-551-0234', address: '1304 NJ-47 b, Rio Grande, NJ 08242', maps: 'https://www.google.com/maps?cid=17469351422439742131'},
 ];
-const STORE_BY_ID: Record<string, Store> = Object.fromEntries(STORES.map((s) => [s.id, s]));
+export const STORE_BY_ID: Record<string, Store> = Object.fromEntries(STORES.map((s) => [s.id, s]));
 const NATIONAL_PHONE = STORE_BY_ID.T0.phone;
 const city = (id: string) => (STORE_BY_ID[id]?.cityState || '').split(',')[0];
 const locName = (id: string) => STORE_BY_ID[id]?.cityState || STORE_BY_ID[id]?.name || id || 'Other';
@@ -128,7 +128,7 @@ function parsePayload(data: Json): Json {
 }
 
 /** Maps an mp_carts doc to its public shape, or null when it must not be shown publicly. */
-function publicCart(id: string, data: Json): PublicCart | null {
+export function publicCart(id: string, data: Json): PublicCart | null {
   if (data.soldLocally === true) return null;
   const p = parsePayload(data);
   if (p.isInStock === false || str(p.status).toLowerCase() === 'sold' || bool(p.isDraft)) return null;
@@ -174,7 +174,7 @@ function publicCart(id: string, data: Json): PublicCart | null {
 // Mapped in-stock carts are cached per instance for a couple of minutes (Hosting's CDN caches responses too).
 let cartCache: {at: number; carts: PublicCart[]} | null = null;
 
-async function allPublicCarts(): Promise<PublicCart[]> {
+export async function allPublicCarts(): Promise<PublicCart[]> {
   if (cartCache && Date.now() - cartCache.at < 120_000) return cartCache.carts;
   const snap = await admin.firestore().collection(CARTS).get();
   const carts: PublicCart[] = [];

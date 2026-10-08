@@ -40,6 +40,21 @@ export const MP_NAV: NavGroup[] = [
     ],
   },
   {
+    label: 'Sell more', key: 'nav.sellMore', items: [
+      { label: 'Today', path: '/mp/today', min: 'sales', key: 'nav.today' },
+      { label: 'Appointments', path: '/mp/appointments', min: 'sales', key: 'nav.appointments' },
+      { label: 'Texts', path: '/mp/texts', min: 'sales', key: 'nav.texts' },
+      { label: 'Quotes', path: '/mp/quotes', min: 'sales', key: 'nav.quotes' },
+      { label: 'Trade-ins', path: '/mp/trade-ins', min: 'sales', key: 'nav.tradeIns' },
+      { label: 'Pre-qualification', path: '/mp/prequal', min: 'sales', key: 'nav.prequal' },
+      { label: 'Aged inventory', path: '/mp/aged', min: 'sales', key: 'nav.aged' },
+      { label: 'Referrals', path: '/mp/referrals', min: 'sales', key: 'nav.referrals' },
+      { label: 'Sales funnel', path: '/mp/funnel', min: 'manager', key: 'nav.funnel' },
+      { label: 'Google reviews', path: '/mp/reviews', min: 'manager', key: 'nav.reviews' },
+      { label: 'Sell more settings', path: '/mp/sales-settings', min: 'admin', key: 'nav.salesSettings' },
+    ],
+  },
+  {
     label: 'Customers', key: 'nav.customers', items: [
       { label: 'Leads', path: '/mp/leads', min: 'sales', key: 'nav.leads' },
       { label: 'Customers', path: '/mp/customers', min: 'sales', key: 'nav.customerList' },

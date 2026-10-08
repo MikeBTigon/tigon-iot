@@ -4,6 +4,18 @@ import type { Resource } from './en';
 
 const ht: Resource = {
   nav: {
+    sellMore: "Vann plis",
+    today: "Jodi a",
+    appointments: "Randevou",
+    texts: "Tèks",
+    quotes: "Kotasyon",
+    tradeIns: "Echanj",
+    prequal: "Pre-kalifikasyon",
+    aged: "Envantè ki fin vye",
+    referrals: "Referans",
+    funnel: "Antonwa lavant",
+    reviews: "Revizyon Google",
+    salesSettings: "Paramèt lavant",
     sell: 'Vann',
     home: 'Akèy',
     find: 'Chèche yon kabwèt',

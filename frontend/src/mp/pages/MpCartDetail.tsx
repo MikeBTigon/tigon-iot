@@ -16,6 +16,7 @@ import { cartName, cartTitle } from '../cartLogic';
 import { formatPrice, hasPhotoIssue, postedTs, timeAgo, workingPhotos } from '../cartUtils';
 import { locationName } from '../constants';
 import { savePhoto, saveAllPhotos } from '../photos';
+import CartSalesPanel from '../sales/CartSalesPanel';
 import { brandFromMake } from '../finance/financeCalc';
 
 const yes = (b: boolean) => (b ? 'Yes' : 'No');
@@ -200,6 +201,7 @@ const MpCartDetail: React.FC = () => {
         <StoreInfo locationId={cart.locationId} />
       </Box>
       <PhotoLightbox cart={cart} photos={photos} index={lightbox} onChange={setLightbox} />
+      <CartSalesPanel cart={cart} />
     </MpShell>
   );
 };

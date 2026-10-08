@@ -35,6 +35,20 @@ service firebase.storage {
       allow write: if false;
     }
 
+    // Walk-around videos per cart (team members upload; listings and quote pages use the download URL).
+    match /mp_videos/{cartId}/{file} {
+      allow read: if isValidEmail();
+      allow create, update: if isValidEmail() && request.resource.size < 200 * 1024 * 1024 &&
+                               request.resource.contentType.matches('video/.*');
+      allow delete: if isValidEmail();
+    }
+
+    // Trade-in photos sent from the public trade-in page (written by the mpSalesPublic function only).
+    match /mp_trade_ins/{allPaths=**} {
+      allow read: if isValidEmail();
+      allow write: if false;
+    }
+
     match /{allPaths=**} {
       allow read, write: if false;
     }
