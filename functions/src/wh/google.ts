@@ -122,6 +122,8 @@ async function sheetsInUse(): Promise<SheetUse[]> {
 
 async function checkSheets() {
   const apiProblem = await enableApi('sheets.googleapis.com');
+  // Drive API: used by "Share it for me" on the Settings page (the person's own Google sign-in shares the sheet).
+  await enableApi('drive.googleapis.com');
   const sheets = [];
   for (const use of await sheetsInUse()) {
     const r: Record<string, unknown> = {spreadsheetId: use.spreadsheetId, usedBy: Array.from(use.usedBy).slice(0, 10), ok: false};

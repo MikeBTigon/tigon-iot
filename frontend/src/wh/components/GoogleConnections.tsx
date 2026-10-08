@@ -3,10 +3,11 @@ import {
   Alert, Box, Button, Checkbox, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel,
   IconButton, Link, MenuItem, Paper, Stack, Table, TableBody, TableCell, TableHead, TableRow, TextField, Tooltip, Typography,
 } from '@mui/material';
-import { CheckCircle, ContentCopy, ErrorOutline, Link as LinkIcon, LinkOff, OpenInNew, Search, Sync } from '@mui/icons-material';
+import { CheckCircle, ContentCopy, Google, ErrorOutline, Link as LinkIcon, LinkOff, OpenInNew, Search, Sync } from '@mui/icons-material';
 import { callWh, patchWh, useWhDoc } from '../data';
 import { WH } from '../types';
 import type { WhSettings } from '../types';
+import { shareSheetsWithRobot, sheetIdsIn } from '../googleShare';
 import { ago, errText, useDomains, useGlobal, useNow } from './Wh1Hooks';
 
 /** The Google account TIGON IOT's servers act as. Sharing with it never expires (no password, no sign-in token). */
@@ -92,6 +93,27 @@ const GoogleConnections: React.FC = () => {
     return r;
   }, (r) => (r.allOk ? 'Saved and connected. New leads go to this sheet.' : 'Saved. The sheet is not reachable yet — see below.'));
 
+  // Sheets the robot can't reach: failing ones from the last check, the one named in the last error, and the main sheet.
+  const sheetsToShare = useMemo(() => {
+    const ids = new Set<string>();
+    for (const s of lastCheck?.sheets || []) if (!s.ok) ids.add(s.spreadsheetId);
+    for (const id of sheetIdsIn(sheets?.lastError)) ids.add(id);
+    const main = (global?.sheetId || '').match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/)?.[1] || (/^[a-zA-Z0-9_-]{20,}$/.test(global?.sheetId || '') ? global?.sheetId : '');
+    if (main && !(lastCheck?.sheets || []).some((s) => s.ok && s.spreadsheetId === main)) ids.add(main);
+    return Array.from(ids);
+  }, [lastCheck, sheets?.lastError, global?.sheetId]);
+
+  // The Google popup must open straight from the click, so this signs in first and checks afterwards.
+  const shareForMe = () => run('share', async () => {
+    const r = await shareSheetsWithRobot(sheetsToShare);
+    const c = await callWh<CheckResult>('whGoogle', { action: 'check' }).catch(() => null);
+    if (c) setCheck(c);
+    if (r.failed.length) throw new Error(r.failed.map((f) => `${f.id.slice(0, 10)}…: ${f.error}`).join(' · '));
+    return { r, c };
+  }, ({ r, c }) => (c?.allOk ?
+    `Shared ${r.shared.length} sheet(s) as ${r.account} — connected.${c.revived ? ` ${c.revived} waiting row(s) will be written within a minute.` : ''}` :
+    `Shared ${r.shared.length} sheet(s) as ${r.account}. Google can take a minute to apply it — press Check & connect if anything still shows a problem.`));
+
   // ---- Google Analytics ----
   const rowsGa = useMemo(() => {
     const list: Array<{ domainId: string; label: string; url?: string; s?: WhSettings }> = [{ domainId: '', label: 'All websites (default)', s: global || undefined }];
@@ -172,6 +194,16 @@ const GoogleConnections: React.FC = () => {
             Open the sheet{sheetView.sheetId ? <> (<Link href={sheetView.sheetId.startsWith('http') ? sheetView.sheetId : sheetUrl(sheetView.sheetId)} target="_blank" rel="noreferrer">open it</Link>)</> : ''},
             click <b>Share</b>, paste the robot address above, choose <b>Editor</b>, untick "Notify people" and click <b>Share</b>.
             Do the same for any other sheet a website or flow uses.
+          </Typography>
+          <Box sx={{ mt: 1, display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+            <Typography variant="body2" color="text.secondary">Or let TIGON IOT do it:</Typography>
+            <Button variant={sheetsToShare.length ? 'contained' : 'outlined'} size="small" disabled={!!busy || !sheetsToShare.length} onClick={shareForMe}
+              startIcon={busy === 'share' ? <CircularProgress size={16} color="inherit" /> : <Google />}>
+              Share it for me{sheetsToShare.length > 1 ? ` (${sheetsToShare.length} sheets)` : ''}
+            </Button>
+          </Box>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+            Sign in with the Google account that owns the sheet. It adds the robot as an Editor once — nothing is saved and nothing can expire.
           </Typography>
         </Step>
         <Step n={3}>
