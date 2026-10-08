@@ -85,7 +85,8 @@ export function parseMissedCall(item: Json): {missed: boolean; number: string} {
   const text = str(item.text, 1000);
   const all = `${title} ${text}`;
   const dialer = DIALER_PACKAGES.has(pkg) || /dialer|telecom|incallui|telephony/.test(pkg);
-  if (!dialer && cat !== 'missed_call') return {missed: false, number: ''};
+  // Only the phone app's notifications (Messenger / WhatsApp calls stay with the Facebook filter).
+  if (!dialer && item.missedCall !== true) return {missed: false, number: ''};
   if (cat !== 'missed_call' && !/missed/i.test(all)) return {missed: false, number: ''};
   if (/voicemail/i.test(all) && !/missed call/i.test(all)) return {missed: false, number: ''};
   return {missed: true, number: findPhone(title) || findPhone(text)};

@@ -10,6 +10,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(EchoPlugin.class);
         registerPlugin(FbListPlugin.class);
         registerPlugin(GalleryPlugin.class);
+        registerPlugin(SmsPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

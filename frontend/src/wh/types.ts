@@ -118,6 +118,8 @@ export interface WhDomain {
   leadChannel?: string;
   /** Website phone number, always +1-xxx-xxx-xxxx ('' = none). */
   phone?: string;
+  /** Store (DEALERSHIPS id) whose salespeople get this website's leads ('' = none). */
+  locationId?: string;
   settings: WhSettings;
   /** Updated by ingest (at most once a minute); used by the no-leads alert. */
   lastReceivedAt?: number;
