@@ -89,9 +89,10 @@ const AppDownload: React.FC = () => {
         <Button variant="outlined" startIcon={<DownloadIcon />} href={POSTER_ZIP_URL} sx={{ mb: 1.5 }}>Download Tigon Poster (.zip)</Button>
         <Typography variant="body2" component="div">
           <ol style={{ margin: 0, paddingLeft: 20 }}>
-            <li>Download the zip and <b>unzip</b> it (right-click → Extract All). You get a folder named <b>poster</b>.</li>
+            <li>Download the zip and <b>unzip</b> it (right-click → Extract All). You get a folder named <b>tigon-poster</b> in Downloads.</li>
             <li>In Chrome open <b>chrome://extensions</b> and switch on <b>Developer mode</b> (top right).</li>
-            <li>Click <b>Load unpacked</b> and choose the <b>poster</b> folder.</li>
+            <li>Click <b>Load unpacked</b> and choose the <b>tigon-poster</b> folder — the one with <b>manifest.json</b> directly inside.
+              If Chrome says &quot;Manifest file is missing&quot;, open one folder deeper (an older zip had a <b>poster</b> folder inside) and pick that.</li>
             <li>Refresh TIGON IOT. In MP Assistant → a cart → Prepare listing, step 2 now says
               <b> "Open Marketplace &amp; fill it in"</b>.</li>
             <li>Updating later: download the new zip, replace the folder, and click the reload arrow on the extension.</li>

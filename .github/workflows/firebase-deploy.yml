@@ -51,7 +51,8 @@ jobs:
       - name: Package the Tigon Poster Chrome extension for the Download page
         run: |
           mkdir -p dist/downloads
-          (cd mp-assistant && zip -qr "$GITHUB_WORKSPACE/dist/downloads/tigon-poster.zip" poster)
+          # Files at the top of the zip, so "Extract All" gives Downloads\tigon-poster\manifest.json (the folder Chrome needs).
+          (cd mp-assistant/poster && zip -qr "$GITHUB_WORKSPACE/dist/downloads/tigon-poster.zip" . -x "README.md")
 
       - name: Build Cloud Functions
         working-directory: functions
