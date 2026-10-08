@@ -43,6 +43,7 @@ export function cartFromDoc(docId: string, data: Partial<MpCartDoc>): MpCart {
     savedAt: Number(data.savedAt) || 0,
     postedBy: data.postedBy || {},
     postedAccounts: data.postedAccounts || {},
+    doNotPost: data.doNotPost && typeof data.doNotPost === 'object' ? data.doNotPost : undefined,
     source: data.source,
     createdBy: data.createdBy,
     soldLocally: data.soldLocally === true,
@@ -95,10 +96,25 @@ export function masterSort<T extends Cart>(carts: T[], broken: Set<string>): T[]
   });
 }
 
+/** Carts that can be suggested at all: not flagged for deletion in the DMS, not marked "Do not post", with photos. */
+export const canSuggest = (c: MpCart, broken: Set<string>) => !c.flaggedDelete && !c.doNotPost && photoRank(c, broken) > 0;
+
+/**
+ * Suggested to post for one Facebook account: carts with photos not yet posted on that account,
+ * lowest price first (carts without a price last).
+ */
+export function suggestedForAccount(carts: MpCart[], accountId: string, broken: Set<string>, max = 60): MpCart[] {
+  const price = (c: MpCart) => (c.price > 0 ? c.price : Infinity);
+  return carts
+    .filter((c) => canSuggest(c, broken) && !c.postedAccounts[accountId])
+    .sort((a, b) => price(a) - price(b) || photoRank(b, broken) - photoRank(a, broken))
+    .slice(0, max);
+}
+
 /** Home queue: unposted by me, has photos, balanced round-robin across stores. */
 export function suggestedQueue(carts: MpCart[], userKeys: string[], broken: Set<string>, max = 60): MpCart[] {
   const pool = masterSort(
-    carts.filter((c) => !c.flaggedDelete && !isPostedBy(c, userKeys) && photoRank(c, broken) > 0),
+    carts.filter((c) => canSuggest(c, broken) && !isPostedBy(c, userKeys)),
     broken,
   );
   const byLoc = new Map<string, MpCart[]>();

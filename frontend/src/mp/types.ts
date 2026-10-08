@@ -44,6 +44,13 @@ export interface MpCartDoc {
   /** Walk-around videos (Firebase Storage download URLs). */
   videos?: string[];
   videoUpdatedAt?: number;
+  /** "Do not post" (cart page): kept out of Suggested to post. */
+  doNotPost?: DoNotPost;
+}
+
+export interface DoNotPost {
+  by: string;
+  at: number;
 }
 
 export interface PricePoint {
@@ -109,6 +116,8 @@ export interface MpCart extends Cart {
   savedAt: number;
   postedBy: Record<string, number>;
   postedAccounts: Record<string, PostedAccountEntry>;
+  /** Set with the cart page's "Do not post" button: never suggested to post. */
+  doNotPost?: DoNotPost;
   /** 'dms-api' (synced), 'manual' (created in the app) or 'import:<integrationId>'. */
   source?: string;
   createdBy?: string;
