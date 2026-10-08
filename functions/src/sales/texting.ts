@@ -695,6 +695,8 @@ export async function missedCallEcho(dev: Json, deviceId: string, item: Json, s:
   // A customer texted the texting phone (its Messages app notification).
   if ((SMS_APP_PACKAGES.has(pkg) || item.sms === true) && pkg !== 'com.google.android.apps.googlevoice' && isTextingPhone(deviceId, s)) {
     if (!text || NOT_A_MESSAGE.test(title) || NOT_A_MESSAGE.test(text)) return true;
+    // Short codes (bank codes, carrier messages) are not customers.
+    if (/^\d{3,6}$/.test(title.replace(/\s/g, ''))) return true;
     const from = findPhone(title);
     const {stores} = storesOfPhone(deviceId, s);
     const ownerStore = await storeOfUser(ownerUid);

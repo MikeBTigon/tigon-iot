@@ -97,7 +97,7 @@ const MpCartDetail: React.FC = () => {
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
             <Typography variant="h5" color="primary" sx={{ fontWeight: 700 }}>{formatPrice(cart.price)}</Typography>
             <Button size="small" variant="outlined" startIcon={<Calculate />}
-              onClick={() => navigate(`/mp/finance?${new URLSearchParams({ price: String(cart.price || ''), brand: brandFromMake(cart.make, cart.isUsed), condition: cart.isUsed ? 'used' : 'new', title: cartTitle(cart) }).toString()}`)}>
+              onClick={() => navigate(`/mp/finance?${new URLSearchParams({ cartId: cart.docId, price: String(cart.price || ''), brand: brandFromMake(cart.make, cart.isUsed), condition: cart.isUsed ? 'used' : 'new', title: cartTitle(cart) }).toString()}`)}>
               Financing
             </Button>
           </Box>
