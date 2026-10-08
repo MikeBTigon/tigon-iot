@@ -15,6 +15,7 @@ import { cartTitle, generateVariations } from '../cartLogic';
 import { formatPrice, groupAccounts, workingPhotos } from '../cartUtils';
 import { posterVersion } from '../posterBridge';
 import { quickFbList, quickListMode } from '../quickList';
+import { rememberPostingAccount, useAutoMarkPosted } from '../useAutoMarkPosted';
 import { isNativeApp } from '../../native/platform';
 import { COLLECTIONS, MARKETPLACE_CREATE_URL } from '../constants';
 import { saveAllPhotos } from '../photos';
@@ -73,6 +74,8 @@ const MpPrepare: React.FC = () => {
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
+  const [undo, setUndo] = useState<(() => Promise<void>) | null>(null);
+  const autoMark = useAutoMarkPosted();
   const markedOpen = useRef(false);
 
   // Live queue item (when opened from a push / queue).
@@ -144,7 +147,10 @@ const MpPrepare: React.FC = () => {
       setDone((d) => ({ ...d, text: true, opened: true, photos: true }));
       logEvent(uid, 'listing_prepared', ev);
       logEvent(uid, 'marketplace_opened', ev);
-      setMessage(msg);
+      // Quick FB List: mark it posted on the account being used (Undo if it wasn't published).
+      const marked = await autoMark(cart, item?.accountId || '').catch(() => null);
+      setMessage([msg, marked?.note].filter(Boolean).join(' '));
+      setUndo(marked?.note ? () => marked.undo : null);
       return;
     }
     await copyText(listing.description);
@@ -165,6 +171,7 @@ const MpPrepare: React.FC = () => {
     setBusy(true);
     try {
       const add = chosen.filter((id) => !cart.postedAccounts[id]);
+      if (chosen.length === 1) rememberPostingAccount(chosen[0]);
       await setPostedAccounts(cart, add, []);
       if (item) await setQueueStatus(item.id, 'posted', { accountId: chosen[0] || item.accountId });
       for (const a of chosen) logEvent(uid, 'post_marked', { ...ev, accountId: a });
@@ -219,7 +226,13 @@ const MpPrepare: React.FC = () => {
             <Button fullWidth color="error" startIcon={<ErrorOutline />} onClick={() => setFailOpen(true)} disabled={item?.status === 'posted' || pending}>
               Couldn't post it
             </Button>
-            {message && <Alert severity="success" sx={{ mt: 1 }}>{message}</Alert>}
+            {message && (
+              <Alert severity="success" sx={{ mt: 1 }} action={undo && (
+                <Button color="inherit" size="small" onClick={() => { void undo(); setUndo(null); setMessage('Undone — not marked as posted.'); }}>Undo</Button>
+              )}>
+                {message}
+              </Alert>
+            )}
             {!isNativeApp() && !posterVersion() && (
               <Alert severity="info" sx={{ mt: 1 }}>
                 <b>Fill Facebook automatically:</b> install the free <b>Tigon Poster</b> Chrome extension and step 2 fills

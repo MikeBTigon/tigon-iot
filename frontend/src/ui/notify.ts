@@ -2,6 +2,12 @@
 export type NotifyTone = 'success' | 'info' | 'warning' | 'error';
 export const NOTIFY_EVENT = 'tigon-notify';
 
-export function notify(text: string, tone: NotifyTone = 'info') {
-  window.dispatchEvent(new CustomEvent(NOTIFY_EVENT, { detail: { text, tone } }));
+/** Optional button on the message, e.g. Undo. */
+export interface NotifyAction {
+  label: string;
+  run: () => void;
+}
+
+export function notify(text: string, tone: NotifyTone = 'info', action?: NotifyAction) {
+  window.dispatchEvent(new CustomEvent(NOTIFY_EVENT, { detail: { text, tone, action } }));
 }
