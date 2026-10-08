@@ -11,6 +11,9 @@ import { isNativeApp } from '../native/platform';
 import { deviceDocId } from '../native/deviceSession';
 import { isOnline, seenLabel } from './deviceStatus';
 import { isWanted } from './notificationFilter';
+import DeviceSettingsCards from './DeviceSettingsCards';
+import PhoneAlertsCard from '../native/PhoneAlertsCard';
+import MpDashboardCard from '../mp/components/MpDashboardCard';
 import type { Notification } from './notificationFilter';
 
 const PICK_KEY = 'tigon.dashboardDevice';
@@ -77,24 +80,33 @@ const ThisDeviceTab: React.FC = () => {
   }, [devId, owner, key]);
   const items = loaded?.key === key ? loaded.items : undefined;
 
-  if (native && device === undefined) return <CircularProgress />;
-  if (native && (device === null || device?.status === 'revoked' || device?.userId !== currentUser?.uid)) {
-    return (
+  // Alerts, MP Assistant and this device's settings show whatever the counts can or can't show.
+  const extras = (
+    <>
+      <Box sx={{ mt: 3 }}><PhoneAlertsCard /></Box>
+      <MpDashboardCard />
+      <DeviceSettingsCards device={current && current.status !== 'revoked' ? current : null} />
+    </>
+  );
+  let blocker: React.ReactNode = null;
+  if (native && device === undefined) blocker = <CircularProgress />;
+  else if (native && (device === null || device?.status === 'revoked' || device?.userId !== currentUser?.uid)) {
+    blocker = (
       <Alert severity="info" action={<Button color="inherit" component={RouterLink} to="/devices">Set up</Button>}>
         This phone isn&apos;t set up for your account yet, so it has no notifications of its own. Open Devices → Set up this phone.
         The Organization tab still shows everything.
       </Alert>
     );
-  }
-  if (!native && choices === undefined) return <CircularProgress />;
-  if (!native && !webDevice) {
-    return (
+  } else if (!native && choices === undefined) blocker = <CircularProgress />;
+  else if (!native && !webDevice) {
+    blocker = (
       <Alert severity="info">
         Notifications come from phones, and no phone is set up for your account yet. Set one up in the TIGON IOT app,
         or use the Organization tab.
       </Alert>
     );
   }
+  if (blocker) return <Box>{blocker}{extras}</Box>;
 
   const total = items?.length ?? 0;
   const unhandled = items ? items.filter((n) => !n.isHandled).length : 0;
@@ -136,6 +148,7 @@ const ThisDeviceTab: React.FC = () => {
       {items && items.length >= MAX && (
         <Typography variant="caption" color="text.secondary">Counted from this person&apos;s newest {MAX} notifications.</Typography>
       )}
+      {extras}
     </Box>
   );
 };
