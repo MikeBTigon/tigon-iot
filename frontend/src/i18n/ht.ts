@@ -11,6 +11,7 @@ const ht: Resource = {
     locations: 'Magazen yo',
     new: 'Nouvo anons',
     finance: 'Finansman',
+    calculator: 'Kalkilatris',
     post: 'Pibliye ak pataje',
     queue: 'Lis atant',
     calendar: 'Kalandriye',

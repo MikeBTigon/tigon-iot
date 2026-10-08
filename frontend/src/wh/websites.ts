@@ -84,6 +84,8 @@ export interface NewWebsiteInput {
   platform: string;
   /** MP Leads channel for this website's leads (default 'dba_website'). */
   leadChannel?: string;
+  /** +1-xxx-xxx-xxxx or '' */
+  phone?: string;
   formName: string;
   /** 'shared' = use the template flow as is; 'copy' = make this website's own copy of it. */
   flowMode: 'shared' | 'copy';
@@ -98,6 +100,7 @@ export async function createWebsite(input: NewWebsiteInput, profile: MpProfile |
   const domain: Omit<WhDomain, 'id' | 'createdAt' | 'updatedAt'> = {
     name: input.name.trim(), url: input.url, status: 'active', platform: input.platform, settings: input.settings,
     leadChannel: input.leadChannel || 'dba_website',
+    phone: input.phone || '',
     createdBy: profile?.uid || '',
   };
   const domainId = await saveWh(WH.domains, domain as unknown as Record<string, unknown>);

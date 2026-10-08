@@ -10,6 +10,7 @@ const fr: Resource = {
     locations: 'Magasins',
     new: 'Nouvelle annonce',
     finance: 'Financement',
+    calculator: 'Calculatrice',
     post: 'Publier et partager',
     queue: 'File',
     calendar: 'Calendrier',

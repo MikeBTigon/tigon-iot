@@ -11,6 +11,7 @@ const en = {
     locations: 'Locations',
     new: 'New listing',
     finance: 'Financing',
+    calculator: 'Calculator',
     post: 'Post & share',
     queue: 'Queue',
     calendar: 'Calendar',

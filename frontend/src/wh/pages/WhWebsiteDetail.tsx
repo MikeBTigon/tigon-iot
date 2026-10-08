@@ -5,6 +5,7 @@ import {
   MenuItem, Paper, Select, Stack, Table, TableBody, TableCell, TableHead, TableRow, TextField, Typography,
 } from '@mui/material';
 import { Add, Delete, Pause, PlayArrow, Save } from '@mui/icons-material';
+import { formatUsPhone } from '../phone';
 import WhShell from '../components/WhShell';
 import LeadChannelSelect, { DEFAULT_LEAD_CHANNEL } from '../components/LeadChannelSelect';
 import { relabelLeads } from '../websites';
@@ -38,6 +39,8 @@ const Editor: React.FC<{ domain: WhDomain }> = ({ domain }) => {
   const [platform, setPlatform] = useState(domain.platform || 'custom');
   const [status, setStatus] = useState(domain.status);
   const [leadChannel, setLeadChannel] = useState(domain.leadChannel || DEFAULT_LEAD_CHANNEL);
+  const [phoneInput, setPhoneInput] = useState(domain.phone || '');
+  const phone = formatUsPhone(phoneInput);
   const [settings, setSettings] = useState<WhSettings>(domain.settings || {});
   const [busy, setBusy] = useState('');
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -49,7 +52,7 @@ const Editor: React.FC<{ domain: WhDomain }> = ({ domain }) => {
   const series = useMemo(() => summarize(stats, lastDayKeys(30, now), domain.id).series, [stats, now, domain.id]);
   const url = normalizeSiteUrl(urlInput);
   const dirty = name !== domain.name || urlInput !== domain.url || platform !== (domain.platform || 'custom') || status !== domain.status ||
-    leadChannel !== (domain.leadChannel || DEFAULT_LEAD_CHANNEL) ||
+    leadChannel !== (domain.leadChannel || DEFAULT_LEAD_CHANNEL) || phoneInput !== (domain.phone || '') ||
     JSON.stringify(settings) !== JSON.stringify(domain.settings || {});
 
   // "Add another form" uses the flow of this website's newest webhook, else the default flow.
@@ -59,10 +62,12 @@ const Editor: React.FC<{ domain: WhDomain }> = ({ domain }) => {
   const save = async () => {
     if (!name.trim()) { setMsg({ ok: false, text: 'Enter a name.' }); return; }
     if (!url.url) { setMsg({ ok: false, text: url.error || 'Enter the website address.' }); return; }
+    if (phone.error) { setMsg({ ok: false, text: phone.error }); return; }
     setBusy('save');
     setMsg(null);
     try {
-      await patchWh(WH.domains, domain.id, { name: name.trim(), url: url.url, platform, status, settings, leadChannel });
+      await patchWh(WH.domains, domain.id, { name: name.trim(), url: url.url, platform, status, settings, leadChannel, phone: phone.phone });
+      setPhoneInput(phone.phone);
       setUrlInput(url.url);
       let relabeled = 0;
       if (leadChannel !== (domain.leadChannel || DEFAULT_LEAD_CHANNEL)) relabeled = await relabelLeads(domain.id, leadChannel);
@@ -145,6 +150,9 @@ const Editor: React.FC<{ domain: WhDomain }> = ({ domain }) => {
               </Select>
             </FormControl>
             <LeadChannelSelect value={leadChannel} onChange={setLeadChannel} id="wd-channel" />
+            <TextField label="Website phone number" value={phoneInput} onChange={(e) => setPhoneInput(e.target.value)} type="tel" placeholder="215-555-0123"
+              onBlur={() => { if (phone.phone) setPhoneInput(phone.phone); }} error={!!phone.error}
+              helperText={phone.error || 'Saved as +1-xxx-xxx-xxxx.'} />
             <FormControl>
               <InputLabel id="wd-status">Status</InputLabel>
               <Select labelId="wd-status" label="Status" value={status} onChange={(e) => setStatus(e.target.value as WhDomain['status'])}>

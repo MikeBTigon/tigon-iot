@@ -116,6 +116,8 @@ export interface WhDomain {
   platform?: 'wordpress' | 'webflow' | 'wix' | 'squarespace' | 'shopify' | 'custom' | string;
   /** MP Leads channel for leads from this website (default 'dba_website'). */
   leadChannel?: string;
+  /** Website phone number, always +1-xxx-xxx-xxxx ('' = none). */
+  phone?: string;
   settings: WhSettings;
   /** Updated by ingest (at most once a minute); used by the no-leads alert. */
   lastReceivedAt?: number;

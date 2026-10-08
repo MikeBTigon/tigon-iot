@@ -34,6 +34,7 @@ import {
   AddAPhoto,
   ListAlt,
   PersonSearch,
+  Calculate,
   Search as SearchIcon,
   DarkMode,
   LightMode,
@@ -92,7 +93,7 @@ interface NavEntry {
 }
 
 /** Marketplace shortcuts that get their own sidebar entry (the rest of /mp/* highlights "MP Assistant"). */
-const MP_SHORTCUTS = ['/mp/new', '/mp/queue', '/mp/leads'];
+const MP_SHORTCUTS = ['/mp/new', '/mp/queue', '/mp/leads', '/mp/finance'];
 
 const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
   const t = useT();
@@ -161,6 +162,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
     { text: t('nav.new'), icon: <AddAPhoto />, path: '/mp/new' },
     { text: t('nav.queue'), icon: <ListAlt />, path: '/mp/queue' },
     { text: t('nav.leads'), icon: <PersonSearch />, path: '/mp/leads' },
+    { text: t('nav.calculator'), icon: <Calculate />, path: '/mp/finance' },
     { text: t('nav.help'), icon: <HelpOutline />, path: '/mp/help' },
   ];
 
