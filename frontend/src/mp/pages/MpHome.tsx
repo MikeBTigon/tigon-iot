@@ -1,10 +1,9 @@
 import React, { useMemo, useState } from 'react';
-import { Alert, Box, Chip, ListSubheader, MenuItem, Stack, TextField, Typography } from '@mui/material';
+import { Alert, Box, Button, Chip, ListSubheader, MenuItem, Stack, TextField, Typography } from '@mui/material';
 import MpShell from '../components/MpShell';
-import CartGrid from '../components/CartGrid';
 import CartCard from '../components/CartCard';
 import { useMp } from '../MpDataContext';
-import { canSuggest, groupAccounts, isPostedBy, suggestedByStore } from '../cartUtils';
+import { groupAccounts, isPostedBy, roundRobin, suggestedByStore } from '../cartUtils';
 import { usePostingAccountId } from '../useAutoMarkPosted';
 import { locationName } from '../constants';
 import { readLocal, writeLocal } from '../../ui/prefs';
@@ -13,7 +12,8 @@ import { useSalesSettings } from '../sales/salesData';
 import { agedLabel, agedLevel, daysOnLot, staleAccounts } from '../sales/inventory/inventoryUtils';
 import type { MpCart } from '../types';
 
-const MAX_FIRST = 12;
+const MAX_REPOST = 12;
+const PAGE = 48;
 const PICK_KEY = 'mp.suggestAccount';
 
 const MpHome: React.FC = () => {
@@ -41,28 +41,31 @@ const MpHome: React.FC = () => {
   const postedCount = useMemo(() => carts.filter((c) => isPostedBy(c, userKeys)).length, [carts, userKeys]);
 
   // Top priority: aged carts I haven't posted (longest on the lot first), then my listings due for a repost.
-  const { first, rest } = useMemo(() => {
+  // One cart per store in turn (T1, T2, T3, …), round after round. Aged carts rank high on their own
+  // (time on the lot) and keep their "days on lot" chip. Listings due for a repost get their own section below.
+  const list = useMemo(() => roundRobin(stores), [stores]);
+  const reposts = useMemo(() => {
     const uid = userKeys[0] || '';
-    const chips = new Map<string, { cart: MpCart; aged?: { days: number; urgent: boolean }; repost?: boolean }>();
-    carts
-      .filter((c) => canSuggest(c, brokenPhotos) && c.stockedAt && notPostedHere(c))
-      .map((c) => ({ c, days: daysOnLot(c, now) }))
-      .filter((x) => agedLevel(x.days, settings.aged))
-      .sort((a, b) => b.days - a.days)
-      .slice(0, MAX_FIRST)
-      .forEach((x) => chips.set(x.c.docId, { cart: x.c, aged: { days: x.days, urgent: agedLevel(x.days, settings.aged) === 'urgent' } }));
-    if (uid) {
-      carts
-        .filter((c) => !c.flaggedDelete && !c.doNotPost && staleAccounts(c, relistAfterDays, now, uid).length)
-        .slice(0, MAX_FIRST)
-        .forEach((c) => chips.set(c.docId, { ...(chips.get(c.docId) || { cart: c }), repost: true }));
-    }
-    const rest = stores
-      .map(([loc, list]) => [loc, list.filter((c) => !chips.has(c.docId))] as [string, MpCart[]])
-      .filter(([, list]) => list.length);
-    return { first: [...chips.values()], rest };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- notPostedHere depends on account/userKeys
-  }, [carts, userKeys, brokenPhotos, now, settings.aged, relistAfterDays, stores, account]);
+    if (!uid) return [];
+    return carts.filter((c) => !c.flaggedDelete && !c.doNotPost && staleAccounts(c, relistAfterDays, now, uid).length).slice(0, MAX_REPOST);
+  }, [carts, userKeys, relistAfterDays, now]);
+  const [shown, setShown] = useState(PAGE);
+
+  const card = (cart: MpCart, repost = false) => {
+    const days = daysOnLot(cart, now);
+    const aged = cart.stockedAt ? agedLevel(days, settings.aged) : null;
+    return (
+      <Box key={cart.docId} sx={{ display: 'flex', flexDirection: 'column' }}>
+        <Stack direction="row" spacing={0.5} sx={{ mb: 0.5, minHeight: 24 }}>
+          <Chip size="small" variant="outlined" label={cart.locationId} />
+          {aged && <Chip size="small" color={aged === 'urgent' ? 'error' : 'warning'} label={agedLabel(days)} />}
+          {repost && <Chip size="small" color="info" label="Repost" />}
+        </Stack>
+        <Box sx={{ flexGrow: 1 }}><CartCard cart={cart} /></Box>
+      </Box>
+    );
+  };
+  const grid = { display: 'grid', gap: 2, gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))' };
 
   return (
     <MpShell>
@@ -71,7 +74,7 @@ const MpHome: React.FC = () => {
           <Typography variant="h5">Suggested to post</Typography>
           <Typography color="text.secondary">
             {account ? <>Carts with photos not yet posted on <b>{account.name}</b></> : <>Carts with photos you haven't posted yet ({postedCount} of {carts.length} posted)</>}
-            {' '}— store by store, longest on the lot and lowest price first.
+            {' '}— one per store in order (T1, T2, T3 …), then around again.
           </Typography>
         </Box>
         {accounts.length > 0 && (
@@ -85,32 +88,23 @@ const MpHome: React.FC = () => {
         )}
       </Box>
       {cartsLoading && <Alert severity="info" sx={{ mb: 2 }}>Loading inventory… suggestions update as carts arrive.</Alert>}
-      {first.length > 0 && (
+      {list.length > 0 && (
         <Box sx={{ mb: 3 }}>
-          <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1 }}>Do these first</Typography>
-          <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))' }}>
-            {first.map(({ cart, aged, repost }) => (
-              <Box key={cart.docId} sx={{ display: 'flex', flexDirection: 'column' }}>
-                <Stack direction="row" spacing={0.5} sx={{ mb: 0.5 }}>
-                  {aged && <Chip size="small" color={aged.urgent ? 'error' : 'warning'} label={agedLabel(aged.days)} />}
-                  {repost && <Chip size="small" color="info" label="Repost" />}
-                </Stack>
-                <Box sx={{ flexGrow: 1 }}><CartCard cart={cart} /></Box>
-              </Box>
-            ))}
-          </Box>
+          <Box sx={grid}>{list.slice(0, shown).map((c) => card(c))}</Box>
+          {shown < list.length && (
+            <Box sx={{ textAlign: 'center', py: 3 }}>
+              <Button onClick={() => setShown((s) => s + PAGE)}>Load more ({list.length - shown} left)</Button>
+            </Box>
+          )}
         </Box>
       )}
-      {rest.map(([loc, list]) => (
-        <Box key={loc} sx={{ mb: 3 }}>
-          <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1 }}>
-            {loc}{locationName(loc) && loc !== 'Other' ? ` · ${locationName(loc)}` : ''}
-            <Typography component="span" color="text.secondary" sx={{ ml: 1 }}>{list.length} cart{list.length === 1 ? '' : 's'}</Typography>
-          </Typography>
-          <CartGrid carts={list} />
+      {reposts.length > 0 && (
+        <Box sx={{ mb: 3 }}>
+          <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1 }}>Due for a repost</Typography>
+          <Box sx={grid}>{reposts.map((c) => card(c, true))}</Box>
         </Box>
-      ))}
-      {!rest.length && !first.length && (
+      )}
+      {!list.length && !reposts.length && (
         <Typography color="text.secondary" sx={{ py: 4, textAlign: 'center' }}>{cartsLoading ? 'Loading…' : 'Nothing left to post — nice work.'}</Typography>
       )}
     </MpShell>

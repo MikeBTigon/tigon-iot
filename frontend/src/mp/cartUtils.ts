@@ -102,7 +102,7 @@ export const canSuggest = (c: MpCart, broken: Set<string>) => !c.flaggedDelete &
 
 /**
  * Meets in the middle between "longest on the lot" and "lowest price": each cart's place in both orders
- * (0 = first) counts half. Ties go to the lower price; carts without a price sort as most expensive.
+ * (0 = first) counts half. Ties go to the cart longer on the lot; carts without a price sort as most expensive.
  */
 export function blendLotAndPrice(carts: MpCart[], now = Date.now()): MpCart[] {
   if (carts.length < 2) return carts.slice();
@@ -111,7 +111,16 @@ export function blendLotAndPrice(carts: MpCart[], now = Date.now()): MpCart[] {
   const byAge = place(carts.slice().sort((a, b) => daysOnLot(b, now) - daysOnLot(a, now)));
   const byPrice = place(carts.slice().sort((a, b) => price(a) - price(b)));
   const score = (c: MpCart) => (byAge.get(c.docId)! + byPrice.get(c.docId)!) / 2;
-  return carts.slice().sort((a, b) => score(a) - score(b) || price(a) - price(b));
+  return carts.slice().sort((a, b) => score(a) - score(b) || daysOnLot(b, now) - daysOnLot(a, now) || price(a) - price(b));
+}
+
+/** One cart from each store in turn (T1, T2, T3, …), then the next round, until every store's list is used. */
+export function roundRobin(stores: Array<[string, MpCart[]]>): MpCart[] {
+  const out: MpCart[] = [];
+  for (let i = 0; stores.some(([, list]) => i < list.length); i++) {
+    for (const [, list] of stores) if (i < list.length) out.push(list[i]);
+  }
+  return out;
 }
 
 /**
