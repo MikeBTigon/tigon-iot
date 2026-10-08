@@ -4,7 +4,7 @@ import MpShell from '../components/MpShell';
 import CartGrid from '../components/CartGrid';
 import CartCard from '../components/CartCard';
 import { useMp } from '../MpDataContext';
-import { canSuggest, groupAccounts, isPostedBy, suggestedForAccount, suggestedQueue } from '../cartUtils';
+import { canSuggest, groupAccounts, isPostedBy, suggestedByStore } from '../cartUtils';
 import { usePostingAccountId } from '../useAutoMarkPosted';
 import { locationName } from '../constants';
 import { readLocal, writeLocal } from '../../ui/prefs';
@@ -31,11 +31,13 @@ const MpHome: React.FC = () => {
   const { settings } = useSalesSettings();
   const { relistAfterDays } = useMpSettings(!!profile);
   const now = useNow();
-  const queue = useMemo(
-    () => (account ? suggestedForAccount(carts, account.id, brokenPhotos) : suggestedQueue(carts, userKeys, brokenPhotos)),
-    [carts, userKeys, brokenPhotos, account],
-  );
   const notPostedHere = (c: MpCart) => (account ? !c.postedAccounts[account.id] : !isPostedBy(c, userKeys));
+  // Store by store (T1, T2, …), each blended by time on the lot and low price.
+  const stores = useMemo(
+    () => suggestedByStore(carts, brokenPhotos, notPostedHere, now),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- notPostedHere depends on account/userKeys
+    [carts, brokenPhotos, account, userKeys, now],
+  );
   const postedCount = useMemo(() => carts.filter((c) => isPostedBy(c, userKeys)).length, [carts, userKeys]);
 
   // Top priority: aged carts I haven't posted (longest on the lot first), then my listings due for a repost.
@@ -55,9 +57,12 @@ const MpHome: React.FC = () => {
         .slice(0, MAX_FIRST)
         .forEach((c) => chips.set(c.docId, { ...(chips.get(c.docId) || { cart: c }), repost: true }));
     }
-    return { first: [...chips.values()], rest: queue.filter((c) => !chips.has(c.docId)) };
+    const rest = stores
+      .map(([loc, list]) => [loc, list.filter((c) => !chips.has(c.docId))] as [string, MpCart[]])
+      .filter(([, list]) => list.length);
+    return { first: [...chips.values()], rest };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- notPostedHere depends on account/userKeys
-  }, [carts, userKeys, brokenPhotos, now, settings.aged, relistAfterDays, queue, account]);
+  }, [carts, userKeys, brokenPhotos, now, settings.aged, relistAfterDays, stores, account]);
 
   return (
     <MpShell>
@@ -65,9 +70,8 @@ const MpHome: React.FC = () => {
         <Box sx={{ flex: '1 1 320px' }}>
           <Typography variant="h5">Suggested to post</Typography>
           <Typography color="text.secondary">
-            {account
-              ? <>Carts with photos not yet posted on <b>{account.name}</b> — lowest price first.</>
-              : <>Carts you haven't posted yet — used first, photo-rich first, balanced across stores. You've posted {postedCount} of {carts.length}.</>}
+            {account ? <>Carts with photos not yet posted on <b>{account.name}</b></> : <>Carts with photos you haven't posted yet ({postedCount} of {carts.length} posted)</>}
+            {' '}— store by store, longest on the lot and lowest price first.
           </Typography>
         </Box>
         {accounts.length > 0 && (
@@ -97,7 +101,18 @@ const MpHome: React.FC = () => {
           </Box>
         </Box>
       )}
-      <CartGrid carts={rest} empty={cartsLoading ? 'Loading…' : 'Nothing left to post — nice work.'} />
+      {rest.map(([loc, list]) => (
+        <Box key={loc} sx={{ mb: 3 }}>
+          <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1 }}>
+            {loc}{locationName(loc) && loc !== 'Other' ? ` · ${locationName(loc)}` : ''}
+            <Typography component="span" color="text.secondary" sx={{ ml: 1 }}>{list.length} cart{list.length === 1 ? '' : 's'}</Typography>
+          </Typography>
+          <CartGrid carts={list} />
+        </Box>
+      ))}
+      {!rest.length && !first.length && (
+        <Typography color="text.secondary" sx={{ py: 4, textAlign: 'center' }}>{cartsLoading ? 'Loading…' : 'Nothing left to post — nice work.'}</Typography>
+      )}
     </MpShell>
   );
 };
