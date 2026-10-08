@@ -57,7 +57,7 @@ const EchoCard: React.FC = () => {
       </Box>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
         This phone forwards its <b>Facebook messages, Messenger chats and DMs</b> to the TIGON IOT dashboard, labeled with
-        this phone's number. Other apps (TikTok, Gmail, phone/carrier, Facebook likes and friend requests…) are not sent.
+        this phone's number. Missed calls are sent too (for missed-call text-back). Other apps (TikTok, Gmail, Facebook likes and friend requests…) are not sent.
         It keeps working when the app is closed.
       </Typography>
       {st && !st.access && (

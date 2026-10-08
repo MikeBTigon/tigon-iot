@@ -287,7 +287,8 @@ service cloud.firestore {
     // ---- Sell more release (speed to lead, texting, quotes, booking, trade-ins, referrals…) ----------
     // Texts: anyone on the team may queue a text in their own name; delivery and status are server-only.
     match /mp_sms/{id} {
-      allow read: if isMpManager() || (isMpMember() && resource.data.createdBy == request.auth.uid);
+      allow read: if isMpManager() ||
+                     (isMpMember() && (resource.data.createdBy == request.auth.uid || resource.data.ownerUid == request.auth.uid));
       allow create: if isMpMember() && request.resource.data.createdBy == request.auth.uid &&
                        request.resource.data.status == 'queued' &&
                        request.resource.data.to is string && request.resource.data.to.matches('^[+]1[0-9]{10}$') &&

@@ -82,7 +82,7 @@ jobs:
         run: |
           FUNCS="mpSyncInventory mpSyncNow mpCreatePairingCode mpPairDevice mpSendQueueItem mpDispatchQueue mpMonitor mpApprovalDigest mpBackup mpBackupNow mpRunImport mpImportScheduled mpCrmReminders mpWeeklyDigest mpLink mpStorefrontApi mpEchoRegister mpEcho mpPresenceDaily mpPresenceWeekly mpPresenceReport mpChangeRequestAlert"
           FUNCS="$FUNCS whIngest whProcess whReplay whTestEmail whTestWebhook whDeleteSubmissions whAlerts whMaintenance whGoogle"
-          FUNCS="$FUNCS mpSalesLeadCreated mpSalesLeadUpdated mpSalesTick mpSalesHourly mpSalesPublic mpPriceChanged mpCartSold mpSimilarApi mpReviewsRefresh"
+          FUNCS="$FUNCS mpSalesLeadCreated mpSalesLeadUpdated mpSalesTick mpSalesHourly mpSalesPublic mpPriceChanged mpCartSold mpSimilarApi mpReviewsRefresh mpSmsQueued mpSmsInbound mpSmsAdmin"
           # Optional keys for "Sell more": Google reviews (Places API) and Twilio texting.
           if [ -n "$GOOGLE_PLACES_KEY" ]; then echo "GOOGLE_PLACES_KEY=$GOOGLE_PLACES_KEY" >> functions/.env; fi
           if [ -n "$TWILIO_ACCOUNT_SID" ]; then echo "TWILIO_ACCOUNT_SID=$TWILIO_ACCOUNT_SID" >> functions/.env; fi
