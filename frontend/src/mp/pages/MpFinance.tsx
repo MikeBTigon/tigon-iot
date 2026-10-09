@@ -42,6 +42,9 @@ function parseMinutes(s: string): number | null {
   return Number.isFinite(n) && n > 0 ? Math.round(n) : null;
 }
 
+/** Deliveries longer than this go by 3rd-party carrier (manager quotes the price). */
+const THIRD_PARTY_MINUTES = 4 * 60;
+
 const STORES = DEALERSHIPS.filter((d) => /\b\d{5}\b/.test(d.address)).map((d) => ({ id: d.id, name: d.name, zip: (d.address.match(/\b(\d{5})\b(?!.*\b\d{5}\b)/) || [])[1] || '' }));
 const TAX_PRESETS: Array<{ id: string; label: string; rate: number }> = [
   { id: 'pa-phl', label: 'Pennsylvania, Philadelphia County — 8%', rate: 0.08 },
@@ -130,6 +133,8 @@ const MpFinance: React.FC = () => {
   const driveMinutes = mode === 'delivery' ? (typedDrive ?? estimate) : null;
   const fee = deliveryFee(driveMinutes);
   const delivery = mode === 'delivery' ? (feeOverride.trim() ? num(feeOverride) : fee.fee) : 0;
+  // Over 4 hours we don't deliver ourselves: a 3rd-party carrier does, priced by a manager.
+  const thirdParty = driveMinutes !== null && driveMinutes > THIRD_PARTY_MINUTES;
   // A new store or destination drops the typed drive time / fee.
   const locKey = `${mode}|${storeZip}|${destPlace?.label || ''}`;
   useEffect(() => { setDriveOverride(''); setFeeOverride(''); setTaxManual(null); }, [locKey]);
@@ -333,8 +338,15 @@ const MpFinance: React.FC = () => {
                     helperText={typedDrive !== null ? 'Using the time you entered' : estimate ? `Estimated ${fmtDuration(estimate)} — check Google Maps for long or rural trips` : 'Pick a destination, or type the Google Maps time'} />
                   {typedDrive !== null && estimate !== null && <Button size="small" sx={{ mt: 0.5, whiteSpace: 'nowrap' }} onClick={() => setDriveOverride('')}>Use estimate</Button>}
                 </Box>
+                {thirdParty && (
+                  <Alert severity="warning">
+                    <b>Over 4 hours — contact your manager.</b> Deliveries this far go by a 3rd-party carrier, so the fee below
+                    isn't the real price. Get the delivery quote from your manager and type it in.
+                  </Alert>
+                )}
                 <TextField size="small" label="Delivery fee" value={feeOverride || String(fee.fee)} onChange={(e) => setFeeOverride(e.target.value)} inputMode="decimal"
-                  helperText={feeOverride ? `Calculated: ${money(fee.fee)}` : fee.explain || ' '}
+                  color={thirdParty && !feeOverride ? 'warning' : undefined} focused={thirdParty && !feeOverride ? true : undefined}
+                  helperText={thirdParty ? (feeOverride ? 'Manager\'s 3rd-party quote' : 'Contact your manager for the 3rd-party price') : feeOverride ? `Calculated: ${money(fee.fee)}` : fee.explain || ' '}
                   slotProps={{ input: { startAdornment: <InputAdornment position="start">$</InputAdornment> } }} />
               </>
             )}
@@ -358,7 +370,8 @@ const MpFinance: React.FC = () => {
           <Table size="small" sx={{ mt: 2 }}>
             <TableBody>
               {([
-                ['Cart price', num(price)], ['Accessories', num(accessories)], ['Dealer prep fee', prepFee], ['Delivery', delivery],
+                ['Cart price', num(price)], ['Accessories', num(accessories)], ['Dealer prep fee', prepFee],
+                [thirdParty && !feeOverride ? 'Delivery (contact manager)' : 'Delivery', delivery],
                 ...(military ? [['Military discount', -200]] : []), ['Taxable amount', otd.taxable], [`Sales tax (${+(taxRate * 100).toFixed(3)}%)`, otd.salesTax],
               ] as Array<[string, number]>).map(([l, v]) => (
                 <TableRow key={l}><TableCell sx={{ border: 0, py: 0.25 }}>{l}</TableCell><TableCell align="right" sx={{ border: 0, py: 0.25 }}>{money(v)}</TableCell></TableRow>
