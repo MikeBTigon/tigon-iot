@@ -17,7 +17,7 @@ import type { LeadSalesFields } from '../sales/salesTypes';
 import SendQuoteDialog, { type QuoteDraft } from '../sales/closing/SendQuoteDialog';
 import {
   BRANDS, LENDER_LABEL, TIERS, brandLabel, buildResults, computeOtd, customerSheetRows, deliveryFee, estimateDriveMinutes, fmtDuration,
-  prepFeeFor, rateLabel, taxRateFor, termsFor,
+  localTaxMayApply, prepFeeFor, rateLabel, taxRateFor, termsFor,
 } from '../finance/financeCalc';
 import type { Brand, Condition, EvoModel, Quote } from '../finance/financeCalc';
 import { findPlace, guessPlace, loadZips, suggestPlaces } from '../finance/zipLookup';
@@ -370,7 +370,10 @@ const MpFinance: React.FC = () => {
                 onChange={(e) => setTaxManual(e.target.value)} inputMode="decimal" error={taxMissing} />
               <TextField select size="small" fullWidth label="Tax location" value=""
                 onChange={(e) => { const p = TAX_PRESETS.find((x) => x.id === e.target.value); if (p) setTaxManual(String(+(p.rate * 100).toFixed(3))); }}
-                helperText={taxManual !== null ? 'Set by hand' : taxPlace ? `${taxPlace.county ? `${taxPlace.county}, ` : ''}${taxPlace.state}${taxMissing ? ' — enter the rate' : ''}` : ' '}>
+                helperText={taxManual !== null ? 'Set by hand' : taxPlace
+                  ? `${taxPlace.county ? `${taxPlace.county}, ` : ''}${taxPlace.state}${taxMissing ? ' — enter the rate'
+                    : localTaxMayApply(taxPlace.state) ? ' — state rate; add any county/city tax' : ''}`
+                  : ' '}>
                 {TAX_PRESETS.map((p) => <MenuItem key={p.id} value={p.id}>{p.label}</MenuItem>)}
               </TextField>
             </Box>
