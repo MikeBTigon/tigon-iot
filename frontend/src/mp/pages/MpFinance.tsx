@@ -4,7 +4,7 @@ import {
   Alert, Autocomplete, Box, Button, Checkbox, Chip, CircularProgress, Collapse, Divider, FormControlLabel, InputAdornment, MenuItem, Paper,
   Stack, Table, TableBody, TableCell, TableHead, TableRow, TextField, ToggleButton, ToggleButtonGroup, Typography,
 } from '@mui/material';
-import { Calculate, ExpandLess, ExpandMore, PictureAsPdf, RestartAlt, Send } from '@mui/icons-material';
+import { Calculate, CheckCircle, Close, ExpandLess, ExpandMore, PictureAsPdf, RadioButtonUnchecked, RestartAlt, Send } from '@mui/icons-material';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import MpShell from '../components/MpShell';
@@ -22,7 +22,7 @@ import {
 import type { Brand, Condition, EvoModel, Quote } from '../finance/financeCalc';
 import { findPlace, loadZips, suggestPlaces } from '../finance/zipLookup';
 import type { Place } from '../finance/zipLookup';
-import { downloadCustomerSheet } from '../finance/financePdf';
+import { downloadCustomerSheet, downloadOptionSheet } from '../finance/financePdf';
 import { notify } from '../../ui/notify';
 
 const money = (n: number) => n.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
@@ -78,6 +78,8 @@ const MpFinance: React.FC = () => {
   const [zipsReady, setZipsReady] = useState(false);
   const [zipError, setZipError] = useState('');
   const [busyPdf, setBusyPdf] = useState(false);
+  // The financing option picked for the totals box and the one-option customer sheet.
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   // Opened for a lead (?lead=) or a cart (?cartId=): trade-in value, credit tier, cart photo/video for the quote.
   const leadId = params.get('lead') || '';
   const cartId = params.get('cartId') || '';
@@ -147,6 +149,30 @@ const MpFinance: React.FC = () => {
   const canFinance = num(price) > 0 && otd.loanAmount > 0;
   const results = useMemo(() => buildResults(brand, Math.max(otd.loanAmount, 0), condition, termFilter), [brand, otd.loanAmount, condition, termFilter]);
   const terms = termsFor(brand);
+  // Look the pick up across every term, so the term filter doesn't drop it; it clears itself if it stops applying.
+  const selected = useMemo(() => {
+    if (!selectedId || !canFinance) return null;
+    const all = buildResults(brand, Math.max(otd.loanAmount, 0), condition, 'all');
+    return [...all.promos, ...all.grid, ...all.dealerDirect, ...all.noFrills, ...all.dll].find((q) => q.option.id === selectedId && !q.unavailable) || null;
+  }, [selectedId, canFinance, brand, otd.loanAmount, condition]);
+  const choiceLabel = (q: Quote) => `${LENDER_LABEL[q.option.lender]} · ${rateLabel(q.option)} · ${q.option.term} mo${q.option.tier ? ` · Tier ${q.option.tier}` : ''}`;
+  const toggleSelect = (q: Quote) => setSelectedId((id) => (id === q.option.id ? null : q.option.id));
+
+  const optionPdf = async () => {
+    if (!selected) return;
+    setBusyPdf(true);
+    try {
+      const name = await downloadOptionSheet({
+        brand: brandLabel(brand), otd, downPayment: num(down), cartPrice: num(price), accessories: num(accessories), prepFee,
+        deliveryFee: delivery, cartTitle: cartTitle || undefined, tradeIn: tradeIn || undefined, choice: selected,
+      });
+      notify(`Customer sheet ready: ${name}`, 'success');
+    } catch (e) {
+      notify(e instanceof Error ? e.message : String(e), 'error');
+    } finally {
+      setBusyPdf(false);
+    }
+  };
 
   const pdf = async () => {
     setBusyPdf(true);
@@ -180,8 +206,9 @@ const MpFinance: React.FC = () => {
     const id = q.option.id;
     const isOpen = open === id;
     const off = !!q.unavailable;
+    const isPicked = selectedId === id;
     return (
-      <Box sx={{ borderBottom: 1, borderColor: 'divider', opacity: off ? 0.5 : 1 }}>
+      <Box sx={{ borderBottom: 1, borderColor: 'divider', opacity: off ? 0.5 : 1, ...(isPicked ? { bgcolor: 'rgba(14,70,113,0.08)', boxShadow: 'inset 4px 0 0 #0e4671' } : {}) }}>
         <Box onClick={() => !off && setOpen(isOpen ? null : id)}
           sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 1, px: 1, cursor: off ? 'default' : 'pointer', '&:hover': off ? undefined : { bgcolor: 'action.hover' } }}>
           <Box sx={{ flex: 1, minWidth: 0 }}>
@@ -191,6 +218,7 @@ const MpFinance: React.FC = () => {
               {q.option.feePct > 0 && <Chip size="small" variant="outlined" label={`${+(q.option.feePct * 100).toFixed(2)}% program fee`} />}
               {q.option.note && <Chip size="small" variant="outlined" label={q.option.note} />}
               {off && <Chip size="small" color="default" label={q.unavailable} />}
+              {isPicked && <Chip size="small" color="primary" icon={<CheckCircle />} label="Selected" />}
             </Box>
           </Box>
           <Box sx={{ textAlign: 'right' }}>
@@ -204,6 +232,11 @@ const MpFinance: React.FC = () => {
             {([['Program fee', q.programFee], ['Origination fee', q.option.orig], ['Amount financed', q.amountFinanced], ['Total of payments', q.totalOfPayments], ['Total fees & interest', q.totalFeesAndInterest]] as Array<[string, number]>).map(([l, v]) => (
               <Box key={l}><Typography variant="caption" color="text.secondary">{l}</Typography><Typography variant="body2" sx={{ fontWeight: 600 }}>{money(v)}</Typography></Box>
             ))}
+          </Box>
+          <Box sx={{ px: 1, pb: 1.5 }}>
+            <Button size="small" variant={isPicked ? 'outlined' : 'contained'} startIcon={isPicked ? <Close /> : <RadioButtonUnchecked />} onClick={() => toggleSelect(q)}>
+              {isPicked ? 'Unselect' : 'Select this option'}
+            </Button>
           </Box>
         </Collapse>
       </Box>
@@ -228,6 +261,11 @@ const MpFinance: React.FC = () => {
         <Button variant="contained" startIcon={busyPdf ? <CircularProgress size={16} color="inherit" /> : <PictureAsPdf />} disabled={!canFinance || busyPdf} onClick={pdf}>
           Customer sheet (PDF)
         </Button>
+        {selected && (
+          <Button variant="contained" color="secondary" startIcon={<PictureAsPdf />} disabled={busyPdf} onClick={optionPdf}>
+            Selected option (PDF)
+          </Button>
+        )}
       </Box>
       {leadDoc && (
         <Alert severity="info" sx={{ mb: 2 }}>
@@ -329,8 +367,39 @@ const MpFinance: React.FC = () => {
               {tradeIn > 0 && <TableRow><TableCell sx={{ border: 0, py: 0.25 }}>Trade-in</TableCell><TableCell align="right" sx={{ border: 0, py: 0.25 }}>−{money(tradeIn)}</TableCell></TableRow>}
               {num(down) > 0 && <TableRow><TableCell sx={{ border: 0, py: 0.25 }}>Down payment</TableCell><TableCell align="right" sx={{ border: 0, py: 0.25 }}>−{money(num(down))}</TableCell></TableRow>}
               <TableRow><TableCell sx={{ fontWeight: 800, color: 'primary.main' }}>Loan amount</TableCell><TableCell align="right" sx={{ fontWeight: 800, color: 'primary.main' }}>{money(Math.max(otd.loanAmount, 0))}</TableCell></TableRow>
+              {selected && (
+                <>
+                  <TableRow>
+                    <TableCell colSpan={2} sx={{ border: 0, pt: 1.5, pb: 0.25 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Typography variant="body2" sx={{ fontWeight: 700, flexGrow: 1 }}>{choiceLabel(selected)}</Typography>
+                        <Button size="small" onClick={() => setSelectedId(null)}>Clear</Button>
+                      </Box>
+                    </TableCell>
+                  </TableRow>
+                  {([
+                    [`Program fee${selected.option.feePct ? ` (${+(selected.option.feePct * 100).toFixed(2)}% + $10)` : ''}`, selected.programFee],
+                    ['Origination fee', selected.option.orig],
+                  ] as Array<[string, number]>).map(([l, v]) => (
+                    <TableRow key={l}><TableCell sx={{ border: 0, py: 0.25 }}>{l}</TableCell><TableCell align="right" sx={{ border: 0, py: 0.25 }}>+{money(v)}</TableCell></TableRow>
+                  ))}
+                  <TableRow><TableCell sx={{ fontWeight: 800 }}>Amount financed</TableCell><TableCell align="right" sx={{ fontWeight: 800 }}>{money(selected.amountFinanced)}</TableCell></TableRow>
+                  <TableRow><TableCell sx={{ border: 0, py: 0.25 }}>Monthly payment × {selected.option.term}</TableCell><TableCell align="right" sx={{ border: 0, py: 0.25, fontWeight: 700 }}>{money(selected.payment)}/mo</TableCell></TableRow>
+                  <TableRow><TableCell sx={{ border: 0, py: 0.25 }}>Total of payments</TableCell><TableCell align="right" sx={{ border: 0, py: 0.25 }}>{money(selected.totalOfPayments)}</TableCell></TableRow>
+                  {/* Same as amount financed when nothing is paid up front, so only shown with a down payment / trade-in. */}
+                  {otd.otd + selected.programFee + selected.option.orig !== selected.amountFinanced && <TableRow>
+                    <TableCell sx={{ fontWeight: 800, color: 'primary.main' }}>Total with financing fees</TableCell>
+                    <TableCell align="right" sx={{ fontWeight: 800, color: 'primary.main' }}>{money(otd.otd + selected.programFee + selected.option.orig)}</TableCell>
+                  </TableRow>}
+                </>
+              )}
             </TableBody>
           </Table>
+          {!selected && canFinance && (
+            <Typography variant="caption" color="text.secondary" component="p" sx={{ mt: 1 }}>
+              Select a financing option on the right to add its program fee to these totals.
+            </Typography>
+          )}
         </Paper>
 
         {/* ---------------- Results ---------------- */}
@@ -398,7 +467,8 @@ const MpFinance: React.FC = () => {
                           {openGrid && (
                             <Typography variant="body2" sx={{ mt: 1 }}>
                               Tier {openGrid.option.tier} · {rateLabel(openGrid.option)} · {openGrid.option.term} mo — amount financed {money(openGrid.amountFinanced)} (origination {money(openGrid.option.orig)}),
-                              total of payments {money(openGrid.totalOfPayments)}, fees & interest {money(openGrid.totalFeesAndInterest)}.
+                              total of payments {money(openGrid.totalOfPayments)}, fees & interest {money(openGrid.totalFeesAndInterest)}.{' '}
+                              <Button size="small" onClick={() => toggleSelect(openGrid)}>{selectedId === openGrid.option.id ? 'Unselect' : 'Select this option'}</Button>
                             </Typography>
                           )}
                         </Box>
@@ -412,7 +482,7 @@ const MpFinance: React.FC = () => {
               {results.dll.length > 0 && <Group title="DLL Financing (any year cart)">{results.dll.map((q) => <Row key={q.option.id} q={q} />)}</Group>}
               {results.roadrunner && <Alert severity="info" icon={false} sx={{ mb: 2 }}><b>Building credit?</b> {results.roadrunner}</Alert>}
               <Typography variant="caption" color="text.secondary">
-                Estimates only — the lender sets the final rate after a credit review. Tap any option for the program fee, origination fee and totals.
+                Estimates only — the lender sets the final rate after a credit review. Tap any option for the program fee, origination fee and totals, then <b>Select</b> it to add its fees to the totals and print a one-option sheet.
               </Typography>
             </>
           )}

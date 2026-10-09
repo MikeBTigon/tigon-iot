@@ -134,7 +134,7 @@ service cloud.firestore {
       // Anyone on the team can record where they posted a cart, or mark it sold.
       allow update: if isMpMember() &&
                        request.resource.data.diff(resource.data).affectedKeys()
-                         .hasOnly(['postedBy', 'postedAccounts', 'soldLocally', 'soldAt', 'soldBy', 'videos', 'videoUpdatedAt']);
+                         .hasOnly(['postedBy', 'postedAccounts', 'soldLocally', 'soldAt', 'soldBy', 'videos', 'videoUpdatedAt', 'doNotPost']);
       // Listings created in the app (snap-to-list, CSV import) by team members.
       allow create: if isMpMember() && request.resource.data.source == 'manual' &&
                        request.resource.data.createdBy == request.auth.uid;

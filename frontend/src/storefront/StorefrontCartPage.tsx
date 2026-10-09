@@ -4,7 +4,7 @@ import { Alert, Box, Button, Chip, CircularProgress, Paper, Snackbar, Typography
 import { ArrowBack, Call, CheckCircle, Directions, DirectionsCar, IosShare, Sms } from '@mui/icons-material';
 import { DEALERSHIP_BY_ID } from '../mp/constants';
 import StorefrontHeader from './StorefrontHeader';
-import { fetchStorefrontCart, money, smsHref, telHref, type StorefrontCartResponse } from './api';
+import { fetchStorefrontCart, hoursLines, money, smsHref, telHref, type StorefrontCartResponse } from './api';
 
 /** Public cart page at /s/:slug/:cartId (no sign-in). */
 const StorefrontCartPage: React.FC = () => {
@@ -116,6 +116,9 @@ const StorefrontCartPage: React.FC = () => {
                   <Typography fontWeight={700}>TIGON Golf Carts {store.cityState}</Typography>
                   {store.address && store.address !== 'National' && <Typography variant="body2">{store.address}</Typography>}
                   <Typography variant="body2">{phone}</Typography>
+                  {hoursLines(data?.hours).length > 0 && (
+                    <Typography variant="body2" color="text.secondary">{hoursLines(data?.hours).join(' · ')}</Typography>
+                  )}
                 </Box>
               )}
             </Paper>

@@ -1,13 +1,34 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Link as RouterLink, useParams } from 'react-router-dom';
+import { Link as RouterLink, useParams, useSearchParams } from 'react-router-dom';
 import {
-  Alert, Box, Card, CardActionArea, CardContent, Chip, CircularProgress, InputAdornment, MenuItem, TextField, ToggleButton, ToggleButtonGroup, Typography,
+  Alert, Box, Button, Card, CardActionArea, CardContent, Chip, CircularProgress, InputAdornment, Link, MenuItem, Paper, TextField, Typography,
 } from '@mui/material';
-import { DirectionsCar, Search } from '@mui/icons-material';
+import { AccessTime, Call, DirectionsCar, Place, Search } from '@mui/icons-material';
 import StorefrontHeader from './StorefrontHeader';
-import { fetchStorefront, money, type PublicCart, type StorefrontResponse } from './api';
+import { fetchStorefront, hoursLines, money, photoRank, telHref, type PublicCart, type PublicDealership, type StorefrontResponse } from './api';
 
 type Sort = 'featured' | 'price-asc' | 'price-desc';
+
+/** Filter chips: within a group any selected chip matches (New or Used); across groups all must match. */
+type FilterKey = 'new' | 'used' | 'electric' | 'gas' | 'lifted' | 'allTerrain' | 'utility';
+const FILTERS: Array<{ key: FilterKey; label: string; group: string; test: (c: PublicCart) => boolean }> = [
+  { key: 'new', label: 'Brand new', group: 'cond', test: (c) => !c.isUsed },
+  { key: 'used', label: 'Used', group: 'cond', test: (c) => c.isUsed },
+  { key: 'electric', label: 'Electric', group: 'power', test: (c) => c.isElectric },
+  { key: 'gas', label: 'Gas', group: 'power', test: (c) => !c.isElectric },
+  { key: 'lifted', label: 'Lifted', group: 'lifted', test: (c) => c.lifted },
+  { key: 'allTerrain', label: 'All terrain', group: 'allTerrain', test: (c) => !!c.allTerrain },
+  { key: 'utility', label: 'Utility', group: 'utility', test: (c) => !!c.utility },
+];
+
+function matchesFilters(c: PublicCart, on: Set<FilterKey>): boolean {
+  const groups = new Map<string, boolean>();
+  for (const f of FILTERS) {
+    if (!on.has(f.key)) continue;
+    groups.set(f.group, (groups.get(f.group) || false) || f.test(c));
+  }
+  return [...groups.values()].every(Boolean);
+}
 
 /** Public storefront grid at /s/:slug (no sign-in). */
 const StorefrontPage: React.FC = () => {
@@ -15,9 +36,23 @@ const StorefrontPage: React.FC = () => {
   const [data, setData] = useState<StorefrontResponse | null>(null);
   const [error, setError] = useState('');
   const [q, setQ] = useState('');
-  const [cond, setCond] = useState<'all' | 'new' | 'used'>('all');
-  const [power, setPower] = useState<'all' | 'electric' | 'gas'>('all');
+  const [filters, setFilters] = useState<Set<FilterKey>>(new Set());
   const [sort, setSort] = useState<Sort>('featured');
+  // Location lives in the URL (?loc=T1) so a link can open one store's carts.
+  const [params, setParams] = useSearchParams();
+  const loc = params.get('loc') || 'all';
+  const setLoc = (v: string) => setParams((p) => {
+    const n = new URLSearchParams(p);
+    if (v === 'all') n.delete('loc');
+    else n.set('loc', v);
+    return n;
+  }, { replace: true });
+  const toggle = (k: FilterKey) => setFilters((f) => {
+    const n = new Set(f);
+    if (n.has(k)) n.delete(k);
+    else n.add(k);
+    return n;
+  });
 
   useEffect(() => {
     let live = true;
@@ -34,22 +69,28 @@ const StorefrontPage: React.FC = () => {
     };
   }, [slug]);
 
+  const stores = useMemo(() => (data?.dealerships || []).filter((d) => d.id !== 'T0' && d.cityState), [data]);
+  const store = stores.find((d) => d.id === loc) || null;
+  const atLoc = useMemo(() => (data?.carts || []).filter((c) => !store || c.locationId === store.id), [data, store]);
+
   const carts = useMemo(() => {
-    if (!data) return [];
     const words = q.toLowerCase().split(/\s+/).filter(Boolean);
-    const list = data.carts.filter((c) => {
-      if (cond !== 'all' && c.isUsed !== (cond === 'used')) return false;
-      if (power !== 'all' && c.isElectric !== (power === 'electric')) return false;
-      const hay = `${c.year} ${c.title} ${c.location} ${c.passengers} passenger ${c.lifted ? 'lifted' : ''} ${c.streetLegal ? 'street legal lsv' : ''}`.toLowerCase();
+    const list = atLoc.filter((c) => {
+      if (!matchesFilters(c, filters)) return false;
+      const hay = `${c.year} ${c.title} ${c.location} ${c.passengers} passenger ${c.lifted ? 'lifted' : ''} ${c.streetLegal ? 'street legal lsv' : ''} ${c.utility ? 'utility' : ''} ${c.allTerrain ? 'all terrain' : ''}`.toLowerCase();
       return words.every((w) => hay.includes(w));
     });
-    if (sort === 'price-asc') return [...list].sort((a, b) => (a.price || Infinity) - (b.price || Infinity));
-    if (sort === 'price-desc') return [...list].sort((a, b) => b.price - a.price);
-    return list;
-  }, [data, q, cond, power, sort]);
+    // Carts with their own photos always come first; the chosen sort applies within each group.
+    const by = sort === 'price-asc' ? (a: PublicCart, b: PublicCart) => (a.price || Infinity) - (b.price || Infinity)
+      : sort === 'price-desc' ? (a: PublicCart, b: PublicCart) => b.price - a.price
+        : () => 0;
+    return [...list].sort((a, b) => photoRank(a) - photoRank(b) || by(a, b));
+  }, [atLoc, q, filters, sort]);
+
+  // Only offer chips that match at least one cart here.
+  const chips = useMemo(() => FILTERS.filter((f) => atLoc.some(f.test)), [atLoc]);
 
   const sf = data?.storefront || null;
-  const showCond = !sf || (sf.showNew && sf.showUsed);
 
   return (
     <Box sx={{ minHeight: '100vh', bgcolor: '#f5f5f5' }}>
@@ -59,7 +100,15 @@ const StorefrontPage: React.FC = () => {
         {!data && !error && <Box sx={{ textAlign: 'center', py: 8 }}><CircularProgress /></Box>}
         {data && (
           <>
-            <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', alignItems: 'center', mb: 2 }}>
+            <VisitUs stores={stores} store={store} hours={hoursLines(data.hours)} onPick={setLoc} />
+            <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', alignItems: 'center', mb: 1.5 }}>
+              {stores.length > 1 && (
+                <TextField select size="small" value={store ? store.id : 'all'} onChange={(e) => setLoc(e.target.value)}
+                  sx={{ bgcolor: '#fff', minWidth: 190 }} aria-label="Location">
+                  <MenuItem value="all">All locations</MenuItem>
+                  {stores.map((d) => <MenuItem key={d.id} value={d.id}>{d.cityState}</MenuItem>)}
+                </TextField>
+              )}
               <TextField
                 size="small"
                 placeholder="Search make, model, color…"
@@ -68,25 +117,25 @@ const StorefrontPage: React.FC = () => {
                 sx={{ flex: '1 1 220px', bgcolor: '#fff' }}
                 slotProps={{ input: { startAdornment: <InputAdornment position="start"><Search /></InputAdornment> } }}
               />
-              {showCond && (
-                <ToggleButtonGroup size="small" exclusive value={cond} onChange={(_, v) => v && setCond(v)} sx={{ bgcolor: '#fff' }}>
-                  <ToggleButton value="all">All</ToggleButton>
-                  <ToggleButton value="new">New</ToggleButton>
-                  <ToggleButton value="used">Used</ToggleButton>
-                </ToggleButtonGroup>
-              )}
-              <ToggleButtonGroup size="small" exclusive value={power} onChange={(_, v) => v && setPower(v)} sx={{ bgcolor: '#fff' }}>
-                <ToggleButton value="all">Any</ToggleButton>
-                <ToggleButton value="electric">Electric</ToggleButton>
-                <ToggleButton value="gas">Gas</ToggleButton>
-              </ToggleButtonGroup>
               <TextField select size="small" value={sort} onChange={(e) => setSort(e.target.value as Sort)} sx={{ bgcolor: '#fff', minWidth: 170 }}>
                 <MenuItem value="featured">Featured</MenuItem>
                 <MenuItem value="price-asc">Price: low to high</MenuItem>
                 <MenuItem value="price-desc">Price: high to low</MenuItem>
               </TextField>
             </Box>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>{carts.length} cart{carts.length === 1 ? '' : 's'} available</Typography>
+            {chips.length > 1 && (
+              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center', mb: 2 }}>
+                {chips.map((f) => (
+                  <Chip key={f.key} label={f.label} clickable onClick={() => toggle(f.key)}
+                    color={filters.has(f.key) ? 'primary' : 'default'} variant={filters.has(f.key) ? 'filled' : 'outlined'}
+                    sx={{ bgcolor: filters.has(f.key) ? undefined : '#fff' }} />
+                ))}
+                {filters.size > 0 && <Button size="small" onClick={() => setFilters(new Set())}>Clear</Button>}
+              </Box>
+            )}
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+              {carts.length} cart{carts.length === 1 ? '' : 's'} available{store ? ` in ${store.cityState}` : ''}
+            </Typography>
             <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 2 }}>
               {carts.map((c) => <PublicCartCard key={c.id} cart={c} slug={slug} />)}
             </Box>
@@ -98,6 +147,65 @@ const StorefrontPage: React.FC = () => {
         )}
       </Box>
     </Box>
+  );
+};
+
+/** Address, phone and hours: one store, or every store (tap one to see just its carts). */
+const VisitUs: React.FC<{ stores: PublicDealership[]; store: PublicDealership | null; hours: string[]; onPick: (id: string) => void }> = ({ stores, store, hours, onPick }) => {
+  const [all, setAll] = useState(false);
+  const one = store || (stores.length === 1 ? stores[0] : null);
+  if (!one && !stores.length) return null;
+  const hoursRow = hours.length > 0 && (
+    <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start' }}>
+      <AccessTime fontSize="small" color="action" sx={{ mt: 0.25 }} />
+      <Typography variant="body2">{hours.join(' · ')}</Typography>
+    </Box>
+  );
+  if (one) {
+    return (
+      <Paper variant="outlined" sx={{ p: 1.5, mb: 2, display: 'flex', gap: { xs: 1, sm: 3 }, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+        <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start' }}>
+          <Place fontSize="small" color="primary" sx={{ mt: 0.25 }} />
+          <Box>
+            <Typography variant="body2" fontWeight={700}>TIGON Golf Carts {one.cityState}</Typography>
+            <Link variant="body2" href={one.maps} target="_blank" rel="noopener" underline="hover" color="text.secondary">{one.address}</Link>
+          </Box>
+        </Box>
+        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+          <Call fontSize="small" color="action" />
+          <Link variant="body2" href={telHref(one.phone)} underline="hover">{one.phone}</Link>
+        </Box>
+        {hoursRow}
+      </Paper>
+    );
+  }
+  const shown = all ? stores : stores.slice(0, 3);
+  return (
+    <Paper variant="outlined" sx={{ p: 1.5, mb: 2 }}>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 1, flexWrap: 'wrap', mb: 1 }}>
+        <Typography variant="body2" fontWeight={700}>{stores.length} locations</Typography>
+        {hoursRow}
+      </Box>
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(auto-fill, minmax(260px, 1fr))' }, gap: 1 }}>
+        {shown.map((d) => (
+          <Box key={d.id} sx={{ display: 'flex', gap: 1, alignItems: 'flex-start' }}>
+            <Place fontSize="small" color="primary" sx={{ mt: 0.25 }} />
+            <Box sx={{ minWidth: 0 }}>
+              <Link component="button" variant="body2" fontWeight={700} underline="hover" onClick={() => onPick(d.id)} sx={{ textAlign: 'left' }}>
+                {d.cityState}
+              </Link>
+              <Typography variant="body2" color="text.secondary">
+                <Link href={d.maps} target="_blank" rel="noopener" underline="hover" color="inherit">{d.address}</Link>
+                {' · '}<Link href={telHref(d.phone)} underline="hover" color="inherit">{d.phone}</Link>
+              </Typography>
+            </Box>
+          </Box>
+        ))}
+      </Box>
+      {stores.length > 3 && (
+        <Button size="small" onClick={() => setAll((v) => !v)} sx={{ mt: 0.5 }}>{all ? 'Show fewer' : `Show all ${stores.length} locations`}</Button>
+      )}
+    </Paper>
   );
 };
 
@@ -121,6 +229,8 @@ const PublicCartCard: React.FC<{ cart: PublicCart; slug: string }> = ({ cart, sl
           {cart.passengers > 0 && <Chip size="small" label={`${cart.passengers} seats`} variant="outlined" />}
           {cart.lifted && <Chip size="small" label="Lifted" variant="outlined" />}
           {cart.streetLegal && <Chip size="small" label="Street legal" variant="outlined" />}
+          {cart.allTerrain && <Chip size="small" label="All terrain" variant="outlined" />}
+          {cart.utility && <Chip size="small" label="Utility" variant="outlined" />}
         </Box>
       </CardContent>
     </CardActionArea>

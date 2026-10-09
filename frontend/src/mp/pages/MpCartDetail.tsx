@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Alert, Box, Button, Chip, CircularProgress, Paper, Table, TableBody, TableCell, TableRow, Typography } from '@mui/material';
-import { ArrowBack, Calculate, CheckCircle, Description, Download, RadioButtonUnchecked, Refresh, RocketLaunch, Send } from '@mui/icons-material';
+import { ArrowBack, Block, Calculate, CheckCircle, Description, Download, RadioButtonUnchecked, Refresh, RocketLaunch, Send } from '@mui/icons-material';
 import MpShell from '../components/MpShell';
 import CartPhoto from '../components/CartPhoto';
 import PhotoLightbox from '../components/PhotoLightbox';
@@ -24,7 +24,7 @@ const yes = (b: boolean) => (b ? 'Yes' : 'No');
 const MpCartDetail: React.FC = () => {
   const { id = '' } = useParams();
   const navigate = useNavigate();
-  const { carts, cartsLoading, brokenPhotos, userKeys, profile, setPosted, refreshCart, userName } = useMp();
+  const { carts, cartsLoading, brokenPhotos, userKeys, profile, setPosted, setDoNotPost, refreshCart, userName } = useMp();
   const [lightbox, setLightbox] = useState<number | null>(null);
   const [autoPostOpen, setAutoPostOpen] = useState(false);
   const [queuedMsg, setQueuedMsg] = useState('');
@@ -54,6 +54,19 @@ const MpCartDetail: React.FC = () => {
     } catch (e) {
       console.error(e);
       setError('Could not update posted status.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const toggleDoNotPost = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      await setDoNotPost(cart, !cart.doNotPost);
+    } catch (e) {
+      console.error(e);
+      setError('Could not update "Do not post".');
     } finally {
       setBusy(false);
     }
@@ -107,6 +120,7 @@ const MpCartDetail: React.FC = () => {
             {hasPhotoIssue(cart, brokenPhotos) && <Chip color="warning" label="⚠ photo issue" />}
             {cart.flaggedDelete && <Chip color="error" label="Flagged 'delete' in DMS" />}
             {cart.photoSource === 'default' && <Chip variant="outlined" label="Default new-cart images" />}
+            {cart.doNotPost && <Chip color="error" variant="outlined" icon={<Block />} label="Do not post" />}
           </Box>
           {cart.windowSticker && (
             <Button size="small" startIcon={<Description />} href={cart.windowSticker} target="_blank" rel="noopener noreferrer" sx={{ mt: 1 }}>
@@ -131,10 +145,24 @@ const MpCartDetail: React.FC = () => {
           >
             {myTs ? `Posted by you ${timeAgo(myTs)} — undo` : 'Mark posted'}
           </Button>
+          <Button
+            variant="outlined"
+            color={cart.doNotPost ? 'inherit' : 'error'}
+            startIcon={<Block />}
+            onClick={toggleDoNotPost}
+            disabled={busy}
+          >
+            {cart.doNotPost ? 'Allow posting again' : 'Do not post'}
+          </Button>
           </Box>
         )}
       </Box>
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+      {cart.doNotPost && (
+        <Alert severity="warning" icon={<Block />} sx={{ mb: 2 }}>
+          Marked <b>Do not post</b> by {userName(cart.doNotPost.by)} {timeAgo(cart.doNotPost.at)} — it won't be suggested to post.
+        </Alert>
+      )}
       {queuedMsg && <Alert severity="success" sx={{ mb: 2 }} onClose={() => setQueuedMsg('')}>{queuedMsg}</Alert>}
       <CartExtensions cart={cart} />
 

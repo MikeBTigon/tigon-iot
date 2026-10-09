@@ -8,6 +8,8 @@ import { locationName } from '../constants';
 import { useMp } from '../MpDataContext';
 import { saveAllPhotos } from '../photos';
 import { openFacebookAssisted, quickFbList } from '../quickList';
+import { useAutoMarkPosted } from '../useAutoMarkPosted';
+import { notify } from '../../ui/notify';
 import { logEvent } from '../../native/deviceSession';
 import type { MpCart } from '../types';
 import CartPhoto from './CartPhoto';
@@ -20,11 +22,21 @@ const CartCard: React.FC<{ cart: MpCart }> = ({ cart }) => {
   const acctCount = postedAccountCount(cart);
   const [menu, setMenu] = useState<HTMLElement | null>(null);
   const [note, setNote] = useState('');
+  const autoMark = useAutoMarkPosted();
   const uid = userKeys[0] || '';
-  const run = async (fn: () => Promise<string>) => {
+  const run = async (fn: () => Promise<string>, mark = false) => {
     setMenu(null);
     try {
-      setNote(await fn());
+      const msg = await fn();
+      // Quick FB List: mark it posted on the account being used (Undo if it wasn't published). Shown page-wide,
+      // because a marked card can drop off Suggested to post right away.
+      const marked = mark ? await autoMark(cart).catch(() => null) : null;
+      if (marked?.note) {
+        notify(`${msg} ${marked.note}`, 'success', {
+          label: 'Undo',
+          run: () => { void marked.undo().then(() => notify('Undone — not marked as posted.', 'info')); },
+        });
+      } else setNote(msg);
       logEvent(uid, 'listing_prepared', { cartId: cart.docId });
       logEvent(uid, 'marketplace_opened', { cartId: cart.docId });
     } catch (e) {
@@ -61,7 +73,7 @@ const CartCard: React.FC<{ cart: MpCart }> = ({ cart }) => {
       </CardActionArea>
       <Box sx={{ px: 1.5, pb: 1.5, display: 'flex', flexDirection: 'column', gap: 1 }}>
         <ButtonGroup fullWidth size="small" variant="contained">
-          <Button startIcon={<Bolt />} onClick={() => run(() => quickFbList(cart, photos, uid))}>Quick FB List</Button>
+          <Button startIcon={<Bolt />} onClick={() => run(() => quickFbList(cart, photos, uid), true)}>Quick FB List</Button>
           <Button sx={{ width: 40, flex: '0 0 40px' }} aria-label="More Facebook options" onClick={(e) => setMenu(e.currentTarget)}><ArrowDropDown /></Button>
         </ButtonGroup>
         <Menu anchorEl={menu} open={!!menu} onClose={() => setMenu(null)}>

@@ -1,6 +1,7 @@
 import type { Cart, MpAccount, MpCart, MpCartDoc } from './types';
 import { mapDmsCartObject, isDmsCartObject, hasDeleteFlag, photoUrl } from './cartLogic';
 import { ACCOUNT_GROUPS, locationName, locationRank } from './constants';
+import { daysOnLot } from './sales/inventory/inventoryUtils';
 
 type Json = Record<string, unknown>;
 
@@ -43,6 +44,7 @@ export function cartFromDoc(docId: string, data: Partial<MpCartDoc>): MpCart {
     savedAt: Number(data.savedAt) || 0,
     postedBy: data.postedBy || {},
     postedAccounts: data.postedAccounts || {},
+    doNotPost: data.doNotPost && typeof data.doNotPost === 'object' ? data.doNotPost : undefined,
     source: data.source,
     createdBy: data.createdBy,
     soldLocally: data.soldLocally === true,
@@ -95,10 +97,53 @@ export function masterSort<T extends Cart>(carts: T[], broken: Set<string>): T[]
   });
 }
 
+/** Carts that can be suggested at all: not flagged for deletion in the DMS, not marked "Do not post", with photos. */
+export const canSuggest = (c: MpCart, broken: Set<string>) => !c.flaggedDelete && !c.doNotPost && photoRank(c, broken) > 0;
+
+/**
+ * Meets in the middle between "longest on the lot" and "lowest price": each cart's place in both orders
+ * (0 = first) counts half. Ties go to the cart longer on the lot; carts without a price sort as most expensive.
+ */
+export function blendLotAndPrice(carts: MpCart[], now = Date.now()): MpCart[] {
+  if (carts.length < 2) return carts.slice();
+  const price = (c: MpCart) => (c.price > 0 ? c.price : Infinity);
+  const place = (sorted: MpCart[]) => new Map(sorted.map((c, i) => [c.docId, i / (sorted.length - 1)]));
+  const byAge = place(carts.slice().sort((a, b) => daysOnLot(b, now) - daysOnLot(a, now)));
+  const byPrice = place(carts.slice().sort((a, b) => price(a) - price(b)));
+  const score = (c: MpCart) => (byAge.get(c.docId)! + byPrice.get(c.docId)!) / 2;
+  return carts.slice().sort((a, b) => score(a) - score(b) || daysOnLot(b, now) - daysOnLot(a, now) || price(a) - price(b));
+}
+
+/** One cart from each store in turn (T1, T2, T3, …), then the next round, until every store's list is used. */
+export function roundRobin(stores: Array<[string, MpCart[]]>): MpCart[] {
+  const out: MpCart[] = [];
+  for (let i = 0; stores.some(([, list]) => i < list.length); i++) {
+    for (const [, list] of stores) if (i < list.length) out.push(list[i]);
+  }
+  return out;
+}
+
+/**
+ * Suggested to post, store by store (T1, T2, …): carts with photos not yet posted on the account
+ * (or by me, with no account), each store's list blended by time on the lot and low price.
+ */
+export function suggestedByStore(
+  carts: MpCart[], broken: Set<string>, notPosted: (c: MpCart) => boolean, now = Date.now(),
+): Array<[string, MpCart[]]> {
+  const byLoc = new Map<string, MpCart[]>();
+  for (const c of carts) {
+    if (!canSuggest(c, broken) || !notPosted(c)) continue;
+    byLoc.set(c.locationId, [...(byLoc.get(c.locationId) || []), c]);
+  }
+  return [...byLoc.entries()]
+    .sort((a, b) => locationRank(a[0]) - locationRank(b[0]) || a[0].localeCompare(b[0], undefined, { numeric: true }))
+    .map(([loc, list]) => [loc, blendLotAndPrice(list, now)]);
+}
+
 /** Home queue: unposted by me, has photos, balanced round-robin across stores. */
 export function suggestedQueue(carts: MpCart[], userKeys: string[], broken: Set<string>, max = 60): MpCart[] {
   const pool = masterSort(
-    carts.filter((c) => !c.flaggedDelete && !isPostedBy(c, userKeys) && photoRank(c, broken) > 0),
+    carts.filter((c) => canSuggest(c, broken) && !isPostedBy(c, userKeys)),
     broken,
   );
   const byLoc = new Map<string, MpCart[]>();

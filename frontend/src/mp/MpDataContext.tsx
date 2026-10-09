@@ -47,6 +47,8 @@ interface MpData {
   refreshCart: (docId: string) => Promise<void>;
   setPosted: (cart: MpCart, posted: boolean) => Promise<void>;
   setPostedAccounts: (cart: MpCart, add: string[], remove: string[]) => Promise<void>;
+  /** "Do not post": keeps the cart out of Suggested to post (anyone on the team can set or clear it). */
+  setDoNotPost: (cart: MpCart, on: boolean) => Promise<void>;
   deleteCarts: (docIds: string[]) => Promise<void>;
   saveProfile: (data: { name: string; legacyId?: string; role?: MpRole }) => Promise<void>;
   setUserRole: (uid: string, role: MpRole) => Promise<void>;
@@ -274,6 +276,18 @@ export const MpDataProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     [profile, uid],
   );
 
+  const setDoNotPost = useCallback(
+    async (cart: MpCart, on: boolean) => {
+      if (!profile) return;
+      const value = on ? { by: uid, at: Date.now() } : undefined;
+      patchLocal(cart.docId, (c) => ({ ...c, doNotPost: value }));
+      await updateDoc(doc(db, COLLECTIONS.carts, cart.docId), { doNotPost: value || deleteField() });
+      syncSoon(cart.docId);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [profile, uid],
+  );
+
   const deleteCarts = useCallback(async (docIds: string[]) => {
     for (let i = 0; i < docIds.length; i += 400) {
       const batch = writeBatch(db);
@@ -376,6 +390,7 @@ export const MpDataProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     refreshCart,
     setPosted,
     setPostedAccounts,
+    setDoNotPost,
     deleteCarts,
     saveProfile,
     setUserRole,

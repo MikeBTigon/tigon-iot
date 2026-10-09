@@ -5,6 +5,7 @@
 import * as logger from 'firebase-functions/logger';
 import {onRequest} from 'firebase-functions/v2/https';
 import * as admin from 'firebase-admin';
+import {loadSalesSettings, type DayHours, type WeekDay} from './sales/settings';
 
 const PUBLIC_ORIGIN = 'https://tigon-iot.web.app';
 const PHOTO_BASE = 'https://s3.amazonaws.com/prod.docs.s3/carts/';
@@ -80,6 +81,23 @@ export interface PublicCart {
   description: string;
   /** Walk-around videos (Firebase Storage download URLs). */
   videos: string[];
+  /** Storefront filters. */
+  utility: boolean;
+  allTerrain: boolean;
+  /** True when `photos` are stock images for the model, not photos of this cart. */
+  stockPhotos: boolean;
+}
+
+/** DMS fill-ins that aren't a real make/model ("Other", "N/A", ...). Same rule as frontend cartLogic.isPlaceholder. */
+const isPlaceholder = (v: string) => /^(other|others|n\/?a|none|unknown|tbd|-+|\.)$/i.test(v.trim());
+
+/** Words about the cart used in place of a model of "Other" (same rule as frontend cartLogic.cartKind). */
+function cartKind(lifted: boolean, passengers: number, streetLegal: boolean, isElectric: boolean, lithium: boolean): string {
+  const parts = [lifted ? 'Lifted' : '', passengers ? `${passengers} Passenger` : ''].filter(Boolean);
+  if (parts.length) return `${parts.join(' ')} Cart`;
+  if (streetLegal) return 'Street Legal Golf Cart';
+  if (!isElectric) return 'Gas Golf Cart';
+  return lithium ? 'Lithium Golf Cart' : 'Golf Cart';
 }
 
 const photoUrl = (f: string) => (/^https?:\/\//i.test(f) ? f : PHOTO_BASE + f);
@@ -144,10 +162,16 @@ export function publicCart(id: string, data: Json): PublicCart | null {
   const locationId = str(loc.locationId) || str(loc.latestStoreId) || str(data.locationId) || 'Other';
   let photos = cleanList(p.imageUrls);
   if (!photos.length) photos = cleanList(p.internalCartImageUrls);
-  if (!photos.length) photos = cleanList(p._mpDefaultImages);
   if (!photos.length) photos = cleanList(data.photoUrls);
-  const make = str(type.make);
-  const model = str(type.model);
+  // Stock web images for the model/color, only when the cart has no photos of its own.
+  const stockPhotos = !photos.length && cleanList(p._mpDefaultImages).length > 0;
+  if (stockPhotos) photos = cleanList(p._mpDefaultImages);
+  const passengers = parseInt(str(attrs.passengers).match(/\d+/)?.[0] || '0', 10);
+  const lifted = bool(attrs.isLifted);
+  const streetLegal = bool(obj(p.title).isStreetLegal);
+  const make = isPlaceholder(str(type.make)) ? '' : str(type.make);
+  const model = isPlaceholder(str(type.model)) ?
+    cartKind(lifted, passengers, streetLegal, isElectric, /lith|lifepo|li-ion/i.test(str(batt.type))) : str(type.model);
   const color = str(attrs.cartColor);
   const year = str(type.year);
   const features = featureLines(p, isUsed, isElectric);
@@ -161,9 +185,9 @@ export function publicCart(id: string, data: Json): PublicCart | null {
     price: Number(p.retailPrice) || 0,
     isUsed,
     isElectric,
-    passengers: parseInt(str(attrs.passengers).match(/\d+/)?.[0] || '0', 10),
-    lifted: bool(attrs.isLifted),
-    streetLegal: bool(obj(p.title).isStreetLegal),
+    passengers,
+    lifted,
+    streetLegal,
     battery: isElectric ? [str(batt.packVoltage), str(batt.type)].filter(Boolean).join(' ') : '',
     locationId,
     location: locName(locationId),
@@ -171,6 +195,9 @@ export function publicCart(id: string, data: Json): PublicCart | null {
     features,
     description: description.replace(/\.\s*\./g, '.').replace(/\s+/g, ' '),
     videos: cleanList(data.videos).filter((u) => /^https:\/\//i.test(u)),
+    utility: str(p._mpCategory) === 'utility' || /\b(utility|utv|hauler|cargo)\b/i.test(`${make} ${model}`),
+    stockPhotos,
+    allTerrain: /all[\s-]?terrain|off[\s-]?road|\bA\/?T\b/i.test(str(attrs.tireType)),
   };
 }
 
@@ -309,6 +336,8 @@ async function loadStorefront(slug: string): Promise<PublicStorefront | null> {
   };
 }
 
+const photoRank = (c: PublicCart) => (!c.photos.length ? 2 : c.stockPhotos ? 1 : 0);
+
 function storefrontCarts(sf: PublicStorefront, carts: PublicCart[]): PublicCart[] {
   const pinned = new Map(sf.pinnedCartIds.map((id, i) => [id, i]));
   return carts
@@ -319,12 +348,19 @@ function storefrontCarts(sf: PublicStorefront, carts: PublicCart[]): PublicCart[
       const pa = pinned.get(a.id) ?? Infinity;
       const pb = pinned.get(b.id) ?? Infinity;
       if (pa !== pb) return pa - pb;
+      // Carts with their own photos first, then stock images, then no picture.
+      if (photoRank(a) !== photoRank(b)) return photoRank(a) - photoRank(b);
       if (a.isUsed !== b.isUsed) return a.isUsed ? -1 : 1;
       return b.price - a.price;
     });
 }
 
 const storesFor = (ids: string[]) => ids.map((id) => STORE_BY_ID[id]).filter(Boolean);
+
+/** Store hours shown on storefronts: the team's visit hours (Sell more → booking settings). */
+async function storeHours(): Promise<Record<WeekDay, DayHours> | null> {
+  return (await loadSalesSettings().catch(() => null))?.booking.hours || null;
+}
 
 /** GET /api/storefront/:slug → storefront + carts; GET /api/storefront/:slug/:cartId → one cart. */
 export const mpStorefrontApi = onRequest({region: REGION}, async (req, res) => {
@@ -365,12 +401,12 @@ export const mpStorefrontApi = onRequest({region: REGION}, async (req, res) => {
         res.status(404).json({error: 'This cart is no longer available', storefront});
         return;
       }
-      res.json({storefront, dealership: STORE_BY_ID[cart.locationId] || null, cart});
+      res.json({storefront, dealership: STORE_BY_ID[cart.locationId] || null, cart, hours: await storeHours()});
       return;
     }
     const carts = storefrontCarts(sf, await allPublicCarts());
     const locIds = sf.locationIds.length ? sf.locationIds : [...new Set(carts.map((c) => c.locationId))];
-    res.json({storefront, dealerships: storesFor(locIds), carts});
+    res.json({storefront, dealerships: storesFor(locIds), carts, hours: await storeHours()});
   } catch (e) {
     logger.error('mpStorefrontApi failed', slug, e);
     res.set('Cache-Control', 'no-store');
