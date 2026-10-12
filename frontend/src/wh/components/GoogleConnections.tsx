@@ -114,6 +114,13 @@ const GoogleConnections: React.FC = () => {
     `Shared ${r.shared.length} sheet(s) as ${r.account} — connected.${c.revived ? ` ${c.revived} waiting row(s) will be written within a minute.` : ''}` :
     `Shared ${r.shared.length} sheet(s) as ${r.account}. Google can take a minute to apply it — press Check & connect if anything still shows a problem.`));
 
+  // Rows written before values were lined up with the sheet's headers: move them under the right columns, drop doubles.
+  const repairSheet = (spreadsheetId: string, title: string) => {
+    if (!window.confirm(`Fix the old rows in "${title}"?\n\nRows that start with a date are moved under the right column headings, and repeated rows for the same lead are removed. Your other rows are not touched.`)) return;
+    void run(`repair-${spreadsheetId}`, () => callWh<{ tab: string; fixed: number; removed: number }>('whGoogle', { action: 'repairSheet', spreadsheetId }),
+      (r) => (r.fixed || r.removed ? `"${r.tab}": ${r.fixed} row(s) moved under the right columns, ${r.removed} duplicate row(s) removed.` : `"${r.tab}": nothing to fix.`));
+  };
+
   // ---- Google Analytics ----
   const rowsGa = useMemo(() => {
     const list: Array<{ domainId: string; label: string; url?: string; s?: WhSettings }> = [{ domainId: '', label: 'All websites (default)', s: global || undefined }];
@@ -243,6 +250,11 @@ const GoogleConnections: React.FC = () => {
                         <TableCell>
                           {s.ok ? <Chip size="small" color="success" icon={<CheckCircle />} label="Connected" /> :
                             <Typography variant="body2" color="error">{s.problem}</Typography>}
+                          {s.ok && (
+                            <Button size="small" sx={{ ml: 1 }} disabled={!!busy} onClick={() => repairSheet(s.spreadsheetId, s.title || s.spreadsheetId)}>
+                              {busy === `repair-${s.spreadsheetId}` ? 'Fixing…' : 'Fix old rows'}
+                            </Button>
+                          )}
                         </TableCell>
                       </TableRow>
                     ))}

@@ -6,6 +6,7 @@
 //     gaConnect  {domainId ('' = all websites), propertyId, streamId, acknowledge?} → finds/creates the API secret and saves it
 //     gaManual   {domainId, measurementId, apiSecret} → validates and saves pasted values
 //     gaDisconnect {domainId}
+//     repairSheet {spreadsheetId, tab?} → old-layout rows rewritten under the right headers, duplicate rows removed
 import * as admin from 'firebase-admin';
 import * as logger from 'firebase-functions/logger';
 import {HttpsError, onCall} from 'firebase-functions/v2/https';
@@ -14,7 +15,7 @@ import {WH} from './types';
 import {db} from './config';
 import {clearConfigCache} from './config';
 import {requireManager} from './admin';
-import {SHEETS_SERVICE_ACCOUNT, extractSheetId} from './steps/sheets';
+import {SHEETS_SERVICE_ACCOUNT, extractSheetId, repairSheetRows} from './steps/sheets';
 import {errMsg} from './steps/util';
 
 export const SERVICE_ACCOUNT = SHEETS_SERVICE_ACCOUNT;
@@ -273,6 +274,13 @@ export const whGoogle = onCall({timeoutSeconds: 300, memory: '512MiB'}, async (r
     switch (action) {
       case 'check':
         return await checkSheets();
+      case 'repairSheet': {
+        const id = extractSheetId(String(d.spreadsheetId || ''));
+        if (!id) throw new HttpsError('invalid-argument', 'Pick a sheet.');
+        const r = await repairSheetRows(id, String(d.tab || ''));
+        await audit(`Sheet rows fixed: ${id} / ${r.tab}: ${r.fixed} fixed, ${r.removed} duplicates removed`);
+        return r;
+      }
       case 'gaList':
         return await gaList();
       case 'gaConnect': {

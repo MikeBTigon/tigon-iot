@@ -2,6 +2,7 @@
 import * as logger from 'firebase-functions/logger';
 import * as admin from 'firebase-admin';
 import {GoogleAuth} from 'google-auth-library';
+import {createHash} from 'crypto';
 import {LEAD_FIELDS, TRACKING_FIELDS, WH} from '../types';
 import {fieldLabel} from '../shared';
 import type {StepContext, StepResult} from '../engineTypes';
@@ -18,6 +19,8 @@ const MAX_ATTEMPTS = 8;
 const BATCH_LIMIT = 2000;
 const STATUS_DOC = 'sheets_status';
 const DEAD_RETRY_MS = 60 * 60 * 1000;
+/** One marker per lead + sheet + tab, so a lead is never added to the same sheet twice. */
+const SHEET_ROWS = 'wh_sheet_rows';
 
 const db = () => admin.firestore();
 
@@ -64,6 +67,13 @@ export async function sheetsStep(ctx: StepContext): Promise<StepResult> {
     test: isTest ? 'TEST' : '',
   };
   const row = columns.map((col) => safeCell(col in special ? special[col] : data[col] ?? ''));
+  // One row per lead per sheet: the website flow and the Master Flow often point at the same sheet.
+  const onceId = `${sub.id}_${createHash('sha1').update(`${spreadsheetId}|${tab.trim().toLowerCase()}`).digest('hex').slice(0, 16)}`;
+  try {
+    await db().collection(SHEET_ROWS).doc(onceId).create({submissionId: sub.id, spreadsheetId, tab, runId: ctx.runId, at: Date.now()});
+  } catch {
+    return {status: 'skipped', response: {reason: 'This lead is already in that sheet', spreadsheetId, tab}};
+  }
   await db().collection(WH.sheetBuffer).doc(ctx.runId).set({
     spreadsheetId, tab, columns, row, createdAt: Date.now(), submissionId: sub.id, attempts: 0, dead: false,
   });
@@ -152,7 +162,7 @@ export interface BufferedRow {columns: string[]; row: string[]}
  * (exact key, label like "First name", or a common alias like "Phone"/"ZIP"). Our columns the sheet doesn't have are
  * added to the right of the header. Returns the new header (if it changed) and the rows in sheet order.
  */
-export function alignRows(header: string[], items: BufferedRow[]): {header: string[]; added: boolean; rows: string[][]} {
+export function alignRows(header: string[], items: BufferedRow[], extend = true): {header: string[]; added: boolean; rows: string[][]} {
   const allKeys = Array.from(new Set(items.flatMap((i) => i.columns)));
   const out = header.map((h) => String(h ?? ''));
   const keyAt: string[] = out.map((h) => headerKey(h, allKeys));
@@ -164,7 +174,7 @@ export function alignRows(header: string[], items: BufferedRow[]): {header: stri
     else seen.add(k);
   });
   let added = false;
-  for (const k of allKeys) {
+  for (const k of extend ? allKeys : []) {
     if (seen.has(k)) continue;
     // Only add a new column when some row has a value for it (keeps their sheet tidy).
     if (!items.some((it) => String(it.row[it.columns.indexOf(k)] ?? '').trim())) continue;
@@ -219,7 +229,8 @@ async function appendGroup(token: string, spreadsheetId: string, tabWanted: stri
     header = (items[0]?.columns || DEFAULT_COLUMNS).map((c) => c === 'test' ? 'Test' : fieldLabel(c));
     rows = alignRows(header, items).rows;
   } else {
-    const a = alignRows(current, items);
+    // The sheet has its own header: fill only those columns, never add new ones.
+    const a = alignRows(current, items, false);
     header = a.added ? a.header : current;
     rows = a.rows;
   }
@@ -238,6 +249,62 @@ async function appendGroup(token: string, spreadsheetId: string, tabWanted: stri
     })}),
   });
   return tab;
+}
+
+/** Old-layout rows start with the received date, e.g. "Sep 30, 2026, 7:06 PM EDT". */
+const OLD_ROW = /^[A-Z][a-z]{2} \d{1,2}, \d{4}, \d{1,2}:\d{2}\s?[AP]M/;
+
+/**
+ * Fixes rows written before values were lined up with the sheet's header: rows that start with the received date
+ * were written in TIGON IOT's own order (DEFAULT_COLUMNS). Each is rewritten under the right headers, and repeated
+ * rows for the same lead are removed (first one kept). Returns counts.
+ */
+export async function repairSheetRows(spreadsheetId: string, tabWanted = ''): Promise<{tab: string; fixed: number; removed: number}> {
+  const token = await tokenGetter();
+  const base = `${SHEETS_API}/${encodeURIComponent(spreadsheetId)}`;
+  const meta = await sheetsFetch(token, `${base}?fields=sheets.properties(title,sheetId)`);
+  const sheets: Array<{title: string; sheetId: number}> = (meta.sheets || []).map((x: any) => ({title: String(x.properties?.title || ''), sheetId: Number(x.properties?.sheetId || 0)}));
+  const sheet = sheets.find((x) => tabWanted && x.title.trim().toLowerCase() === tabWanted.trim().toLowerCase()) || sheets[0];
+  if (!sheet) throw new Error('The spreadsheet has no tabs.');
+  const got = await sheetsFetch(token, `${base}/values/${encodeURIComponent(a1Tab(sheet.title))}`);
+  const all: string[][] = (got.values || []).map((r: unknown[]) => r.map((v) => String(v ?? '')));
+  if (all.length < 2) return {tab: sheet.title, fixed: 0, removed: 0};
+  const header = all[0];
+  // A sheet whose own first column is the date: its rows already start with a date, nothing to tell apart safely.
+  if (headerKey(header[0], DEFAULT_COLUMNS) === 'received_at') return {tab: sheet.title, fixed: 0, removed: 0};
+  const subIdx = DEFAULT_COLUMNS.indexOf('submission_id');
+  const width = Math.max(header.length, ...all.map((r) => r.length));
+  const seenSubs = new Set<string>();
+  const remove: number[] = [];
+  let fixed = 0;
+  const out = all.slice(1).map((r, i) => {
+    if (!OLD_ROW.test(r[0] || '')) return null;
+    const sub = r[subIdx] || '';
+    if (sub && seenSubs.has(sub)) {
+      remove.push(i + 1); // 0-based sheet row index
+      return null;
+    }
+    if (sub) seenSubs.add(sub);
+    fixed++;
+    const aligned = alignRows(header, [{columns: DEFAULT_COLUMNS, row: r}], false).rows[0];
+    while (aligned.length < width) aligned.push('');
+    return aligned;
+  });
+  // Rewrite fixed rows in place (one call per row range of consecutive fixed rows).
+  const data: Array<{range: string; values: string[][]}> = [];
+  out.forEach((row, i) => {
+    if (row) data.push({range: `${a1Tab(sheet.title)}!A${i + 2}:${colLetter(width)}${i + 2}`, values: [row]});
+  });
+  for (let i = 0; i < data.length; i += 200) {
+    await sheetsFetch(token, `${base}/values:batchUpdate`, {method: 'POST', body: JSON.stringify({valueInputOption: 'RAW', data: data.slice(i, i + 200)})});
+  }
+  if (remove.length) {
+    const requests = remove.sort((a, b) => b - a).map((row) => ({
+      deleteDimension: {range: {sheetId: sheet.sheetId, dimension: 'ROWS', startIndex: row, endIndex: row + 1}},
+    }));
+    await sheetsFetch(token, `${base}:batchUpdate`, {method: 'POST', body: JSON.stringify({requests})});
+  }
+  return {tab: sheet.title, fixed, removed: remove.length};
 }
 
 /** Append all buffered rows (one API call per spreadsheet+tab). Safe to run often; a lease stops overlapping runs. */
