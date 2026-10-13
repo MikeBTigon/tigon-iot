@@ -8,7 +8,7 @@ export type Row = Record<string, unknown> & { id: string };
  * Live rows for a query. `key` must change whenever the query changes; pass `q = null` to skip.
  * Returns {rows, loaded, error} for the current key only.
  */
-export function useLive<T extends Row = Row>(key: string, q: Query | null): { rows: T[]; loaded: boolean; error: string } {
+export function useLive<T extends { id: string } = Row>(key: string, q: Query | null): { rows: T[]; loaded: boolean; error: string } {
   const [state, setState] = useState<{ key: string; rows: T[]; error: string }>({ key: '', rows: [], error: '' });
   useEffect(() => {
     if (!q) return;

@@ -13,9 +13,10 @@ import EditUserDialog from '../devices/EditUserDialog';
 import { isOnline, lastSeenMs, seenLabel } from '../devices/deviceStatus';
 import { fmtHours, hoursOn, hoursOver, periods, weekday } from '../devices/presence';
 import type { PresenceSettings } from '../devices/presence';
-import { appPhones, savePresenceSettings, sendPresenceReport, useAllDevices, useOnline, usePostings, usePresenceSettings } from '../devices/usePresence';
+import { appPhones, savePresenceSettings, sendPresenceReport, useOnline, usePostings, usePresenceSettings } from '../devices/usePresence';
 import { postsOver } from '../devices/postings';
 import MpProfiles from '../mp/pages/MpProfiles';
+import { useSharedDevices } from '../devices/sharedDevices';
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 type SortKey = 'name' | 'location' | 'phones' | 'today' | 'week' | 'month' | 'year' | 'low' | 'postsWeek' | 'postsMonth';
@@ -31,7 +32,7 @@ const Users: React.FC = () => {
   const setTab = (v: 'people' | 'profiles') => setParams(v === 'profiles' ? { tab: 'profiles' } : {}, { replace: true });
   const per = useMemo(() => periods(), []);
   const cfg = usePresenceSettings();
-  const devices = useAllDevices();
+  const devices = useSharedDevices(isManager ? 'all' : null).rows;
   const online = useOnline(per.year[0]);
   const posts = usePostings();
   const [q, setQ] = useState('');
@@ -154,7 +155,7 @@ const Users: React.FC = () => {
           <Button variant="outlined" startIcon={busy === 'all' ? <CircularProgress size={16} /> : <Email />} disabled={!!busy}
             onClick={() => send('all', 'allUsers')}>Email every user's report</Button>
           <Tooltip title="Minimum hours and report address">
-            <IconButton onClick={() => { setDraft(cfg); setSettingsOpen(true); }} aria-label="Settings"><SettingsIcon /></IconButton>
+            <IconButton onClick={() => { setDraft(cfg); setSettingsOpen(true); }} aria-label="Online-time goal and report settings"><SettingsIcon /></IconButton>
           </Tooltip>
         </Stack>
       </Box>
@@ -192,7 +193,8 @@ const Users: React.FC = () => {
             </TableHead>
             <TableBody>
               {shown.map((r) => (
-                <TableRow key={r.u.uid} hover sx={{ cursor: 'pointer' }} onClick={() => navigate(`/users/${r.u.uid}`)}>
+                <TableRow key={r.u.uid} hover sx={{ cursor: 'pointer' }} tabIndex={0} aria-label={`Open ${r.u.name}`} onClick={() => navigate(`/users/${r.u.uid}`)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && e.target === e.currentTarget) navigate(`/users/${r.u.uid}`); }}>
                   <TableCell>
                     <Typography variant="body2" sx={{ fontWeight: 600 }}>{r.u.name}</Typography>
                     <Typography variant="caption" color="text.secondary">{r.u.email} · {r.u.role}</Typography>

@@ -15,6 +15,7 @@ import {
   ListItemIcon,
   ListItemText,
   Avatar,
+  Chip,
   Menu,
   MenuItem,
   Switch,
@@ -88,7 +89,9 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
   const [langAnchor, setLangAnchor] = useState<null | HTMLElement>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const { currentUser, logout } = useAuth();
-  const { profile, carts, cartsLoading, syncStatus } = useMp();
+  const { profile, users, carts, cartsLoading, syncStatus } = useMp();
+  // Admins: people waiting for approval (badge on Accounts, where they are approved).
+  const pendingCount = profile?.role === 'admin' ? users.filter((u) => u.status === 'pending').length : 0;
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -169,6 +172,9 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
                 >
                   <ListItemIcon sx={{ minWidth: 40, color: selected ? 'primary.main' : 'inherit' }}>{navIcon(i.path)}</ListItemIcon>
                   <ListItemText primary={navLabel(t, i)} slotProps={{ primary: { sx: { fontWeight: selected || single ? 600 : 400 } } }} />
+                  {i.path === '/mp/accounts' && pendingCount > 0 && (
+                    <Chip size="small" color="error" label={pendingCount} aria-label={`${pendingCount} waiting for approval`} />
+                  )}
                 </ListItemButton>
               </ListItem>
             );

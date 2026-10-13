@@ -4,6 +4,7 @@
 import * as logger from 'firebase-functions/logger';
 import {HttpsError, onCall} from 'firebase-functions/v2/https';
 import * as admin from 'firebase-admin';
+import {isInactiveStatus} from './membership';
 import Anthropic from '@anthropic-ai/sdk';
 
 // Secret referenced by name (not defineSecret) so merely loading this file never makes a deploy
@@ -296,7 +297,7 @@ export const mpAiListing = onCall(
     if (!req.auth) throw new HttpsError('unauthenticated', 'Sign in first.');
     const uid = req.auth.uid;
     const userDoc = await admin.firestore().collection(USERS).doc(uid).get();
-    if (!userDoc.exists) throw new HttpsError('permission-denied', 'MP Assistant access required.');
+    if (!userDoc.exists || isInactiveStatus(userDoc.get('status'))) throw new HttpsError('permission-denied', 'MP Assistant access required.');
 
     const data = (req.data || {}) as Record<string, unknown>;
     const facts = cleanCart(data.cart);

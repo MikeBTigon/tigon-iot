@@ -11,6 +11,7 @@ import * as admin from 'firebase-admin';
 import {ONLINE, SLOTS_PER_DAY, SLOT_MIN, TZ, hoursOf, nySlot} from './presence';
 import {sendMail} from './wh/steps/email';
 import type {WhSettings} from './wh/types';
+import {isInactiveStatus} from './membership';
 
 const db = () => admin.firestore();
 const SETTINGS_DOC = 'mp_meta/presence';
@@ -308,7 +309,8 @@ export const mpPresenceWeekly = onSchedule({schedule: '0 17 * * 5', timeZone: TZ
 
 export const mpPresenceReport = onCall({timeoutSeconds: 300, memory: '512MiB'}, async (req) => {
   if (!req.auth) throw new HttpsError('unauthenticated', 'Sign in first.');
-  const role = String((await db().collection('mp_users').doc(req.auth.uid).get()).get('role') || '');
+  const me = await db().collection('mp_users').doc(req.auth.uid).get();
+  const role = isInactiveStatus(me.get('status')) ? '' : String(me.get('role') || '');
   if (role !== 'admin' && role !== 'manager') throw new HttpsError('permission-denied', 'Only managers and admins can do this.');
   const d = (req.data || {}) as Record<string, unknown>;
   const action = String(d.action || '');

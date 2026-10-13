@@ -7,6 +7,7 @@ import * as admin from 'firebase-admin';
 import {createHash} from 'crypto';
 import {dmsDeleteFlag, handleCartSold, nextPriceHistory, priceDropOf, stockedAtOf} from './sales/inventory';
 import {raiseSystemAlert} from './alerts';
+import {isInactiveStatus} from './membership';
 import {loadSalesSettings} from './sales/settings';
 import {cartSummary} from './sales/util';
 
@@ -337,7 +338,7 @@ export const mpSyncInventory = onSchedule(
 export const mpSyncNow = onCall({timeoutSeconds: 540, memory: '512MiB'}, async (req) => {
   if (!req.auth) throw new HttpsError('unauthenticated', 'Sign in first');
   const profile = await admin.firestore().collection(USERS).doc(req.auth.uid).get();
-  if (!profile.exists || profile.get('role') !== 'admin') {
+  if (!profile.exists || profile.get('role') !== 'admin' || isInactiveStatus(profile.get('status'))) {
     throw new HttpsError('permission-denied', 'MP Assistant admin role required');
   }
   try {

@@ -21,6 +21,7 @@ import {
 } from './util';
 import type {Json, Person} from './util';
 import {isOptedOut, markLeadTexted, queueSms} from './outbox';
+import {isInactiveStatus} from '../membership';
 import type {SmsDoc} from './outbox';
 
 const FV = admin.firestore.FieldValue;
@@ -923,7 +924,7 @@ export const mpSmsAdmin = onCall(async (req) => {
   if (!req.auth) throw new HttpsError('unauthenticated', 'Sign in first');
   const me = await db().collection(C.users).doc(req.auth.uid).get();
   const role = String(me.get('role') || '');
-  if (!me.exists) throw new HttpsError('permission-denied', 'Not on the team');
+  if (!me.exists || isInactiveStatus(me.get('status'))) throw new HttpsError('permission-denied', 'Not on the team');
   const action = str(req.data?.action, 20);
   const s = await loadSalesSettings(true);
   if (action === 'status') {
@@ -950,7 +951,7 @@ export const mpSmsAdmin = onCall(async (req) => {
 // Manual texts (callable) — the app's "Send text" goes through here
 // ---------------------------------------------------------------------------
 
-const PERSON_KINDS = new Set(['manual', 'quote', 'prequal', 'trade_in', 'referral', 'reply', 'cadence', 'service', 'appointment']);
+const PERSON_KINDS = new Set(['manual', 'quote', 'appointment', 'trade_in', 'prequal', 'referral', 'reply', 'cadence', 'service']);
 
 /**
  * mpSendText({to?, body, leadId?, customerId?, storeId?, kind?}) → {id}
@@ -961,7 +962,7 @@ export const mpSendText = onCall({timeoutSeconds: 30}, async (req) => {
   if (!req.auth) throw new HttpsError('unauthenticated', 'Sign in first');
   const uid = req.auth.uid;
   const me = await db().collection(C.users).doc(uid).get();
-  if (!me.exists) throw new HttpsError('permission-denied', 'Not on the team');
+  if (!me.exists || isInactiveStatus(me.get('status'))) throw new HttpsError('permission-denied', 'Not on the team');
   const manager = isManagerRole(String(me.get('role') || ''));
   const d = (req.data || {}) as Json;
   const body = str(d.body, 1170).trim();

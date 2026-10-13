@@ -8,7 +8,7 @@
 import * as admin from 'firebase-admin';
 import {createHash} from 'crypto';
 import type {SalesSettings} from './settings';
-import {C, MIN_MS, cartSummary, clean, commitAll, db, isQuietHour, loadPeople, managersFor, notify, nyDateKey, nyTime} from './util';
+import {C, MIN_MS, cartSummary, clean, commitAll, db, isQuietHour, loadPeople, managersFor, notificationExpireAt, notify, nyDateKey, nyTime} from './util';
 import type {Json, Person} from './util';
 
 const FV = admin.firestore.FieldValue;
@@ -456,7 +456,7 @@ export async function dailyCallList(now: number, s: SalesSettings): Promise<void
     if (!text) continue;
     ops.push((b) => b.set(db().collection(C.notifications).doc(`daily_${day}_${p.uid}`), {
       targetUserId: p.uid, sourceDeviceName: 'Today', text, isHandled: false,
-      createdAt: FV.serverTimestamp(), source: 'sales_daily', url: '/mp/today',
+      createdAt: FV.serverTimestamp(), expireAt: notificationExpireAt(), source: 'sales_daily', url: '/mp/today',
     }, {merge: true}));
   }
   await commitAll(ops);

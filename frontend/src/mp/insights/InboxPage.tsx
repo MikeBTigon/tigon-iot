@@ -19,7 +19,7 @@ import { notify } from '../../ui/notify';
 import { storeName } from '../sales/closing/closingUtils';
 import { groupConversations, readDocId, type Conversation, type InText, type LeadLite, type OutText } from './inboxLogic';
 import { displayPhone, toE164 } from './phone';
-import { useLive } from './useLive';
+import { useLive, useTick } from './useLive';
 import { aiReply, sendTextSmart, useAiEnabled } from './insightsApi';
 
 export const INBOX_READS = 'mp_inbox_reads';
@@ -41,7 +41,8 @@ function useConversations() {
   const uid = currentUser?.uid || '';
   const manager = isManager(profile);
   // Day-granular cutoff keeps the query key stable for the whole day.
-  const cutoff = Math.floor((Date.now() - 30 * DAY) / DAY) * DAY;
+  const now = useTick(3600_000);
+  const cutoff = Math.floor((now - 30 * DAY) / DAY) * DAY;
   const sms = collection(db, SALES_COLLECTIONS.sms);
   const outAll = useLive<OutText & { id: string }>(`out_all_${cutoff}`, uid && manager ? query(sms, where('createdAt', '>=', cutoff)) : null);
   const outOwn = useLive<OutText & { id: string }>(`out_own_${uid}`, uid && !manager ? query(sms, where('ownerUid', '==', uid)) : null);

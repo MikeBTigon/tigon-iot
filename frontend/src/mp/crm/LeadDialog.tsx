@@ -19,6 +19,7 @@ import {
 import type { Lead, LeadChannel, LeadStatus } from '../growthTypes';
 import LeadSalesPanel from '../sales/LeadSalesPanel';
 import type { MpCart } from '../types';
+import { useT } from '../../i18n';
 
 export interface LeadDialogProps {
   open: boolean;
@@ -44,6 +45,7 @@ export default function LeadDialog(props: LeadDialogProps) {
 }
 
 function LeadBody({ onClose, lead, initial, notificationId, onSaved }: LeadDialogProps) {
+  const t = useT();
   const { profile, users, carts, userName } = useMp();
   const src = lead || initial || {};
   const [name, setName] = useState(src.name || '');
@@ -89,7 +91,7 @@ function LeadBody({ onClose, lead, initial, notificationId, onSaved }: LeadDialo
   const save = async () => {
     if (!profile) return;
     if (!name.trim() && !phone.trim() && !email.trim()) {
-      setError('Add at least a name, phone or email.');
+      setError(t('leadDialog.needContact'));
       return;
     }
     setBusy(true);
@@ -125,7 +127,7 @@ function LeadBody({ onClose, lead, initial, notificationId, onSaved }: LeadDialo
   };
 
   const remove = async () => {
-    if (!lead || !window.confirm(`Delete the lead "${lead.name || lead.phone}"?`)) return;
+    if (!lead || !window.confirm(t('leadDialog.confirmDelete', { name: lead.name || lead.phone }))) return;
     try {
       await deleteDoc(doc(db, COLLECTIONS.leads, lead.id));
       await writeAudit(profile, 'lead.delete', lead.id, lead.name);
@@ -139,57 +141,57 @@ function LeadBody({ onClose, lead, initial, notificationId, onSaved }: LeadDialo
 
   return (
     <>
-      <DialogTitle>{lead ? lead.name || 'Lead' : 'New lead'}</DialogTitle>
+      <DialogTitle>{lead ? lead.name || t('leadDialog.lead') : t('leadDialog.newLead')}</DialogTitle>
       <DialogContent>
         {lead && (
           <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
-            Added {shortDateTime(lead.createdAt)}
-            {lead.lastContactAt ? ` · last contact ${shortDateTime(lead.lastContactAt)}` : ''}
-            {lead.soldAt ? ` · sold ${shortDateTime(lead.soldAt)} for $${(lead.soldPrice || 0).toLocaleString('en-US')}` : ''}
+            {t('leadDialog.added', { when: shortDateTime(lead.createdAt) })}
+            {lead.lastContactAt ? t('leadDialog.lastContact', { when: shortDateTime(lead.lastContactAt) }) : ''}
+            {lead.soldAt ? t('leadDialog.soldFor', { when: shortDateTime(lead.soldAt), price: `$${(lead.soldPrice || 0).toLocaleString('en-US')}` }) : ''}
           </Typography>
         )}
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 1.5, mt: 1 }}>
-          <TextField label="Name" value={name} onChange={(e) => setName(e.target.value)} autoFocus={!lead} />
-          <TextField select label="Channel" value={channel} onChange={(e) => setChannel(e.target.value as LeadChannel)}>
-            {CHANNELS.map((c) => <MenuItem key={c} value={c}>{CHANNEL_LABEL[c]}</MenuItem>)}
+          <TextField label={t('leadDialog.name')} value={name} onChange={(e) => setName(e.target.value)} autoFocus={!lead} />
+          <TextField select label={t('leadDialog.channel')} value={channel} onChange={(e) => setChannel(e.target.value as LeadChannel)}>
+            {CHANNELS.map((c) => <MenuItem key={c} value={c}>{t(`leads.channels.${c}`, { defaultValue: CHANNEL_LABEL[c] })}</MenuItem>)}
           </TextField>
-          <TextField label="Phone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} />
-          <TextField label="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+          <TextField label={t('leadDialog.phone')} type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} />
+          <TextField label={t('leadDialog.email')} type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
         </Box>
         <Box sx={{ mt: 1.5 }}>
           <CartPicker value={cartChoice} onChange={(c) => setCartChoice(c)} />
         </Box>
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 1.5, mt: 1.5 }}>
-          <TextField select label="Status" value={status} onChange={(e) => setStatus(e.target.value as LeadStatus)}
-            helperText={status !== 'sold' ? 'Use "Mark sold" to close a sale' : ' '}>
-            {statusOptions.map((s) => <MenuItem key={s} value={s}>{LEAD_STATUS_LABEL[s]}</MenuItem>)}
+          <TextField select label={t('leadDialog.status')} value={status} onChange={(e) => setStatus(e.target.value as LeadStatus)}
+            helperText={status !== 'sold' ? t('leadDialog.statusHelp') : ' '}>
+            {statusOptions.map((s) => <MenuItem key={s} value={s}>{t(`leads.status.${s}`, { defaultValue: LEAD_STATUS_LABEL[s] })}</MenuItem>)}
           </TextField>
-          <TextField label="Follow up" type="datetime-local" value={followUp} onChange={(e) => setFollowUp(e.target.value)}
-            slotProps={{ inputLabel: { shrink: true } }} helperText="You get a reminder on your phone" />
+          <TextField label={t('leadDialog.followUp')} type="datetime-local" value={followUp} onChange={(e) => setFollowUp(e.target.value)}
+            slotProps={{ inputLabel: { shrink: true } }} helperText={t('leadDialog.followUpHelp')} />
           {manager && (
-            <TextField select label="Owner" value={ownerUid} onChange={(e) => setOwnerUid(e.target.value)}>
+            <TextField select label={t('leadDialog.owner')} value={ownerUid} onChange={(e) => setOwnerUid(e.target.value)}>
               {users.map((u) => <MenuItem key={u.uid} value={u.uid}>{u.name || u.email}</MenuItem>)}
               {ownerUid && !users.some((u) => u.uid === ownerUid) && <MenuItem value={ownerUid}>{userName(ownerUid)}</MenuItem>}
             </TextField>
           )}
         </Box>
-        <TextField fullWidth multiline minRows={2} label="Notes" value={notes} onChange={(e) => setNotes(e.target.value)} sx={{ mt: 1.5, mb: 1.5 }} />
+        <TextField fullWidth multiline minRows={2} label={t('leadDialog.notes')} value={notes} onChange={(e) => setNotes(e.target.value)} sx={{ mt: 1.5, mb: 1.5 }} />
         <ContactPanel key={cartId || 'none'} name={name} phone={phone} email={email} cart={cart} onContact={onContact} />
-        {!lead && contactedAt > 0 && <Typography variant="caption" color="text.secondary">Contact recorded — it is saved with the lead.</Typography>}
+        {!lead && contactedAt > 0 && <Typography variant="caption" color="text.secondary">{t('leadDialog.contactRecorded')}</Typography>}
         {notificationId && !lead && (
           <FormControlLabel sx={{ mt: 1 }} control={<Checkbox checked={markHandled} onChange={(e) => setMarkHandled(e.target.checked)} />}
-            label="Mark the notification handled" />
+            label={t('leadDialog.markHandled')} />
         )}
         {lead && <LeadSalesPanel lead={lead} />}
         {error && <Alert severity="error" sx={{ mt: 1 }}>{error}</Alert>}
       </DialogContent>
       <DialogActions sx={{ flexWrap: 'wrap', gap: 1 }}>
-        {lead && manager && <Button color="error" onClick={remove}>Delete</Button>}
+        {lead && manager && <Button color="error" onClick={remove}>{t('leadDialog.delete')}</Button>}
         <Box sx={{ flexGrow: 1 }} />
-        {lead && lead.status !== 'sold' && <Button color="success" onClick={() => setSelling(true)}>Mark sold</Button>}
-        {lead && lead.status === 'sold' && <Button onClick={() => setReview(true)}>Review request</Button>}
-        <Button onClick={onClose}>Cancel</Button>
-        <Button variant="contained" disabled={busy} onClick={save}>{lead ? 'Save' : 'Add lead'}</Button>
+        {lead && lead.status !== 'sold' && <Button color="success" onClick={() => setSelling(true)}>{t('leadDialog.markSold')}</Button>}
+        {lead && lead.status === 'sold' && <Button onClick={() => setReview(true)}>{t('leadDialog.reviewRequest')}</Button>}
+        <Button onClick={onClose}>{t('leadDialog.cancel')}</Button>
+        <Button variant="contained" disabled={busy} onClick={save}>{lead ? t('leadDialog.save') : t('leadDialog.addLead')}</Button>
       </DialogActions>
       <MarkSoldDialog lead={selling ? lead || null : null} onClose={() => { setSelling(false); onClose(); }} />
       <ReviewRequestDialog open={review} onClose={() => setReview(false)} lead={lead} />

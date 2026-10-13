@@ -6,6 +6,7 @@ import * as logger from 'firebase-functions/logger';
 import {HttpsError, onCall} from 'firebase-functions/v2/https';
 import {onSchedule} from 'firebase-functions/v2/scheduler';
 import * as admin from 'firebase-admin';
+import {notificationExpireAt} from './sales/util';
 
 type Json = Record<string, any>;
 
@@ -24,7 +25,7 @@ const db = () => admin.firestore();
  * Every 30 minutes: if Members queued posts that need approval since the last notice, drop one IoT
  * notification per manager/admin (→ phone push via onNotificationCreate). Tracks mp_meta/approvals.lastNotifiedAt.
  */
-export const mpApprovalDigest = onSchedule({schedule: 'every 30 minutes', timeZone: TZ}, async () => {
+export const mpApprovalDigest = onSchedule({schedule: 'every 30 minutes', timeZone: TZ, timeoutSeconds: 300}, async () => {
   const metaRef = db().doc('mp_meta/approvals');
   const lastNotifiedAt = Number((await metaRef.get()).get('lastNotifiedAt') || 0);
   const pending = await db().collection(QUEUE).where('status', '==', 'pending_approval').get();
@@ -40,12 +41,14 @@ export const mpApprovalDigest = onSchedule({schedule: 'every 30 minutes', timeZo
   const managers = await db().collection(USERS).where('role', 'in', ['admin', 'manager']).get();
   const batch = db().batch();
   for (const m of managers.docs) {
+    if (m.get('status') === 'pending' || m.get('status') === 'disabled') continue;
     batch.set(db().collection('notifications').doc(), {
       targetUserId: m.id,
       sourceDeviceName: 'MP Assistant',
       text,
       isHandled: false,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      expireAt: notificationExpireAt(),
       source: 'mp_approval',
     });
   }
@@ -111,7 +114,7 @@ export const mpBackup = onSchedule({schedule: 'every day 03:00', timeZone: TZ}, 
 export const mpBackupNow = onCall(async (req) => {
   if (!req.auth) throw new HttpsError('unauthenticated', 'Sign in first');
   const caller = (await db().collection(USERS).doc(req.auth.uid).get()).data() as Json | undefined;
-  if (caller?.role !== 'admin') throw new HttpsError('permission-denied', 'Only admins can start a backup');
+  if (caller?.role !== 'admin' || caller.status === 'pending' || caller.status === 'disabled') throw new HttpsError('permission-denied', 'Only admins can start a backup');
   const record = await runBackup('manual');
   await db().collection(AUDIT).add({
     actorUid: req.auth.uid, actorName: String(caller.name || caller.email || req.auth.uid),

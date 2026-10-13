@@ -7,6 +7,7 @@ import * as admin from 'firebase-admin';
 import * as logger from 'firebase-functions/logger';
 import {expireIn, notificationExpireAt, nyDateKey} from './sales/util';
 import {sendMail} from './wh/steps/email';
+import {isInactiveStatus} from './membership';
 import type {WhSettings} from './wh/types';
 
 export type AlertSeverity = 'info' | 'warning' | 'error';
@@ -35,7 +36,7 @@ export const alertId = (key: string, now = Date.now()) => `${safeKey(key)}_${nyD
 /** Admin/manager uids. */
 async function managerUids(): Promise<string[]> {
   const snap = await db().collection('mp_users').where('role', 'in', ['admin', 'manager']).get();
-  return snap.docs.map((d) => d.id);
+  return snap.docs.filter((d) => !isInactiveStatus(d.get('status'))).map((d) => d.id);
 }
 
 /**

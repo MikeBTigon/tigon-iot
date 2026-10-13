@@ -13,6 +13,7 @@ import {
 import type {Json, Person} from './util';
 import {PublicError} from './publicTypes';
 import {consentRecord, phoneDailyCap} from './publicGuard';
+import {isInactiveStatus} from '../membership';
 import type {PublicHandler} from './publicTypes';
 
 // ===========================================================================
@@ -161,7 +162,7 @@ export async function marketingDaily(now: number, s: SalesSettings): Promise<voi
 export const mpReviewsRefresh = onCall({timeoutSeconds: 120}, async (req) => {
   if (!req.auth) throw new HttpsError('unauthenticated', 'Sign in first');
   const me = (await db().collection(C.users).doc(req.auth.uid).get()).data() || {};
-  if (!isManagerRole(String(me.role || ''))) throw new HttpsError('permission-denied', 'Only managers can refresh reviews');
+  if (!isManagerRole(String(me.role || '')) || isInactiveStatus(me.status)) throw new HttpsError('permission-denied', 'Only managers can refresh reviews');
   const s = await loadSalesSettings(true);
   if (!Object.values(s.reviews.placeIds || {}).some((p) => String(p || '').trim())) {
     return {stores: 0, errors: [], message: 'No Place IDs yet — add them in Sell more settings → Reviews & referrals.'};

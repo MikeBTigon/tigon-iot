@@ -6,7 +6,6 @@ import {
 import Papa from 'papaparse';
 import { db } from '../../config/firebase';
 import { COLLECTIONS, DEALERSHIP_BY_ID } from '../constants';
-import { useMp } from '../MpDataContext';
 import { cartFromDoc } from '../cartUtils';
 import { writeAudit } from '../audit';
 import { logEvent } from '../../native/deviceSession';
@@ -94,51 +93,67 @@ export const shortDateTime = (ts: number) =>
 // Live data hooks
 // ---------------------------------------------------------------------------
 
-/** Leads the user may see: members their own (rules), managers everyone's. */
-export function useLeads(profile: MpProfile | null | undefined, ownOnly = false): { leads: Lead[]; error: string } {
-  const [state, setState] = useState<{ leads: Lead[]; error: string }>({ leads: [], error: '' });
+/** How far back managers' team-wide lead list goes (open leads are always included). */
+export const LEADS_WINDOW_DAYS = 90;
+
+type LeadsState = { key: string; leads: Lead[]; error: string; loaded: boolean };
+
+/**
+ * Leads the user may see: members their own (rules), managers the team's — open leads plus any lead
+ * updated in the last 90 days (two single-field queries, merged). `loaded` is false until the first data arrives.
+ */
+export function useLeads(profile: MpProfile | null | undefined, ownOnly = false): { leads: Lead[]; error: string; loaded: boolean } {
   const uid = profile?.uid;
   const all = isManager(profile) && !ownOnly;
+  const key = `${uid || ''}|${all}`;
+  const [state, setState] = useState<LeadsState>({ key: '', leads: [], error: '', loaded: false });
+  const [cutoff] = useState(() => Date.now() - LEADS_WINDOW_DAYS * 86_400_000);
   useEffect(() => {
     if (!uid) return;
-    const q = all
-      ? collection(db, COLLECTIONS.leads)
-      : query(collection(db, COLLECTIONS.leads), where('ownerUid', '==', uid));
-    return onSnapshot(
-      q,
-      (snap) => setState({ leads: snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Lead), error: '' }),
-      (e) => setState({ leads: [], error: e.message }),
-    );
-  }, [uid, all]);
-  return state;
+    const col = collection(db, COLLECTIONS.leads);
+    const fail = (e: Error) => setState({ key, leads: [], error: e.message, loaded: true });
+    if (!all) {
+      return onSnapshot(
+        query(col, where('ownerUid', '==', uid)),
+        (snap) => setState({ key, leads: snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Lead), error: '', loaded: true }),
+        fail,
+      );
+    }
+    let recent: Lead[] | null = null;
+    let open: Lead[] | null = null;
+    const emit = () => {
+      if (!recent || !open) return;
+      const byId = new Map<string, Lead>();
+      for (const l of [...recent, ...open]) byId.set(l.id, l);
+      setState({ key, leads: [...byId.values()], error: '', loaded: true });
+    };
+    const u1 = onSnapshot(query(col, where('updatedAt', '>=', cutoff)), (snap) => {
+      recent = snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Lead);
+      emit();
+    }, fail);
+    const u2 = onSnapshot(query(col, where('status', 'in', ['new', 'talking'])), (snap) => {
+      open = snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Lead);
+      emit();
+    }, fail);
+    return () => { u1(); u2(); };
+  }, [uid, all, key, cutoff]);
+  return state.key === key ? state : { leads: [], error: '', loaded: false };
 }
 
-/** Number of the signed-in user's own open leads whose follow-up is due today or overdue (for a nav badge). */
-export function useDueFollowUps(): number {
-  const { profile } = useMp();
-  const { leads } = useLeads(profile, true);
-  const now = useNow();
-  return leads.filter((l) => {
-    const s = followUpState(l, now);
-    return s === 'overdue' || s === 'today';
-  }).length;
-}
-
-/** All customers (shared by the team). */
-export function useCustomers(profile: MpProfile | null | undefined): { customers: Customer[]; error: string } {
-  const [state, setState] = useState<{ customers: Customer[]; error: string }>({ customers: [], error: '' });
+/** All customers (shared by the team). `loaded` is false until the first data arrives. */
+export function useCustomers(profile: MpProfile | null | undefined): { customers: Customer[]; error: string; loaded: boolean } {
+  const [state, setState] = useState<{ customers: Customer[]; error: string; loaded: boolean }>({ customers: [], error: '', loaded: false });
   const uid = profile?.uid;
   useEffect(() => {
     if (!uid) return;
     return onSnapshot(
       collection(db, COLLECTIONS.customers),
-      (snap) => setState({ customers: snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Customer), error: '' }),
-      (e) => setState({ customers: [], error: e.message }),
+      (snap) => setState({ customers: snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Customer), error: '', loaded: true }),
+      (e) => setState({ customers: [], error: e.message, loaded: true }),
     );
   }, [uid]);
   return state;
 }
-
 const DEFAULT_SETTINGS: MpSettings = { requireApproval: false, relistAfterDays: 7 };
 
 /** mp_settings/general with defaults (relistAfterDays 7). */

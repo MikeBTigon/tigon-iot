@@ -4,6 +4,8 @@
 import * as logger from 'firebase-functions/logger';
 import {onSchedule} from 'firebase-functions/v2/scheduler';
 import * as admin from 'firebase-admin';
+import {notificationExpireAt} from './sales/util';
+import {raiseSystemAlert} from './alerts';
 
 const USERS = 'mp_users';
 const LEADS = 'mp_leads';
@@ -79,6 +81,7 @@ function notification(targetUserId: string, sourceDeviceName: string, text: stri
     text,
     isHandled: false,
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    expireAt: notificationExpireAt(),
     ...extra,
   };
 }
@@ -104,7 +107,8 @@ async function relistAfterDays(): Promise<number> {
 
 /** Leads whose follow-up time has come → one notification per follow-up time to the owner. */
 async function followUpReminders(now: number): Promise<number> {
-  const due = await db().collection(LEADS).where('followUpAt', '<=', now).get();
+  // One range on one field: follow-ups due in the last 7 days (older ones were reminded already or are stale).
+  const due = await db().collection(LEADS).where('followUpAt', '>=', now - 7 * DAY_MS).where('followUpAt', '<=', now).get();
   const ops: Array<(b: admin.firestore.WriteBatch) => void> = [];
   for (const d of due.docs) {
     const lead = d.data() as Json;
@@ -128,8 +132,27 @@ async function relistReminders(now: number): Promise<number> {
   const metaRef = db().collection(META).doc('crm_reminders');
   const today = nyDateKey(now);
   if (nyParts(now).hour < RELIST_HOUR) return 0;
-  if ((await metaRef.get()).get('relistDay') === today) return 0;
-  await metaRef.set({relistDay: today, relistRunAt: now}, {merge: true});
+  // Short running lease (no overlap); the "done today" marker is written only after success.
+  const go = await db().runTransaction(async (tx) => {
+    const m = await tx.get(metaRef);
+    if (m.get('relistDay') === today || Number(m.get('relistLease') || 0) > now) return false;
+    tx.set(metaRef, {relistLease: now + 10 * 60_000}, {merge: true});
+    return true;
+  });
+  if (!go) return 0;
+  try {
+    const n = await relistRun(now);
+    await metaRef.set({relistDay: today, relistRunAt: now, relistLease: 0}, {merge: true});
+    return n;
+  } catch (e) {
+    await metaRef.set({relistLease: 0, relistFailedAt: Date.now()}, {merge: true});
+    await raiseSystemAlert({key: 'crm_relist', title: 'Relist reminders failed',
+      text: `Daily relist reminders failed: ${e instanceof Error ? e.message : String(e)}`.slice(0, 600)});
+    throw e;
+  }
+}
+
+async function relistRun(now: number): Promise<number> {
 
   const days = await relistAfterDays();
   const cutoff = now - days * DAY_MS;
@@ -139,7 +162,7 @@ async function relistReminders(now: number): Promise<number> {
     db().collection(USERS).get(),
   ]);
   const accountName = new Map(accounts.docs.map((a) => [a.id, String(a.get('name') || a.id)]));
-  const members = new Set(users.docs.map((u) => u.id));
+  const members = new Set(users.docs.filter((u) => u.get('status') !== 'pending' && u.get('status') !== 'disabled').map((u) => u.id));
 
   const perUser = new Map<string, string[]>();
   const cartUpdates: Array<(b: admin.firestore.WriteBatch) => void> = [];
@@ -184,7 +207,7 @@ async function relistReminders(now: number): Promise<number> {
 }
 
 /** Every 30 minutes: lead follow-up reminders; once a day (after 9am NY) relist reminders. */
-export const mpCrmReminders = onSchedule({schedule: 'every 30 minutes', timeZone: TZ}, async () => {
+export const mpCrmReminders = onSchedule({schedule: 'every 30 minutes', timeZone: TZ, timeoutSeconds: 300}, async () => {
   const now = Date.now();
   try {
     const n = await followUpReminders(now);
@@ -224,7 +247,7 @@ const inc = (m: Map<string, number>, k: string | undefined, by = 1) => {
 };
 
 /** Mondays 08:00 New York: last week's stats → managers (team) + active members (personal). */
-export const mpWeeklyDigest = onSchedule({schedule: 'every monday 08:00', timeZone: TZ}, async () => {
+export const mpWeeklyDigest = onSchedule({schedule: 'every monday 08:00', timeZone: TZ, timeoutSeconds: 300}, async () => {
   const now = Date.now();
   const p = nyParts(now);
   // Midnight (New York) today, then back 7 days. Off by an hour only on DST-change weekends.
@@ -315,6 +338,7 @@ export const mpWeeklyDigest = onSchedule({schedule: 'every monday 08:00', timeZo
 
   const ops: Array<(b: admin.firestore.WriteBatch) => void> = [];
   for (const u of users.docs) {
+    if (u.get('status') === 'pending' || u.get('status') === 'disabled') continue;
     const extra = {source: 'mp_digest', weekKey};
     if (isManagerRole(u.get('role'))) {
       ops.push((b) => b.set(db().collection('notifications').doc(), notification(u.id, 'MP Weekly digest', teamText, extra)));

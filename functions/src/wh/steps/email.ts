@@ -309,7 +309,8 @@ export const whTestEmail = onCall({timeoutSeconds: 60, memory: '256MiB'}, async 
   if (!email.toLowerCase().endsWith('@tigongolfcarts.com')) {
     throw new HttpsError('permission-denied', 'Only @tigongolfcarts.com accounts can send test emails.');
   }
-  const role = (await db().collection('mp_users').doc(req.auth.uid).get()).get('role');
+  const meSnap = await db().collection('mp_users').doc(req.auth.uid).get();
+  const role = meSnap.get('status') === 'pending' || meSnap.get('status') === 'disabled' ? '' : meSnap.get('role');
   if (role !== 'admin' && role !== 'manager') throw new HttpsError('permission-denied', 'Only managers and admins can send test emails.');
 
   const d = (req.data || {}) as Record<string, unknown>;

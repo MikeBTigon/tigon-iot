@@ -7,6 +7,7 @@ import * as logger from 'firebase-functions/logger';
 import {HttpsError, onCall} from 'firebase-functions/v2/https';
 import {onSchedule} from 'firebase-functions/v2/scheduler';
 import * as admin from 'firebase-admin';
+import {isInactiveStatus} from './membership';
 import {createHash} from 'crypto';
 import Anthropic from '@anthropic-ai/sdk';
 
@@ -45,7 +46,7 @@ const cleanBool = (v: unknown): boolean | null => (typeof v === 'boolean' ? v : 
 
 async function roleOf(uid: string): Promise<string | null> {
   const snap = await admin.firestore().collection(USERS).doc(uid).get();
-  return snap.exists ? str(snap.get('role')) || 'sales' : null;
+  return snap.exists && !isInactiveStatus(snap.get('status')) ? str(snap.get('role')) || 'sales' : null;
 }
 
 // ===========================================================================

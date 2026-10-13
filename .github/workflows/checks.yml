@@ -91,6 +91,28 @@ jobs:
         working-directory: tests/rules
         run: npm test
 
+  poster-version:
+    # Reminds you to bump the Chrome extension version (that's what tells people to update it).
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Tigon Poster changed without a version bump?
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if git diff --name-only "$BASE" HEAD | grep -q '^mp-assistant/poster/'; then
+            old=$(git show "$BASE:mp-assistant/poster/manifest.json" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).version))')
+            new=$(node -p "require('./mp-assistant/poster/manifest.json').version")
+            if [ "$old" = "$new" ]; then
+              echo "::warning file=mp-assistant/poster/manifest.json::Tigon Poster changed but its version is still $new - bump \"version\" so people are told to update."
+            else
+              echo "Tigon Poster version $old -> $new"
+            fi
+          fi
+
   preview:
     # Same-repo pull requests only (forks get no secrets).
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository

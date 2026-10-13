@@ -56,8 +56,8 @@ jobs:
             frontend/package-lock.json
             functions/package-lock.json
 
-      # Rebuild the phone app only when something native changed (frontend/android, Capacitor plugins,
-      # capacitor.config.ts, the build script). Otherwise the live APK + version.json are kept as they are.
+      # Rebuild the phone app when the website or anything native changed (the app bundles the website).
+      # Server-only deploys keep the live APK + version.json as they are.
       # A rollback never rebuilds it (older code would build an older, lower-numbered app).
       - name: Does the Android app need a rebuild?
         id: android
@@ -68,7 +68,13 @@ jobs:
         run: |
           if [ -n "$ROLLBACK_REF" ]; then build=false
           elif [ "$FORCE" = "true" ]; then build=true
-          elif [ "$GITHUB_EVENT_NAME" = "push" ]; then build=$(scripts/android-changed.sh "$BEFORE" "$GITHUB_SHA")
+          elif [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            # The phone app carries its own copy of the website, so any change under frontend/ needs a new app.
+            # Server-only changes (functions, rules) keep the live app as it is.
+            if git cat-file -e "$BEFORE^{commit}" 2>/dev/null && ! git diff --quiet "$BEFORE" "$GITHUB_SHA" -- frontend/ capacitor.config.ts scripts/build-android.sh; then build=true
+            elif git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then build=$(scripts/android-changed.sh "$BEFORE" "$GITHUB_SHA")
+            else build=true
+            fi
           else build=false
           fi
           echo "build=$build" >> "$GITHUB_OUTPUT"

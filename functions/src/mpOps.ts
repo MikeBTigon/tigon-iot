@@ -7,6 +7,9 @@ import {HttpsError, onCall} from 'firebase-functions/v2/https';
 import {onSchedule} from 'firebase-functions/v2/scheduler';
 import * as admin from 'firebase-admin';
 import {createHash, randomBytes, randomInt} from 'crypto';
+import {isInactiveStatus} from './membership';
+import {raiseSystemAlert} from './alerts';
+import {notificationExpireAt} from './sales/util';
 
 const USERS = 'mp_users';
 const QUEUE = 'mp_queue';
@@ -29,10 +32,23 @@ const normalizeCode = (c: string) => c.toUpperCase().replace(/[^A-Z0-9]/g, '');
 
 async function mpProfile(uid: string): Promise<Json | null> {
   const snap = await db().collection(USERS).doc(uid).get();
-  return snap.exists ? (snap.data() as Json) : null;
+  // Pending (not approved) / disabled people are treated as having no profile.
+  return snap.exists && !isInactiveStatus(snap.get('status')) ? (snap.data() as Json) : null;
 }
 
 const isManagerRole = (role: unknown) => role === 'admin' || role === 'manager';
+const RANK: Record<string, number> = {admin: 3, manager: 2, sales: 1};
+const rankOf = (role: unknown) => RANK[String(role || 'sales')] || 1;
+
+/**
+ * May `caller` set up a phone that signs in as `target`? Yourself: yes. Admins: anyone. Managers: only salespeople
+ * (a lower role) — never another manager or an admin (the phone would sign in as them).
+ */
+export function canPairFor(callerUid: string, callerRole: unknown, targetUid: string, targetRole: unknown): boolean {
+  if (callerUid === targetUid) return true;
+  if (callerRole === 'admin') return true;
+  return callerRole === 'manager' && rankOf(targetRole) < rankOf(callerRole);
+}
 
 async function audit(actorUid: string, actorName: string, action: string, target: string, details = '') {
   await db().collection(AUDIT).add({actorUid, actorName, action, target, details, ts: Date.now()});
@@ -48,9 +64,15 @@ export const mpCreatePairingCode = onCall(async (req) => {
   const caller = await mpProfile(req.auth.uid);
   if (!caller) throw new HttpsError('permission-denied', 'Set up MP Assistant first');
   const forUserId = typeof req.data?.forUserId === 'string' && req.data.forUserId ? req.data.forUserId : req.auth.uid;
+  let target: Json = caller;
   if (forUserId !== req.auth.uid) {
     if (!isManagerRole(caller.role)) throw new HttpsError('permission-denied', 'Only managers can pair phones for others');
-    if (!(await mpProfile(forUserId))) throw new HttpsError('not-found', 'That user has no MP profile');
+    const t = await mpProfile(forUserId);
+    if (!t) throw new HttpsError('not-found', 'That user has no active MP profile');
+    if (!canPairFor(req.auth.uid, caller.role, forUserId, t.role)) {
+      throw new HttpsError('permission-denied', 'Managers can set up phones only for salespeople. Ask an admin to set up this phone.');
+    }
+    target = t;
   }
 
   // Phone setup details chosen on the computer: phone number (#0003), dealership location, Facebook account.
@@ -89,6 +111,10 @@ export const mpCreatePairingCode = onCall(async (req) => {
     expiresAt,
     used: false,
   });
+  await audit(req.auth.uid, String(caller.name || caller.email || req.auth.uid), 'pairing.created', forUserId,
+    `phone setup code for ${String(target.name || target.email || forUserId)} (${String(target.role || 'sales')}) ` +
+    `made by ${String(caller.name || caller.email || req.auth.uid)} (${String(caller.role || 'sales')})` +
+    `${deviceNumber ? `, phone #${deviceNumber}` : ''}`);
   return {token, code: `${code.slice(0, 4)}-${code.slice(4)}`, expiresAt, qr: `TIGONIOT-PAIR:${token}`};
 });
 
@@ -127,6 +153,13 @@ export const mpPairDevice = onCall(async (req) => {
 
   const user = await admin.auth().getUser(userId);
   const profile = await mpProfile(userId);
+  if (!profile) throw new HttpsError('permission-denied', 'That account is not active in TIGON IOT — ask an admin.');
+  // Re-check who made the code (their role may have changed since).
+  const creatorUid = String(pairing.createdBy || '');
+  const creator = creatorUid ? await mpProfile(creatorUid) : null;
+  if (!creator || !canPairFor(creatorUid, creator.role, userId, profile.role)) {
+    throw new HttpsError('permission-denied', 'This setup code is no longer valid — ask an admin for a new one.');
+  }
   const platform = ['ios', 'android'].includes(d.platform) ? d.platform : 'android';
   const model = String(d.model || '').slice(0, 60);
   const deviceId = `app_${installId}_${userId}`;
@@ -172,15 +205,12 @@ export const mpPairDevice = onCall(async (req) => {
     lastSeen: Date.now(),
   }, {merge: true});
 
-  await audit(userId, profile?.name || user.email || userId, 'device.paired', deviceId,
+  // Server-side audit naming both people: who the phone signs in as, and who made the setup code.
+  await audit(creatorUid, String(creator.name || creator.email || creatorUid), 'device.paired', deviceId,
+    `phone for ${profile.name || user.email || userId} (${String(profile.role || 'sales')}), code made by ` +
+    `${String(creator.name || creator.email || creatorUid)} (${String(creator.role || 'sales')}): ` +
     `${deviceNumber ? `#${deviceNumber} ` : ''}${locationId} ${platform} ${model}`.trim());
-
-  // The setup code was made by a signed-in teammate for this @tigongolfcarts.com account, so the address is
-  // trusted: mark it verified, otherwise the phone would stop at "Verify your email".
-  if (!user.emailVerified && (user.email || '').toLowerCase().endsWith('@tigongolfcarts.com')) {
-    await admin.auth().updateUser(userId, {emailVerified: true})
-      .catch((e) => logger.warn('could not mark email verified', e));
-  }
+  // (Email verification is never changed here — the person verifies their own address.)
 
   // Already signed in as that person on this phone → nothing else to do.
   if (req.auth?.uid === userId) return {customToken: '', deviceId, deviceName};
@@ -290,7 +320,7 @@ export const mpSendQueueItem = onCall(async (req) => {
 });
 
 /** Every 5 minutes: send scheduled items, resend unopened ones, give up after 3 tries. */
-export const mpDispatchQueue = onSchedule({schedule: 'every 5 minutes', timeZone: 'America/New_York'}, async () => {
+export const mpDispatchQueue = onSchedule({schedule: 'every 5 minutes', timeZone: 'America/New_York', timeoutSeconds: 300}, async () => {
   const now = Date.now();
   const open = await db().collection(QUEUE).where('status', 'in', ['queued', 'sent']).get();
   for (const doc of open.docs) {
@@ -300,10 +330,13 @@ export const mpDispatchQueue = onSchedule({schedule: 'every 5 minutes', timeZone
     const lastTry = item.sentAt || 0;
     if (attempts >= MAX_ATTEMPTS) {
       if (now - lastTry > GIVE_UP_AFTER_MS) {
-        await doc.ref.update({
-          status: 'failed', updatedAt: now,
-          lastError: item.lastError || `Not opened after ${MAX_ATTEMPTS} reminders`,
-        });
+        const lastError = item.lastError || `Not opened after ${MAX_ATTEMPTS} reminders`;
+        // Alert now (and mark it alerted in the same batch) — mpMonitor no longer scans failed items.
+        const who = String((await mpProfile(String(item.assignedUserId || '')))?.name || 'Unknown');
+        await raiseAlert({
+          kind: 'post_failed', queueId: doc.id, userId: item.assignedUserId,
+          text: `Post failed: ${item.cartTitle} for ${who} — ${lastError}`,
+        }, `post_failed_${doc.id}`, doc.ref, {status: 'failed', updatedAt: now, lastError, failAlertedAt: now});
       }
       continue;
     }
@@ -321,28 +354,36 @@ export const mpDispatchQueue = onSchedule({schedule: 'every 5 minutes', timeZone
 // Alerts
 // ---------------------------------------------------------------------------
 
-/** Records an alert and drops it into every manager's/admin's IoT notifications (→ phone push). */
-async function raiseAlert(alert: Json) {
+/**
+ * Records an alert (deterministic id → a retry rewrites the same docs, never duplicates) and drops it into every
+ * active manager's/admin's IoT notifications (→ phone push). The "already alerted" flag is written in the same batch.
+ */
+async function raiseAlert(alert: Json, id: string, flagRef: admin.firestore.DocumentReference, flag: Json) {
   const now = Date.now();
-  const ref = await db().collection(ALERTS).add({...alert, createdAt: now});
+  const alertId = id.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 300);
+  const ref = db().collection(ALERTS).doc(alertId);
   const managers = await db().collection(USERS).where('role', 'in', ['admin', 'manager']).get();
   const batch = db().batch();
+  batch.set(ref, {...alert, createdAt: now});
   for (const m of managers.docs) {
-    batch.set(db().collection('notifications').doc(), {
+    if (isInactiveStatus(m.get('status'))) continue;
+    batch.set(db().collection('notifications').doc(`alert_${alertId}_${m.id}`.slice(0, 1400)), {
       targetUserId: m.id,
       sourceDeviceName: 'MP Assistant',
       text: alert.text,
       isHandled: false,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      expireAt: notificationExpireAt(),
       source: 'mp_alert',
-      alertId: ref.id,
+      alertId,
     });
   }
+  batch.set(flagRef, flag, {merge: true});
   await batch.commit();
 }
 
 /** Every 15 minutes: phones not opened for 24h, failed posts, failed DMS syncs. */
-export const mpMonitor = onSchedule({schedule: 'every 15 minutes', timeZone: 'America/New_York'}, async () => {
+export const mpMonitor = onSchedule({schedule: 'every 15 minutes', timeZone: 'America/New_York', timeoutSeconds: 300}, async () => {
   const now = Date.now();
   const names = new Map<string, string>();
   const nameOf = async (uid: string) => {
@@ -360,25 +401,28 @@ export const mpMonitor = onSchedule({schedule: 'every 15 minutes', timeZone: 'Am
     await raiseAlert({
       kind: 'device_offline', deviceId: d.id, userId: p.userId,
       text: `Phone offline: ${p.deviceName} (${await nameOf(p.userId)}) hasn't opened TIGON IOT in ${hours}h.`,
-    });
-    await d.ref.update({offlineAlertAt: now});
+    }, `device_offline_${d.id}_${lastSeen}`, d.ref, {offlineAlertAt: now});
   }
 
-  const failed = await db().collection(QUEUE).where('status', '==', 'failed').get();
-  for (const q of failed.docs) {
-    const item = q.data() as Json;
-    if (item.failAlertedAt) continue;
-    await raiseAlert({
-      kind: 'post_failed', queueId: q.id, userId: item.assignedUserId,
-      text: `Post failed: ${item.cartTitle} for ${await nameOf(item.assignedUserId)}${item.lastError ? ` — ${item.lastError}` : ''}`,
-    });
-    await q.ref.update({failAlertedAt: now});
-  }
-
-  const syncRef = db().doc('mp_meta/sync');
-  const sync = (await syncRef.get()).data() as Json | undefined;
-  if (sync && sync.ok === false && (sync.alertedAt || 0) < (sync.finishedAt || 0)) {
-    await raiseAlert({kind: 'sync_failed', text: `DMS inventory sync failed: ${sync.error || 'unknown error'}`});
-    await syncRef.update({alertedAt: now});
-  }
+  // DMS sync: failed, or no finished run for 3 hours (raised once a day per problem).
+  await checkDmsSync(now);
 });
+
+/** mp_meta/sync: last run failed, or finished more than 3 hours ago → system alert. Returns the health line. */
+export async function checkDmsSync(now = Date.now()): Promise<{ok: boolean; detail: string}> {
+  const sync = (await db().doc('mp_meta/sync').get()).data() as Json | undefined;
+  const finishedAt = Number(sync?.finishedAt || 0);
+  if (sync && sync.ok === false) {
+    const detail = `DMS inventory sync failed: ${sync.error || 'unknown error'}`;
+    await raiseSystemAlert({key: 'dms_sync_failed', title: 'DMS sync failed', text: detail});
+    return {ok: false, detail};
+  }
+  if (!finishedAt || now - finishedAt > 3 * 3_600_000) {
+    const detail = finishedAt ?
+      `DMS inventory sync hasn't finished for ${Math.round((now - finishedAt) / 3_600_000)} hours — carts may be out of date.` :
+      'DMS inventory sync has never finished.';
+    await raiseSystemAlert({key: 'dms_stale', title: 'DMS sync is stale', text: detail});
+    return {ok: false, detail};
+  }
+  return {ok: true, detail: `Last sync ${Math.round((now - finishedAt) / 60_000)} min ago`};
+}

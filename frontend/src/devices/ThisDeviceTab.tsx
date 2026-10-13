@@ -12,6 +12,7 @@ import { deviceDocId } from '../native/deviceSession';
 import { isOnline, seenLabel } from './deviceStatus';
 import { isWanted } from './notificationFilter';
 import DeviceSettingsCards from './DeviceSettingsCards';
+import { useSharedDevices } from './sharedDevices';
 import PhoneAlertsCard from '../native/PhoneAlertsCard';
 import MpDashboardCard from '../mp/components/MpDashboardCard';
 import DeviceSalesCards from '../mp/sales/DeviceSalesCards';
@@ -36,7 +37,6 @@ const ThisDeviceTab: React.FC = () => {
   const isManager = profile?.role === 'admin' || profile?.role === 'manager';
   const native = isNativeApp();
   const [device, setDevice] = useState<DeviceDoc | null | undefined>(undefined);
-  const [choices, setChoices] = useState<DeviceDoc[] | undefined>(undefined);
   const [pick, setPick] = useState(readPick);
   const [loaded, setLoaded] = useState<{ key: string; items: Notification[] } | null>(null);
   const [error, setError] = useState('');
@@ -49,16 +49,14 @@ const ThisDeviceTab: React.FC = () => {
       () => setDevice(null));
   }, [native, currentUser]);
 
-  // Computer: the phones this person may pick from (managers: every phone; others: their own).
-  useEffect(() => {
-    if (native || !currentUser || profile === undefined) return;
-    const q = isManager ? collection(db, 'devices') : query(collection(db, 'devices'), where('userId', '==', currentUser.uid));
-    return onSnapshot(q, (snap) => {
-      const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }) as DeviceDoc).filter((d) => d.status !== 'revoked');
-      list.sort((a, b) => Number(b.userId === currentUser.uid) - Number(a.userId === currentUser.uid) || (b.lastSeen || 0) - (a.lastSeen || 0));
-      setChoices(list);
-    }, (e) => { setChoices([]); setError(e.message); });
-  }, [native, currentUser, profile, isManager]);
+  // Computer: the phones this person may pick from (managers: every phone; others: their own). One shared listener.
+  const shared = useSharedDevices(native || !currentUser || profile === undefined ? null : isManager ? 'all' : currentUser.uid);
+  const choices = useMemo(() => {
+    if (!shared.rows) return undefined;
+    const list = shared.rows.filter((d) => d.status !== 'revoked');
+    list.sort((a, b) => Number(b.userId === currentUser?.uid) - Number(a.userId === currentUser?.uid) || (b.lastSeen || 0) - (a.lastSeen || 0));
+    return list;
+  }, [shared.rows, currentUser?.uid]);
 
   const webDevice = useMemo(() => {
     if (native || !choices) return undefined;
@@ -114,7 +112,7 @@ const ThisDeviceTab: React.FC = () => {
   const unhandled = items ? items.filter((n) => !n.isHandled).length : 0;
   const handled = total - unhandled; // Total = Unhandled + Handled, always.
   const card = (value: number, text: string, bg: string, icon: React.ReactNode) => (
-    <Card sx={{ bgcolor: bg, color: 'white', flex: '1 1 180px' }}>
+    <Card sx={{ bgcolor: bg, color: 'common.white', flex: '1 1 180px' }}>
       <CardContent sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <Box>
           <Typography variant="h3" sx={{ fontWeight: 600 }}>{items ? value : '…'}</Typography>
@@ -141,7 +139,7 @@ const ThisDeviceTab: React.FC = () => {
         )}
         {current && <Chip size="small" color={isOnline(current) ? 'success' : 'default'} label={isOnline(current) ? 'Online' : `Seen ${seenLabel(current)}`} />}
       </Box>
-      {error && <Alert severity="error" sx={{ mb: 2 }}>Could not load notifications: {error}</Alert>}
+      {(error || shared.error) && <Alert severity="error" sx={{ mb: 2 }}>Could not load: {error || shared.error}</Alert>}
       <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', mb: 2 }}>
         {card(total, 'Total notifications', 'primary.light', <NotificationsIcon sx={{ fontSize: 48, opacity: 0.8 }} />)}
         {card(unhandled, 'Unhandled', 'error.main', <Smartphone sx={{ fontSize: 48, opacity: 0.8 }} />)}

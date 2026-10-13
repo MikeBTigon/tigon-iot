@@ -2,6 +2,7 @@
 import * as admin from 'firebase-admin';
 import {randomInt} from 'crypto';
 import {STORE_BY_ID} from '../mpShare';
+import {isInactiveStatus} from '../membership';
 import type {Store} from '../mpShare';
 
 export type Json = Record<string, any>;
@@ -128,7 +129,8 @@ export interface Person {uid: string; name: string; email: string; role: string;
 /** Everyone on the MP team (mp_users). */
 export async function loadPeople(): Promise<Person[]> {
   const snap = await db().collection(C.users).get();
-  return snap.docs.map((d) => ({
+  // Pending (not approved yet) and disabled people never get leads or notifications.
+  return snap.docs.filter((d) => !isInactiveStatus(d.get('status'))).map((d) => ({
     uid: d.id, name: String(d.get('name') || d.get('email') || 'Someone'), email: String(d.get('email') || ''),
     role: String(d.get('role') || 'sales'), location: String(d.get('location') || ''),
   }));
