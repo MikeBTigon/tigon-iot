@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Alert, Box, Button, Chip, CircularProgress, Paper, Table, TableBody, TableCell, TableRow, Typography } from '@mui/material';
-import { ArrowBack, Block, Calculate, CheckCircle, Description, Download, RadioButtonUnchecked, Refresh, RocketLaunch, Send } from '@mui/icons-material';
+import { ArrowBack, Block, Calculate, CheckCircle, Description, Download, IosShare, RadioButtonUnchecked, Refresh, RocketLaunch, Send } from '@mui/icons-material';
 import MpShell from '../components/MpShell';
 import CartPhoto from '../components/CartPhoto';
 import PhotoLightbox from '../components/PhotoLightbox';
@@ -17,6 +17,7 @@ import { formatPrice, hasPhotoIssue, postedTs, timeAgo, workingPhotos } from '..
 import { locationName } from '../constants';
 import { savePhoto, saveAllPhotos } from '../photos';
 import CartSalesPanel from '../sales/CartSalesPanel';
+import QuickShareDialog from '../share/QuickShareDialog';
 import { brandFromMake } from '../finance/financeCalc';
 
 const yes = (b: boolean) => (b ? 'Yes' : 'No');
@@ -27,6 +28,7 @@ const MpCartDetail: React.FC = () => {
   const { carts, cartsLoading, brokenPhotos, userKeys, profile, setPosted, setDoNotPost, refreshCart, userName } = useMp();
   const [lightbox, setLightbox] = useState<number | null>(null);
   const [autoPostOpen, setAutoPostOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const [queuedMsg, setQueuedMsg] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -102,6 +104,7 @@ const MpCartDetail: React.FC = () => {
       <Box sx={{ display: 'flex', gap: 1, mb: 2, flexWrap: 'wrap' }}>
         <Button startIcon={<ArrowBack />} onClick={() => navigate(-1)}>Back</Button>
         <Button startIcon={<Refresh />} onClick={() => refreshCart(cart.docId)}>Refresh</Button>
+        <Button variant="contained" startIcon={<IosShare />} onClick={() => setShareOpen(true)}>Quick share</Button>
       </Box>
       <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2, flexWrap: 'wrap', mb: 2 }}>
         <Box sx={{ flexGrow: 1 }}>
@@ -229,6 +232,7 @@ const MpCartDetail: React.FC = () => {
         <StoreInfo locationId={cart.locationId} />
       </Box>
       <PhotoLightbox cart={cart} photos={photos} index={lightbox} onChange={setLightbox} />
+      <QuickShareDialog cart={cart} open={shareOpen} onClose={() => setShareOpen(false)} />
       <CartSalesPanel cart={cart} />
     </MpShell>
   );
