@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  Alert, Box, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, MenuItem, TextField, Typography,
+  Alert, Box, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, MenuItem, TextField, Typography, useMediaQuery, useTheme,
 } from '@mui/material';
 import { deleteDoc, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../../config/firebase';
@@ -34,8 +34,10 @@ export interface LeadDialogProps {
 
 /** Create / edit a lead, with reply shortcuts (Call, Text, WhatsApp, Email) and Mark sold. */
 export default function LeadDialog(props: LeadDialogProps) {
+  const theme = useTheme();
+  const phone = useMediaQuery(theme.breakpoints.down('sm'));
   return (
-    <Dialog open={props.open} onClose={props.onClose} fullWidth maxWidth="sm">
+    <Dialog open={props.open} onClose={props.onClose} fullWidth maxWidth="sm" fullScreen={phone}>
       {props.open && <LeadBody key={props.lead?.id || 'new'} {...props} />}
     </Dialog>
   );

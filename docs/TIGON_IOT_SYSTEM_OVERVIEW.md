@@ -45,7 +45,7 @@ Only `@tigongolfcarts.com` email accounts can sign up.
 | Deploys | GitHub Action on every push/merge to `main` | `.github/workflows/firebase-deploy.yml` |
 | Browser extension | Chrome MV3 "Tigon Poster (IoT)" | `mp-assistant/poster/` |
 | Photo download proxy | Cloudflare Worker | `mp-assistant/photo-worker/worker.js` |
-| Android app | Separate project (**not in this repo**) | APK served from Firebase Storage |
+| Android app | Capacitor app around the web app (signed in CI; key in GitHub secrets) | `frontend/android/` — APK at `/downloads/tigon-iot.apk` |
 
 ---
 
@@ -227,9 +227,11 @@ T0 National and T1–T14 (Hatfield, Ocean View, Long Pond, Dover, Scranton-Wilke
 
 ## 8. Deploying
 
-- **Automatic:** merging anything into `main` runs **Deploy to Firebase** in GitHub Actions: build website → build functions → deploy hosting, functions and Firestore rules.
-- It logs in with the `FIREBASE_SERVICE_ACCOUNT` repository secret.
-- Progress and errors are in the repo's **Actions** tab.
+- **Automatic:** merging anything into `main` runs **Deploy to Firebase** in GitHub Actions: typecheck + build website → keep or rebuild the Android app → package the Chrome extension → build functions → deploy hosting, functions, Firestore + Storage rules → tag the commit `deploy-YYYYMMDD-HHMM-<sha7>`.
+- **Pull requests** run **Checks** (typecheck, lint, build, functions typecheck, rules tests) and get a 7-day preview website (production data!).
+- **Rollback:** Actions → **Roll back** → `ref` = a deploy tag. What's live: `/build-info.json`.
+- It logs in with the `FIREBASE_SERVICE_ACCOUNT` repository secret; the Android app is signed with the `ANDROID_KEYSTORE_*` secrets.
+- Progress and errors are in the repo's **Actions** tab. Step-by-step fixes: [RUNBOOK.md](RUNBOOK.md).
 
 ---
 
@@ -239,16 +241,19 @@ T0 National and T1–T14 (Hatfield, Ocean View, Long Pond, Dover, Scranton-Wilke
 |---|---|---|
 | 1 | **The live site's newer dashboard code (Today / This Week / This Month / Search by Date, delete button) is not in GitHub.** | Any deploy from GitHub removes those features. Get that code into the repo. |
 | 2 | Settings "Sound" and "Browser notifications" switches **aren't saved** and do nothing. | Misleading to users. |
-| 3 | The Android app's source isn't in this repo. | No history or backup of the app code, and no way to review it alongside the backend. |
-| 4 | Older pages (Dashboard, Devices, Settings, Download) have TypeScript errors from the MUI 7 `Grid` upgrade. The site still builds, but type checks fail. | Harder to catch real bugs. |
-| 5 | Leftover files: an empty file `c` and an old duplicate `src/` folder at the repo root. | Confusing. |
+| 3 | ~~The Android app's source isn't in this repo.~~ **Fixed:** the app is `frontend/android` (Capacitor). | — |
+| 4 | ~~Older pages have TypeScript/lint errors.~~ **Fixed (Harden release):** Devices/Auth lint fixed, Settings rebuilt; the deploy and pull-request checks now run the typecheck. | — |
+| 5 | ~~Leftover files `c`, root `src/`, root `dist/`.~~ **Fixed:** removed; `dist/` is ignored. | — |
 | 6 | Any @tigongolfcarts.com user can create a notification **for any other user** (rules only check the email domain). | Spam or mistakes possible. |
-| 7 | No automated tests, and no checks run on pull requests (only deploy on merge). | Broken code can reach the live site. |
-| 8 | No test/staging Firebase project: every merge goes straight to production. | Risky changes hit users immediately. |
+| 7 | ~~No checks on pull requests.~~ **Fixed:** *Checks* workflow (typecheck, lint, build, functions typecheck, rules tests). | — |
+| 8 | No test/staging Firebase project. **Partly fixed:** pull requests get a preview website, but it uses production data; rollback in one click (`Roll back` workflow). | Risky data changes still hit real data. |
 | 9 | DMS API details were written without being able to test against the real API: response format, how "new vs used" is marked (currently: used unless DMS says otherwise), and the prod default-image folder. | Confirm on the first sync; small fixes may be needed. |
 | 10 | `firebase-functions` package is outdated (deploy warning). | Should be updated before it becomes unsupported. |
 | 11 | Website bundle is one large file (> 500 KB). | Slower first load on phones. |
 | 12 | Default new-cart images open in a tab instead of downloading (the photo worker only proxies cart photos). | Minor inconvenience. |
+| 13 | ~~The Android signing key and its password were committed to git.~~ **Fixed (Oct 2026):** new key kept in GitHub secrets only; every phone reinstalls the app once ([RUNBOOK](RUNBOOK.md#phone-app-updates-and-reinstalls)). | One-time reinstall per phone. |
+| 14 | The legacy IoT functions (`onNotificationCreate`, `cleanupOldNotifications`, …) run from code that isn't in GitHub; `functions/src/index.ts` is an older copy and isn't deployed. | Pull the live source in ([RUNBOOK](RUNBOOK.md#legacy-iot-functions-not-in-this-repo)). |
+| 15 | Phone-app builds only happen when native files change, so website-only changes reach the phone app later. | Run the deploy with **build_android** when phone users need a change. |
 
 ---
 

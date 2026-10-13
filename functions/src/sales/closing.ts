@@ -10,6 +10,7 @@ import {loadSalesSettings} from './settings';
 import {PublicError} from './publicTypes';
 import type {PublicHandler} from './publicTypes';
 import {queueSms} from './outbox';
+import {consentRecord, phoneDailyCap} from './publicGuard';
 import {
   C, DAY_MS, HOUR_MS, MIN_MS, PUBLIC_ORIGIN, cartSummary, clean, db, e164, fill, firstName, leadTemplateData, loadPeople,
   managersFor, notify, nyDateKey, nyParts, nyTime, nyWhen, prettyPhone, storeCity, storeOf,
@@ -105,6 +106,13 @@ const appendNote = (notes: unknown, line: string) => {
   return `${cur ? `${cur}\n` : ''}${stamp}: ${line}`.slice(-4000);
 };
 
+/** Fields a public page may set on an EXISTING lead (links to what the customer just did). Nothing else is touched. */
+export const LINK_FIELDS = new Set([
+  'appointmentId', 'appointmentAt', 'tradeInId', 'tradeValue', 'hasTrade', 'prequalId', 'prequalStatus',
+  'quoteCode', 'quoteSentAt', 'quoteOpenedAt', 'quoteInterestedAt',
+]);
+export const linkPatch = (p: Json) => Object.fromEntries(Object.entries(p || {}).filter(([k, v]) => LINK_FIELDS.has(k) && v !== undefined));
+
 export interface LeadIn {
   name: string;
   /** +1XXXXXXXXXX */
@@ -120,22 +128,31 @@ export interface LeadIn {
   cartTitle?: string;
   /** One line added to the lead's notes. */
   note: string;
-  /** Fields set on the lead (prequalId, tradeValue, appointmentAt, …). */
+  /** Link fields set on the lead (prequalId, tradeValue, appointmentAt, … — see LINK_FIELDS). */
   patch: Json;
+  /** The customer ticked "OK to text me" (consentRecord fields). Saved on a new lead, or on an open lead with the same phone. */
+  consent?: Json;
   /** Notification for the owner. */
   notifyText: string;
   /** Others to notify too (e.g. store managers). */
   alsoNotify?: string[];
 }
 
-/** Attaches to the lead from the link or an open lead with the same phone; otherwise creates a website lead. */
+/**
+ * Attaches to the lead from the link (only when it's this customer's own open lead — same phone) or to an open lead
+ * with the same phone; otherwise creates a website lead. An existing lead only gets a note line and the link fields:
+ * its name, phone, email, status and owner are never changed, and sold/lost leads are never reopened (a new lead is
+ * made instead).
+ */
 export async function attachOrCreateLead(i: LeadIn): Promise<{leadId: string; ownerUid: string; created: boolean}> {
   const now = Date.now();
   const col = db().collection(C.leads);
+  const phone = e164(i.phone);
   let target: {id: string; data: Json} | null = null;
   if (i.leadId) {
     const s = await col.doc(i.leadId).get();
-    if (s.exists) target = {id: s.id, data: s.data() || {}};
+    const d = s.data() || {};
+    if (s.exists && phone && e164(d.phone) === phone && OPEN.has(String(d.status || 'new'))) target = {id: s.id, data: d};
   }
   if (!target) target = await findOpenLeadByPhone(i.phone);
   const people = await loadPeople();
@@ -146,17 +163,12 @@ export async function attachOrCreateLead(i: LeadIn): Promise<{leadId: string; ow
     leadId = target.id;
     const d = target.data;
     ownerUid = String(d.ownerUid || '') || pickOwner(people, i.storeId || String(d.locationId || ''), i.ownerHint);
+    const samePhone = !!phone && e164(d.phone) === phone;
     await col.doc(leadId).update(clean({
-      ...i.patch,
+      ...linkPatch(i.patch),
+      ...(samePhone && i.consent ? i.consent : {}),
       notes: appendNote(d.notes, i.note),
       updatedAt: now,
-      ownerUid: d.ownerUid ? undefined : ownerUid || undefined,
-      locationId: d.locationId ? undefined : i.storeId || undefined,
-      email: d.email ? undefined : i.email || undefined,
-      cartId: d.cartId || !i.cartId ? undefined : i.cartId,
-      cartTitle: d.cartId || !i.cartId ? undefined : i.cartTitle || undefined,
-      // A lost lead that comes back is a live lead again.
-      status: OPEN.has(String(d.status || 'new')) || d.status === 'sold' ? undefined : 'new',
     }));
   } else {
     ownerUid = pickOwner(people, i.storeId || '', i.ownerHint);
@@ -166,7 +178,8 @@ export async function attachOrCreateLead(i: LeadIn): Promise<{leadId: string; ow
     await ref.set(clean({
       name: i.name, phone: prettyPhone(i.phone), email: i.email || '', channel: 'website', source: i.source, status: 'new',
       ownerUid, locationId: i.storeId || '', notes: appendNote('', i.note), cartId: i.cartId || undefined,
-      cartTitle: i.cartId ? i.cartTitle || undefined : undefined, createdAt: now, updatedAt: now, ...i.patch,
+      cartTitle: i.cartId ? i.cartTitle || undefined : undefined, createdAt: now, updatedAt: now, ...linkPatch(i.patch),
+      ...(i.consent || {}),
     }));
   }
   const targets = new Set([ownerUid, ...(i.alsoNotify || [])].filter(Boolean));
@@ -431,6 +444,7 @@ const prequalHandlers: Record<string, PublicHandler> = {
     const downPayment = dollars(b.downPayment, 100000);
     const consent = b.consent === true;
     const storeId = storeIdOf(b.store);
+    await phoneDailyCap('prequal', phone);
     const now = Date.now();
     const ref = db().collection(C.prequal).doc();
     await ref.set(clean({
@@ -441,7 +455,8 @@ const prequalHandlers: Record<string, PublicHandler> = {
       name, phone, email, source: 'prequal', storeId, leadId: docIdOf(b.lead) || undefined,
       note: `Pre-qualification: credit ${CREDIT_LABEL[creditRange]}${monthlyBudget ? `, budget ${money(monthlyBudget)}/mo` : ''}` +
         `${downPayment ? `, ${money(downPayment)} down` : ''}${consent ? ', OK to call/text' : ''}`,
-      patch: clean({prequalId: ref.id, prequalStatus: 'started', smsConsent: consent ? true : undefined}),
+      patch: {prequalId: ref.id, prequalStatus: 'started'},
+      consent: consent ? consentRecord(b, 'pre-qualification form', req.ip) : undefined,
       notifyText: `${name} started a pre-qualification — credit ${CREDIT_LABEL[creditRange]}` +
         `${monthlyBudget ? `, budget ${money(monthlyBudget)}/mo` : ''}. Phone ${prettyPhone(phone)}.`,
     });
@@ -486,6 +501,7 @@ const tradeHandlers: Record<string, PublicHandler> = {
     const rawPhotos = Array.isArray(b.photos) ? b.photos : [];
     if (rawPhotos.length > MAX_PHOTOS) throw new PublicError(400, `Up to ${MAX_PHOTOS} photos, please.`);
     const photos = rawPhotos.map(decodePhoto);
+    await phoneDailyCap('trade', phone);
     const est = tradeEstimate({year, brand, condition, electric, batteryYear, lifted}, s.tradeIn, nowYear);
     const now = Date.now();
     const ref = db().collection(C.tradeIns).doc();
@@ -506,6 +522,7 @@ const tradeHandlers: Record<string, PublicHandler> = {
       name, phone, email, source: 'trade_in', storeId, leadId: docIdOf(b.lead) || undefined,
       note: `Trade-in: ${title} (${condition}${lifted ? ', lifted' : ''}${electric ? `, electric${batteryYear ? `, battery ${batteryYear}` : ''}` : ', gas'}) — estimate ${money(est.low)}–${money(est.high)}`,
       patch: {hasTrade: true, tradeInId: ref.id, tradeValue: est.mid},
+      consent: b.consent === true ? consentRecord(b, 'trade-in form', req.ip) : undefined,
       notifyText: `${name} sent a trade-in: ${title}, ${condition}. Estimate ${money(est.low)}–${money(est.high)}${urls.length ? `, ${urls.length} photo${urls.length > 1 ? 's' : ''}` : ''}. Phone ${prettyPhone(phone)}.`,
     });
     await ref.update({leadId: r.leadId, ownerUid: r.ownerUid});
@@ -561,6 +578,7 @@ const bookingHandlers: Record<string, PublicHandler> = {
     const phone = reqPhone(b.phone);
     const email = optEmail(b.email);
     const notes = str(b.notes, 300);
+    await phoneDailyCap('booking', phone);
     let cartId = docIdOf(b.cart);
     let cartTitle = '';
     if (cartId) {
@@ -590,7 +608,7 @@ const bookingHandlers: Record<string, PublicHandler> = {
       const mine = active.find((d) => e164(d.get('phone')) === phone);
       if (mine) return mine.id; // pressed "Book" twice
       if (active.length >= cap) throw new PublicError(409, 'Sorry, that time just filled up. Please pick another time.');
-      tx.set(lockRef, {count: active.length + 1, at: now, expireAt: start + DAY_MS});
+      tx.set(lockRef, {count: active.length + 1, at: now, expireAt: admin.firestore.Timestamp.fromMillis(start + DAY_MS)});
       tx.set(apptRef, clean({
         storeId, name, phone, email: email || undefined, kind, cartId: cartId || undefined, cartTitle: cartTitle || undefined,
         startAt: start, endAt: start + step * MIN_MS, dateKey: date, status: 'booked', source: 'public', notes: notes || undefined,
@@ -606,6 +624,7 @@ const bookingHandlers: Record<string, PublicHandler> = {
         name, phone, email, source: 'booking', storeId, leadId: leadHint || undefined, ownerHint: ownerHint || undefined,
         cartId: cartId || undefined, cartTitle, note: `Booked a ${KIND_LABEL[kind]} for ${when} at ${city}${cartTitle ? ` (${cartTitle})` : ''}${notes ? ` — ${notes}` : ''}`,
         patch: {appointmentId: apptRef.id, appointmentAt: start},
+        consent: b.consent === true ? consentRecord(b, 'booking form', req.ip) : undefined,
         notifyText: `New ${KIND_LABEL[kind]} booked: ${name}, ${when} at ${city}${cartTitle ? ` — ${cartTitle}` : ''}. Phone ${prettyPhone(phone)}.`,
         alsoNotify: managersFor(people, storeId).filter((p) => p.location === storeId).map((p) => p.uid),
       });
@@ -636,7 +655,10 @@ export function dayBeforeAt(a: {startAt: number; createdAt: number}): number | n
 
 export async function appointmentTick(now: number, s: SalesSettings): Promise<void> {
   const col = db().collection(C.appointments);
-  const [booked, noShows] = await Promise.all([col.where('status', '==', 'booked').get(), col.where('status', '==', 'no_show').get()]);
+  // One range on one field (single-field index): everything from the last 7 days on, then split by status here.
+  const recent = await col.where('startAt', '>=', now - 7 * DAY_MS).get();
+  const booked = {docs: recent.docs.filter((d) => d.get('status') === 'booked')};
+  const noShows = {docs: recent.docs.filter((d) => d.get('status') === 'no_show')};
   let people: Person[] | null = null;
   const nameOf = async (uid: string) => {
     people = people || await loadPeople();

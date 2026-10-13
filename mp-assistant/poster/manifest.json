@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Tigon Poster (IoT)",
   "short_name": "Tigon Poster",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "Fills the Facebook Marketplace vehicle form and uploads the photos from TIGON IOT (Copy to Marketplace). Never auto-posts.",
   "permissions": [
     "storage"

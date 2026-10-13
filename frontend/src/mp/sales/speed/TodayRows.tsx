@@ -9,12 +9,14 @@ import { sendText } from '../salesData';
 import { claimLead, setTaskStatus, type TodayRow } from './speedData';
 import { needsClaim } from './speedUtil';
 import SpeedChip from './SpeedChip';
+import { useT } from '../../../i18n';
 
 const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 export const TodayRowItem: React.FC<{
   row: TodayRow; now: number; marks: number[]; onOpenLead: (id: string) => void; compact?: boolean;
 }> = ({ row, now, marks, onOpenLead, compact }) => {
+  const t = useT();
   const { profile } = useMp();
   const [busy, setBusy] = useState(false);
   const me = profile?.uid || '';
@@ -43,11 +45,11 @@ export const TodayRowItem: React.FC<{
 
   const text = () => {
     if (task?.suggestedText && row.phone) {
-      if (!window.confirm(`Send this text to ${row.phone}?\n\n${task.suggestedText}`)) return;
+      if (!window.confirm(t('today.confirmText', { phone: row.phone, text: task.suggestedText }))) return;
       run(async () => {
         await sendText({ to: row.phone, body: task.suggestedText || '', createdBy: me, leadId: task.leadId || lead?.id, storeId: lead?.locationId });
         if (canEditTask) await setTaskStatus(task, 'done');
-      }, 'Text on its way');
+      }, t('today.textSent'));
       return;
     }
     if (lead) onOpenLead(lead.id);
@@ -72,25 +74,25 @@ export const TodayRowItem: React.FC<{
         {row.section === 'new' && lead && <SpeedChip lead={lead} now={now} marks={marks} showAnswered={false} />}
         {due > 0 && (
           <Chip size="small" color={overdue ? 'error' : 'warning'} variant={overdue ? 'filled' : 'outlined'}
-            label={overdue ? `Overdue · ${shortDateTime(due)}` : `Due ${new Date(due).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`} />
+            label={overdue ? t('today.overdue', { when: shortDateTime(due) }) : t('today.due', { time: new Date(due).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) })} />
         )}
-        {row.section === 'quotes' && <Chip size="small" color="info" label={`Opened ${shortDateTime(row.at)}`} />}
+        {row.section === 'quotes' && <Chip size="small" color="info" label={t('today.opened', { when: shortDateTime(row.at) })} />}
       </Box>
       <Box sx={{ display: 'flex', gap: 0.75, flexWrap: 'wrap', mt: 0.75 }}>
         {claimable && (
           <Button size="small" variant="contained" color="warning" startIcon={<PanTool />} disabled={busy}
-            onClick={() => run(() => claimLead(lead), 'Claimed — it\'s yours')}>Claim</Button>
+            onClick={() => run(() => claimLead(lead), t('today.claimed'))}>{t('today.claim')}</Button>
         )}
-        {row.phone && <Button size="small" variant="outlined" startIcon={<Phone />} disabled={busy} onClick={call}>Call</Button>}
+        {row.phone && <Button size="small" variant="outlined" startIcon={<Phone />} disabled={busy} onClick={call}>{t('today.call')}</Button>}
         {(task?.suggestedText ? !!row.phone : !!lead) && (
-          <Button size="small" variant="outlined" startIcon={<Sms />} disabled={busy} onClick={text}>Text</Button>
+          <Button size="small" variant="outlined" startIcon={<Sms />} disabled={busy} onClick={text}>{t('today.text')}</Button>
         )}
         {task && canEditTask && (
           <>
             <Button size="small" color="success" startIcon={<Check />} disabled={busy}
-              onClick={() => run(() => setTaskStatus(task, 'done'), 'Done')}>Done</Button>
+              onClick={() => run(() => setTaskStatus(task, 'done'), t('today.done'))}>{t('today.done')}</Button>
             <Button size="small" color="inherit" startIcon={<SkipNext />} disabled={busy}
-              onClick={() => run(() => setTaskStatus(task, 'skipped'))}>Skip</Button>
+              onClick={() => run(() => setTaskStatus(task, 'skipped'))}>{t('today.skip')}</Button>
           </>
         )}
       </Box>

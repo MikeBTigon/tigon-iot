@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { doc, getDoc } from 'firebase/firestore';
 import {
   Alert, Box, Button, Chip, CircularProgress, FormControl, InputLabel, MenuItem, Paper, Select, TextField, Typography,
@@ -12,9 +12,8 @@ import { LEGACY_USERS } from '../constants';
 import { timeAgo } from '../cartUtils';
 import { useMp } from '../MpDataContext';
 import { useT } from '../../i18n';
-import MpNav, { BOTTOM_NAV_HEIGHT } from '../../ui/MpNav';
-import SetupBanner from '../../ui/onboarding/SetupBanner';
 import HelpTip from '../help/HelpTip';
+import { pageHelpFor } from '../help/pageHelp';
 
 const ROLE_KEYS: Record<string, string> = { admin: 'shell.roleAdmin', manager: 'shell.roleManager', sales: 'shell.roleSales' };
 
@@ -85,12 +84,14 @@ export const ProfileSetup: React.FC<{ editing?: boolean; onDone?: () => void }> 
 };
 
 /**
- * Frame for every signed-in MP Assistant page: profile setup gate, header chips (carts, DMS sync, you),
- * section navigation (mp/navRegistry), the "Finish setup" banner, and the page body.
+ * Frame for every signed-in MP Assistant page: profile setup gate, header (title, and on tablets/computers the
+ * cart count, DMS sync and "you" chips — on phones those live in the account menu), the page help "?", and the page body.
+ * The menu itself is the app drawer (DashboardLayout), built from mp/navRegistry.
  */
 const MpShell: React.FC<{ children: React.ReactNode; adminOnly?: boolean }> = ({ children, adminOnly }) => {
   const t = useT();
   const navigate = useNavigate();
+  const { pathname } = useLocation();
   const { profile, isAdmin, carts, cartsLoading, cartsError, ensureCartsLoaded, syncStatus } = useMp();
 
   useEffect(() => {
@@ -104,38 +105,36 @@ const MpShell: React.FC<{ children: React.ReactNode; adminOnly?: boolean }> = ({
 
   return (
     <DashboardLayout>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1, flexWrap: 'wrap' }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 2, flexWrap: 'wrap' }}>
         <Storefront color="primary" aria-hidden />
         <Typography variant="h4" component="h1" color="primary" sx={{ flexGrow: 1, fontSize: { xs: '1.35rem', sm: '1.5rem' } }}>
           {t('shell.title')}
         </Typography>
         {profile && (
           <>
-            <Chip label={`${t('shell.carts', { count: carts.length })}${cartsLoading ? '+' : ''}`} variant="outlined" />
-            {syncStatus?.finishedAt && (
+            <Box sx={{ display: { xs: 'none', sm: 'flex' }, alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+              <Chip label={`${t('shell.carts', { count: carts.length })}${cartsLoading ? '+' : ''}`} variant="outlined" />
+              {syncStatus?.finishedAt && (
+                <Chip
+                  size="small"
+                  color={syncStatus.ok ? 'default' : 'error'}
+                  label={syncStatus.ok ? t('shell.dmsSynced', { ago: timeAgo(syncStatus.finishedAt) }) : t('shell.dmsFailed')}
+                  title={syncStatus.error || syncStatus.warning || ''}
+                />
+              )}
               <Chip
-                size="small"
-                color={syncStatus.ok ? 'default' : 'error'}
-                label={syncStatus.ok ? t('shell.dmsSynced', { ago: timeAgo(syncStatus.finishedAt) }) : t('shell.dmsFailed')}
-                title={syncStatus.error || syncStatus.warning || ''}
+                label={`${profile.name} · ${ROLE_KEYS[profile.role] ? t(ROLE_KEYS[profile.role]) : profile.role}`}
+                color={profile.role === 'sales' ? 'default' : 'primary'}
+                onClick={() => navigate('/settings')}
+                aria-label={`${t('shell.editProfile')}: ${profile.name}`}
               />
-            )}
-            <Chip
-              label={`${profile.name} · ${ROLE_KEYS[profile.role] ? t(ROLE_KEYS[profile.role]) : profile.role}`}
-              color={profile.role === 'sales' ? 'default' : 'primary'}
-              onClick={() => navigate('/mp/profiles?me=1')}
-              aria-label={`${t('shell.editProfile')}: ${profile.name}`}
-            />
-            <HelpTip article="post-3-taps" />
+            </Box>
+            <HelpTip article={pageHelpFor(pathname) ?? 'post-3-taps'} />
           </>
         )}
       </Box>
-      {profile && <MpNav role={profile.role} />}
-      {profile && <SetupBanner />}
       {cartsError && <Alert severity="error" sx={{ mb: 2 }}>{cartsError}</Alert>}
       {body}
-      {/* Room for the phone bottom bar so it never covers the end of the page. */}
-      {profile && <Box aria-hidden sx={{ display: { xs: 'block', sm: 'none' }, height: BOTTOM_NAV_HEIGHT }} />}
     </DashboardLayout>
   );
 };

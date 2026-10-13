@@ -67,3 +67,15 @@ node_modules/
 
 # dataconnect generated files
 .dataconnect
+
+# Build output (the deploy workflow builds dist/ from frontend/dist)
+/dist/
+firestore-debug.log
+storage-debug.log
+ui-debug.log
+
+# Android release signing key: NEVER commit it (CI gets it from the ANDROID_KEYSTORE_* secrets)
+*.keystore
+*.jks
+keystore.properties
+frontend/android/app/google-services.json

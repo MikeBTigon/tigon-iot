@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Link as RouterLink, useNavigate, useLocation } from 'react-router-dom';
 import {
   Box,
+  Collapse,
   Drawer,
   AppBar,
   Toolbar,
@@ -13,7 +14,6 @@ import {
   ListItemButton,
   ListItemIcon,
   ListItemText,
-  ListSubheader,
   Avatar,
   Menu,
   MenuItem,
@@ -23,36 +23,20 @@ import {
 import { alpha } from '@mui/material/styles';
 import {
   Menu as MenuIcon,
-  Dashboard as DashboardIcon,
-  Devices as DevicesIcon,
-  Settings as SettingsIcon,
-  Download as DownloadIcon,
-  RateReview as RequestIcon,
-  Storefront as StorefrontIcon,
   Logout as LogoutIcon,
   AccountCircle,
-  AddAPhoto,
-  ListAlt,
-  PersonSearch,
-  Calculate,
-  Today as TodayIcon,
   Search as SearchIcon,
   DarkMode,
   LightMode,
   TextIncrease,
   Translate,
   Check,
-  HelpOutline,
-  Insights,
-  AddLink,
-  Language as WebsiteIcon,
-  Webhook,
-  AccountTree,
-  Inbox,
-  Email,
-  Tune,
-  NotificationImportant,
-  People as PeopleIcon,
+  ExpandLess,
+  ExpandMore,
+  Person,
+  Settings as SettingsIcon,
+  CloudSync,
+  DirectionsCar,
 } from '@mui/icons-material';
 import { useAuth } from '../../context/AuthContext';
 import { isNativeApp } from '../../native/platform';
@@ -60,42 +44,40 @@ import { disablePhoneAlerts } from '../../native/phoneAlerts';
 import { LANGUAGES, useLanguage, useT } from '../../i18n';
 import { useThemeMode } from '../../ui/themeModeContext';
 import { useSetLanguage } from '../../ui/useSetLanguage';
-import { activeNavPath } from '../../ui/navUtils';
+import { activeNavPath, groupOf, navLabel, visibleNav } from '../../ui/navUtils';
+import { groupIcon, navIcon } from '../../ui/navIcons';
+import { readLocal, writeLocal } from '../../ui/prefs';
 import GlobalSearch from '../../ui/GlobalSearch';
 import OfflineBanner from '../../ui/OfflineBanner';
 import NotifyHost from '../../ui/NotifyHost';
 import UpdateBanner from '../../native/UpdateBanner';
 import AnnouncementBanner from '../../ui/AnnouncementBanner';
+import SetupBanner from '../../ui/onboarding/SetupBanner';
+import MpNav, { BOTTOM_NAV_HEIGHT } from '../../ui/MpNav';
 import { useMp } from '../../mp/MpDataContext';
-import { WH_NAV, activeWhPath } from '../../wh/nav';
+import { timeAgo } from '../../mp/cartUtils';
 
-const WH_ICONS: Record<string, React.ReactNode> = {
-  '/wh': <Insights />,
-  '/wh/triage': <NotificationImportant />,
-  '/wh/new': <AddLink />,
-  '/wh/websites': <WebsiteIcon />,
-  '/wh/webhooks': <Webhook />,
-  '/wh/flows': <AccountTree />,
-  '/wh/submissions': <Inbox />,
-  '/wh/templates': <Email />,
-  '/wh/settings': <Tune />,
-};
-
-const drawerWidth = 240;
+const drawerWidth = 248;
+const OPEN_KEY = 'tigon.navOpenGroups';
+const ROLE_KEYS: Record<string, string> = { admin: 'shell.roleAdmin', manager: 'shell.roleManager', sales: 'shell.roleSales' };
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
 }
 
-interface NavEntry {
-  text: string;
-  icon: React.ReactNode;
-  path: string;
-}
+const readOpen = (): string[] => {
+  try {
+    const v = JSON.parse(readLocal(OPEN_KEY) || '[]');
+    return Array.isArray(v) ? v.filter((x) => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
+};
 
-/** Marketplace shortcuts that get their own sidebar entry (the rest of /mp/* highlights "MP Assistant"). */
-const MP_SHORTCUTS = ['/mp/today', '/mp/new', '/mp/queue', '/mp/leads', '/mp/finance'];
-
+/**
+ * Signed-in app frame: top bar (search, account menu), the ONE grouped menu from mp/navRegistry
+ * (left drawer; on phones a bottom bar with More → the same drawer), banners (one at a time) and the page.
+ */
 const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
   const t = useT();
   const lang = useLanguage();
@@ -106,9 +88,21 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
   const [langAnchor, setLangAnchor] = useState<null | HTMLElement>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const { currentUser, logout } = useAuth();
-  const { profile } = useMp();
+  const { profile, carts, cartsLoading, syncStatus } = useMp();
   const navigate = useNavigate();
   const location = useLocation();
+
+  const groups = useMemo(() => visibleNav(profile?.role), [profile?.role]);
+  const active = activeNavPath(location.pathname);
+  const activeGroup = groupOf(active)?.key;
+  // Groups the person opened (remembered on this device); the current page's group starts open.
+  const [overrides, setOverrides] = useState<Record<string, boolean>>(() => Object.fromEntries(readOpen().map((k) => [k, true])));
+  const isOpen = (key: string) => overrides[key] ?? key === activeGroup;
+  const toggleGroup = (key: string) => {
+    const next = { ...overrides, [key]: !isOpen(key) };
+    setOverrides(next);
+    writeLocal(OPEN_KEY, JSON.stringify(Object.keys(next).filter((k) => next[k])));
+  };
 
   // Ctrl+K / Cmd+K opens global search.
   useEffect(() => {
@@ -122,19 +116,8 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  const handleDrawerToggle = () => {
-    setMobileOpen(!mobileOpen);
-  };
-
-  const handleMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
-    setAnchorEl(event.currentTarget);
-  };
-
-  const handleMenuClose = () => {
-    setAnchorEl(null);
-  };
-
   const handleLogout = async () => {
+    setAnchorEl(null);
     try {
       // A signed-out phone must stop receiving this user's alerts.
       if (isNativeApp() && currentUser) await disablePhoneAlerts(currentUser.uid).catch(() => undefined);
@@ -145,77 +128,11 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
     }
   };
 
-  const canSeeUsers = profile?.role === 'admin' || profile?.role === 'manager';
-  const menuItems: NavEntry[] = [
-    { text: t('layout.dashboard'), icon: <DashboardIcon />, path: '/dashboard' },
-    { text: t('layout.devices'), icon: <DevicesIcon />, path: '/devices' },
-    // People who use TIGON IOT, their phones and online hours (managers and admins).
-    ...(canSeeUsers ? [{ text: 'Users', icon: <PeopleIcon />, path: '/users' }] : []),
-    { text: t('layout.settings'), icon: <SettingsIcon />, path: '/settings' },
-    // Bug reports and feature ideas from anyone; admins see every request on the same page.
-    { text: t('layout.requestChange'), icon: <RequestIcon />, path: '/requests' },
-    { text: t('layout.download'), icon: <DownloadIcon />, path: '/download' },
-  ];
-
-  // Parallel module: Facebook Marketplace posting (Tigon MP Assistant) + its most-used pages.
-  const marketplaceItems: NavEntry[] = [
-    { text: t('layout.mpAssistant'), icon: <StorefrontIcon />, path: '/mp' },
-    { text: t('nav.today'), icon: <TodayIcon />, path: '/mp/today' },
-    { text: t('nav.new'), icon: <AddAPhoto />, path: '/mp/new' },
-    { text: t('nav.queue'), icon: <ListAlt />, path: '/mp/queue' },
-    { text: t('nav.leads'), icon: <PersonSearch />, path: '/mp/leads' },
-    { text: t('nav.calculator'), icon: <Calculate />, path: '/mp/finance' },
-    { text: t('nav.help'), icon: <HelpOutline />, path: '/mp/help' },
-  ];
-
-  // Webhook Flows (website forms → email / Sheets / DMS / GA4): managers and admins.
-  const isMpManager = profile?.role === 'admin' || profile?.role === 'manager';
-  const webhookItems: NavEntry[] = isMpManager
-    ? WH_NAV.filter((i) => !i.admin || profile?.role === 'admin')
-      .map((i) => ({ text: i.label, icon: WH_ICONS[i.path], path: i.path }))
-    : [];
-
-  const activeMp = activeNavPath(location.pathname);
-  const isSelected = (path: string) => {
-    if (path === '/wh' || path.startsWith('/wh/')) return activeWhPath(location.pathname) === path;
-    if (path === '/mp') {
-      return (location.pathname === '/mp' || location.pathname.startsWith('/mp/'))
-        && !MP_SHORTCUTS.includes(activeMp) && activeMp !== '/mp/help';
-    }
-    if (path.startsWith('/mp/')) return activeMp === path;
-    if (path === '/users') return location.pathname === '/users' || location.pathname.startsWith('/users/');
-    return location.pathname === path;
+  const go = (path: string) => {
+    setAnchorEl(null);
+    setMobileOpen(false);
+    navigate(path);
   };
-
-  const renderNavItems = (items: NavEntry[]) =>
-    items.map((item) => {
-      const selected = isSelected(item.path);
-      return (
-        <ListItem key={item.path} disablePadding>
-          <ListItemButton
-            selected={selected}
-            aria-current={selected ? 'page' : undefined}
-            onClick={() => {
-              navigate(item.path);
-              setMobileOpen(false);
-            }}
-            sx={{
-              '&.Mui-selected': {
-                backgroundColor: (th) => alpha(th.palette.primary.main, 0.14),
-                '&:hover': {
-                  backgroundColor: (th) => alpha(th.palette.primary.main, 0.22),
-                },
-              },
-            }}
-          >
-            <ListItemIcon sx={{ color: selected ? 'primary.main' : 'inherit' }}>
-              {item.icon}
-            </ListItemIcon>
-            <ListItemText primary={item.text} slotProps={{ primary: { sx: { fontWeight: selected ? 600 : 400 } } }} />
-          </ListItemButton>
-        </ListItem>
-      );
-    });
 
   const drawer = (
     <nav aria-label={t('layout.mainNav')}>
@@ -225,35 +142,62 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
         </Typography>
       </Toolbar>
       <Divider />
-      <List>
-        {renderNavItems(menuItems)}
+      <List dense disablePadding sx={{ pb: 2 }}>
+        {groups.map((g) => {
+          const open = isOpen(g.key);
+          const single = g.items.length === 1;
+          const listId = `nav-group-${g.key.replace(/\W/g, '-')}`;
+          // A one-page group (Today) is a plain link, no expand arrow.
+          const renderItem = (i: (typeof g.items)[number], nested: boolean) => {
+            const selected = i.path === active;
+            return (
+              <ListItem key={i.path} disablePadding>
+                <ListItemButton
+                  component={RouterLink}
+                  to={i.path}
+                  selected={selected}
+                  aria-current={selected ? 'page' : undefined}
+                  onClick={() => setMobileOpen(false)}
+                  sx={{
+                    pl: nested ? 3 : 2,
+                    minHeight: 40,
+                    '&.Mui-selected': {
+                      backgroundColor: (th) => alpha(th.palette.primary.main, 0.14),
+                      '&:hover': { backgroundColor: (th) => alpha(th.palette.primary.main, 0.22) },
+                    },
+                  }}
+                >
+                  <ListItemIcon sx={{ minWidth: 40, color: selected ? 'primary.main' : 'inherit' }}>{navIcon(i.path)}</ListItemIcon>
+                  <ListItemText primary={navLabel(t, i)} slotProps={{ primary: { sx: { fontWeight: selected || single ? 600 : 400 } } }} />
+                </ListItemButton>
+              </ListItem>
+            );
+          };
+          if (single) return <React.Fragment key={g.key}>{renderItem(g.items[0], false)}</React.Fragment>;
+          return (
+            <React.Fragment key={g.key}>
+              <ListItemButton
+                onClick={() => toggleGroup(g.key)}
+                aria-expanded={open}
+                aria-controls={listId}
+                sx={{ minHeight: 40 }}
+              >
+                <ListItemIcon sx={{ minWidth: 40, color: g.key === activeGroup ? 'primary.main' : 'text.secondary' }}>{groupIcon(g.key)}</ListItemIcon>
+                <ListItemText
+                  primary={t(g.key, g.label)}
+                  slotProps={{ primary: { sx: { fontWeight: 600, textTransform: 'uppercase', fontSize: '0.75rem', letterSpacing: 0.8 } } }}
+                />
+                {open ? <ExpandLess fontSize="small" /> : <ExpandMore fontSize="small" />}
+              </ListItemButton>
+              <Collapse in={open} timeout="auto" unmountOnExit>
+                <List id={listId} dense disablePadding>
+                  {g.items.map((i) => renderItem(i, true))}
+                </List>
+              </Collapse>
+            </React.Fragment>
+          );
+        })}
       </List>
-      <Divider />
-      <List
-        sx={{ pt: 0 }}
-        subheader={
-          <ListSubheader component="div" sx={{ lineHeight: '32px', pt: 1, textTransform: 'uppercase', fontSize: '0.75rem', letterSpacing: 1 }}>
-            {t('layout.marketplace')}
-          </ListSubheader>
-        }
-      >
-        {renderNavItems(marketplaceItems)}
-      </List>
-      {webhookItems.length > 0 && (
-        <>
-          <Divider />
-          <List
-            sx={{ pt: 0 }}
-            subheader={
-              <ListSubheader component="div" sx={{ lineHeight: '32px', pt: 1, textTransform: 'uppercase', fontSize: '0.75rem', letterSpacing: 1 }}>
-                {t('layout.webhookFlows')}
-              </ListSubheader>
-            }
-          >
-            {renderNavItems(webhookItems)}
-          </List>
-        </>
-      )}
     </nav>
   );
 
@@ -262,6 +206,8 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
     setLangAnchor(null);
     setAnchorEl(null);
   };
+
+  const roleLabel = profile ? (ROLE_KEYS[profile.role] ? t(ROLE_KEYS[profile.role]) : profile.role) : '';
 
   return (
     <Box sx={{ display: 'flex' }}>
@@ -280,7 +226,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
           <IconButton
             color="inherit"
             edge="start"
-            onClick={handleDrawerToggle}
+            onClick={() => setMobileOpen(!mobileOpen)}
             aria-label={t('layout.openMenu')}
             sx={{ mr: 2, display: { sm: 'none' } }}
           >
@@ -296,10 +242,10 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
               </IconButton>
             </Tooltip>
             <Typography variant="body2" sx={{ display: { xs: 'none', md: 'block' } }}>
-              {currentUser?.email}
+              {profile?.name || currentUser?.email}
             </Typography>
             <IconButton
-              onClick={handleMenuOpen}
+              onClick={(e) => setAnchorEl(e.currentTarget)}
               color="inherit"
               aria-label={t('layout.accountMenu')}
               aria-haspopup="menu"
@@ -315,11 +261,30 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
             id="account-menu"
             anchorEl={anchorEl}
             open={Boolean(anchorEl)}
-            onClose={handleMenuClose}
+            onClose={() => setAnchorEl(null)}
           >
-            <MenuItem disabled>
-              <Typography variant="body2">{currentUser?.email}</Typography>
+            <MenuItem onClick={() => go('/settings')}>
+              <ListItemIcon><Person fontSize="small" /></ListItemIcon>
+              <ListItemText
+                primary={profile ? `${profile.name} · ${roleLabel}` : currentUser?.email}
+                secondary={profile ? currentUser?.email : undefined}
+              />
             </MenuItem>
+            {profile && (
+              <MenuItem disabled sx={{ '&.Mui-disabled': { opacity: 1 } }}>
+                <ListItemIcon><DirectionsCar fontSize="small" /></ListItemIcon>
+                <ListItemText secondary={`${t('shell.carts', { count: carts.length })}${cartsLoading ? '+' : ''}`} />
+              </MenuItem>
+            )}
+            {profile && syncStatus?.finishedAt && (
+              <MenuItem disabled sx={{ '&.Mui-disabled': { opacity: 1 } }}>
+                <ListItemIcon><CloudSync fontSize="small" color={syncStatus.ok ? 'inherit' : 'error'} /></ListItemIcon>
+                <ListItemText
+                  secondary={syncStatus.ok ? t('shell.dmsSynced', { ago: timeAgo(syncStatus.finishedAt) }) : t('shell.dmsFailed')}
+                  slotProps={{ secondary: { color: syncStatus.ok ? 'text.secondary' : 'error' } }}
+                />
+              </MenuItem>
+            )}
             <Divider />
             <MenuItem onClick={() => setMode(resolved === 'dark' ? 'light' : 'dark')}>
               <ListItemIcon>
@@ -353,6 +318,10 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
               <ListItemIcon><Translate fontSize="small" /></ListItemIcon>
               <ListItemText secondary={LANGUAGES.find((l) => l.code === lang)?.label}>{t('prefs.language')}</ListItemText>
             </MenuItem>
+            <MenuItem onClick={() => go('/settings')}>
+              <ListItemIcon><SettingsIcon fontSize="small" /></ListItemIcon>
+              <ListItemText>{t('nav.settings')}</ListItemText>
+            </MenuItem>
             <Divider />
             <MenuItem onClick={handleLogout}>
               <ListItemIcon>
@@ -385,11 +354,11 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
         <Drawer
           variant="temporary"
           open={mobileOpen}
-          onClose={handleDrawerToggle}
+          onClose={() => setMobileOpen(false)}
           ModalProps={{ keepMounted: true }}
           sx={{
             display: { xs: 'block', sm: 'none' },
-            '& .MuiDrawer-paper': { boxSizing: 'border-box', width: drawerWidth, pt: 'env(safe-area-inset-top)' },
+            '& .MuiDrawer-paper': { boxSizing: 'border-box', width: drawerWidth, pt: 'env(safe-area-inset-top)', pb: 'env(safe-area-inset-bottom)' },
           }}
         >
           {drawer}
@@ -413,15 +382,23 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
           width: { sm: `calc(100% - ${drawerWidth}px)` },
           minWidth: 0,
           mt: 'calc(64px + env(safe-area-inset-top))',
-          pb: 'calc(24px + env(safe-area-inset-bottom))',
+          // Room for the phone bottom bar so it never covers the end of the page.
+          pb: profile
+            ? { xs: `calc(${BOTTOM_NAV_HEIGHT + 24}px + env(safe-area-inset-bottom))`, sm: 'calc(24px + env(safe-area-inset-bottom))' }
+            : 'calc(24px + env(safe-area-inset-bottom))',
         }}
       >
         <OfflineBanner />
         <NotifyHost />
-        <UpdateBanner />
-        <AnnouncementBanner />
+        {/* At most one banner at a time: a slot that rendered something hides the slots after it. */}
+        <Box sx={{ '& > .banner-slot:not(:empty) ~ .banner-slot': { display: 'none' } }}>
+          <div className="banner-slot"><UpdateBanner /></div>
+          <div className="banner-slot"><AnnouncementBanner /></div>
+          <div className="banner-slot">{profile && <SetupBanner />}</div>
+        </Box>
         {children}
       </Box>
+      {profile && <MpNav onMore={() => setMobileOpen(true)} />}
       <GlobalSearch open={searchOpen} onClose={() => setSearchOpen(false)} />
     </Box>
   );

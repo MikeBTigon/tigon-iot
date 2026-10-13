@@ -1,0 +1,15 @@
+{
+  "name": "tigon-iot-rules-tests",
+  "private": true,
+  "description": "Firestore + Storage security rules tests (run against the local emulators).",
+  "type": "module",
+  "scripts": {
+    "test": "firebase emulators:exec --config ../../firebase.json --only firestore,storage --project demo-tigon \"node --test --test-concurrency=1 *.test.mjs\"",
+    "test:running": "node --test --test-concurrency=1 *.test.mjs"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "5.0.2",
+    "firebase": "12.18.0",
+    "firebase-tools": "15.32.1"
+  }
+}

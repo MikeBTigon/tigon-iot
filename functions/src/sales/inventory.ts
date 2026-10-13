@@ -16,6 +16,7 @@ import {
 } from './util';
 import type {Json, Person} from './util';
 import {queueSms} from './outbox';
+import {raiseSystemAlert} from '../alerts';
 
 /** Snapshot of carts the DMS sync removed (they sold), so the "similar carts" page still knows what sold. */
 export const SOLD_CARTS = 'mp_sold_carts';
@@ -69,6 +70,40 @@ function toMs(v: unknown): number {
     if (typeof o.seconds === 'number') return o.seconds * 1000;
   }
   return 0;
+}
+
+const DELETE_BOOL_FIELDS = ['isDeleted', 'deleted', 'isDelete', 'delete', 'toBeDeleted', 'markedForDeletion', 'markedForDelete',
+  'pendingDelete', 'deleteFlag', 'flaggedDelete'];
+const DELETE_STATUS_FIELDS = ['status', 'cartStatus', 'stockStatus', 'inventoryStatus', 'listingStatus', 'state'];
+const DELETE_TAG_FIELDS = ['tags', 'flags', 'labels'];
+const DELETE_NOTE_FIELDS = ['notes', 'note', 'internalNotes', 'internalNote', 'comments', 'comment', 'remarks', 'flag'];
+const DELETE_STATUS = /^\s*(deleted?|to be deleted|pending delet(e|ion)|marked for delet(e|ion))\s*$/i;
+
+/**
+ * The DMS explicitly marks this cart for deletion: a delete boolean (isDeleted/deleted/toBeDeleted… === true), a
+ * status of "deleted"/"delete", a "delete" tag, or a note that STARTS with "DELETE". Unlike the old check (the word
+ * "delete" anywhere in the record — photo file names and descriptions matched too) it never flags a normal cart.
+ */
+export function dmsDeleteFlag(c: unknown): boolean {
+  if (!c || typeof c !== 'object') return false;
+  const top = c as Json;
+  const srcs = [top, top.cart, top.cartAttributes, top.cartLocation].filter((x) => x && typeof x === 'object') as Json[];
+  for (const o of srcs) {
+    if (DELETE_BOOL_FIELDS.some((f) => o[f] === true || o[f] === 'true' || o[f] === 1)) return true;
+    if (DELETE_STATUS_FIELDS.some((f) => typeof o[f] === 'string' && DELETE_STATUS.test(o[f]))) return true;
+    if (DELETE_TAG_FIELDS.some((f) => Array.isArray(o[f]) && o[f].some((t: unknown) => typeof t === 'string' && /^\s*delete[d]?\s*$/i.test(t)))) return true;
+    if (DELETE_NOTE_FIELDS.some((f) => typeof o[f] === 'string' && /^\W*delete\b/i.test(o[f]))) return true;
+  }
+  return false;
+}
+
+/** dmsDeleteFlag on an mp_carts doc (payload is a JSON string). */
+export function cartDocDeleteFlag(data: Json): boolean {
+  try {
+    return dmsDeleteFlag(typeof data.payload === 'string' ? JSON.parse(data.payload) : data.payload);
+  } catch {
+    return false;
+  }
 }
 
 const plausible = (t: number, now: number) => t > Date.UTC(2015, 0, 1) && t <= now + DAY_MS;
@@ -213,7 +248,8 @@ export async function handlePriceChange(changeId: string, change: Json, s: Sales
   for (const {id, data: lead} of leads) {
     const owner = String(lead.ownerUid || '');
     const phone = e164(lead.phone);
-    if (phone && lead.smsConsent !== false) {
+    // Automatic text only with consent on file (TCPA); otherwise the salesperson gets a to-do to tell them.
+    if (phone && lead.smsConsent === true) {
       const body = fill(s.priceDrop.template, leadTemplateData(
         {...lead, cartTitle: lead.cartTitle || title, locationId: lead.locationId || sum.locationId},
         nameOf(people, owner), {price, link, oldPrice: was}));
@@ -222,13 +258,13 @@ export async function handlePriceChange(changeId: string, change: Json, s: Sales
         dedupeKey: `pd_${keyPart(changeId)}_${keyPart(id)}`,
       });
       if (sid) leadsTexted++;
-    } else if (!phone && owner) {
+    } else if (owner) {
       const ref = db().collection(C.tasks).doc(`pd_${keyPart(changeId)}_${keyPart(id)}`);
       try {
         await ref.create({
           ownerUid: owner, leadId: id, kind: 'price_drop',
           title: `Tell ${lead.name || 'your lead'} the price dropped: ${title} is now ${price} (was ${was})`,
-          ...(lead.email ? {channel: 'email'} : {}),
+          ...(phone ? {channel: 'call', phone} : lead.email ? {channel: 'email'} : {}),
           dueAt: now, status: 'open', createdAt: now,
         });
         tasksCreated++;
@@ -260,6 +296,8 @@ export const mpPriceChanged = onDocumentCreated(`${C.priceChanges}/{id}`, async 
     await snap.ref.set(result, {merge: true});
   } catch (e) {
     logger.error('mpPriceChanged failed', event.params.id, e);
+    await raiseSystemAlert({key: 'price_drop_handler', title: 'Price-drop alerts failed',
+      text: `Price-drop alerts failed for a cart (${event.params.id}): ${e instanceof Error ? e.message : String(e)}`.slice(0, 600)});
   }
 });
 
@@ -286,7 +324,7 @@ export async function handleCartSold(cartId: string, data: Json, s: SalesSetting
   const link = similarUrl(cartId);
   for (const {id, data: lead} of leads) {
     const phone = e164(lead.phone);
-    if (!phone || lead.smsConsent === false) continue;
+    if (!phone || lead.smsConsent !== true) continue;
     const body = fill(s.soldSimilar.template, leadTemplateData(
       {...lead, cartTitle: lead.cartTitle || sum.title, locationId: lead.locationId || info.locationId},
       nameOf(people, String(lead.ownerUid || '')), {link}));
@@ -306,11 +344,13 @@ export const mpCartSold = onDocumentUpdated(`${C.carts}/{id}`, async (event) => 
     await handleCartSold(event.params.id, after, await loadSalesSettings(), 'app');
   } catch (e) {
     logger.error('mpCartSold failed', event.params.id, e);
+    await raiseSystemAlert({key: 'cart_sold_handler', title: 'Sold-cart clean-up failed',
+      text: `Sold-cart clean-up failed for cart ${event.params.id}: ${e instanceof Error ? e.message : String(e)}`.slice(0, 600)});
   }
 });
 
 /** GET /api/similar/<cartId> → {sold, similar[]} (public; no serials). */
-export const mpSimilarApi = onRequest({region: REGION}, async (req, res) => {
+export const mpSimilarApi = onRequest({region: REGION, maxInstances: 20}, async (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
   if (req.method === 'OPTIONS') {
     res.set('Access-Control-Allow-Methods', 'GET');
@@ -367,7 +407,7 @@ export async function inventoryDaily(now: number, s: SalesSettings): Promise<voi
   const perStore = new Map<string, {aged: number; urgent: number}>();
   for (const d of snap.docs) {
     const data = d.data() as Json;
-    if (data.soldLocally === true || /delete/i.test(String(data.payload || ''))) continue;
+    if (data.soldLocally === true || cartDocDeleteFlag(data)) continue;
     const stocked = Number(data.stockedAt) || Number(data.firstSeenAt) || Number(data.createdAt) || d.createTime?.toMillis() || 0;
     const level = agedLevel(daysOnLot(stocked, now), s.aged);
     if (!level) continue;

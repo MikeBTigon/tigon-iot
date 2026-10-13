@@ -1,15 +1,7 @@
+import { lazy, type ReactNode } from 'react';
 import { Route } from 'react-router-dom';
-import MpHome from './pages/MpHome';
-import MpFind from './pages/MpFind';
-import MpLocations from './pages/MpLocations';
-import MpBrowse from './pages/MpBrowse';
-import MpProfiles from './pages/MpProfiles';
-import MpAccounts from './pages/MpAccounts';
-import MpCartDetail from './pages/MpCartDetail';
-import MpFinance from './pages/MpFinance';
-import MpQueue from './pages/MpQueue';
-import MpAnalytics from './pages/MpAnalytics';
-import MpPrepare from './pages/MpPrepare';
+import { SignedInSuspense } from '../ui/PageSuspense';
+import ProfilesRedirect from './pages/ProfilesRedirect';
 import { ROUTES as CREATE_ROUTES } from './create/routes';
 import { ROUTES as SHARE_ROUTES, PUBLIC_ROUTES } from './share/routes';
 import { ROUTES as CRM_ROUTES } from './crm/routes';
@@ -18,21 +10,35 @@ import { ROUTES as HELP_ROUTES } from './help/routes';
 import { ROUTES as WH_ROUTES } from '../wh/routes';
 import { ROUTES as SALES_ROUTES, PUBLIC_ROUTES as SALES_PUBLIC_ROUTES } from './sales/routes';
 
+// Every page loads on demand (its own chunk); the app frame shows a spinner meanwhile.
+const MpHome = lazy(() => import('./pages/MpHome'));
+const MpFind = lazy(() => import('./pages/MpFind'));
+const MpLocations = lazy(() => import('./pages/MpLocations'));
+const MpBrowse = lazy(() => import('./pages/MpBrowse'));
+const MpAccounts = lazy(() => import('./pages/MpAccounts'));
+const MpCartDetail = lazy(() => import('./pages/MpCartDetail'));
+const MpFinance = lazy(() => import('./pages/MpFinance'));
+const MpQueue = lazy(() => import('./pages/MpQueue'));
+const MpAnalytics = lazy(() => import('./pages/MpAnalytics'));
+const MpPrepare = lazy(() => import('./pages/MpPrepare'));
+
+const page = (el: ReactNode) => <SignedInSuspense>{el}</SignedInSuspense>;
+
 /** MP Assistant routes; each element is wrapped by the caller's route guard. */
-export const MP_ROUTES = [
-  { path: '/mp', element: <MpHome /> },
-  { path: '/mp/find', element: <MpFind /> },
-  { path: '/mp/finance', element: <MpFinance /> },
-  { path: '/mp/locations', element: <MpLocations /> },
-  { path: '/mp/locations/:loc', element: <MpLocations /> },
-  { path: '/mp/browse', element: <MpBrowse /> },
-  { path: '/mp/profiles', element: <MpProfiles /> },
-  { path: '/mp/accounts', element: <MpAccounts /> },
-  { path: '/mp/cart/:id', element: <MpCartDetail /> },
-  { path: '/mp/queue', element: <MpQueue /> },
-  { path: '/mp/analytics', element: <MpAnalytics /> },
-  { path: '/mp/post/:queueId', element: <MpPrepare /> },
-  { path: '/mp/prepare/:cartId', element: <MpPrepare /> },
+export const MP_ROUTES: Array<{ path: string; element: ReactNode }> = [
+  { path: '/mp', element: page(<MpHome />) },
+  { path: '/mp/find', element: page(<MpFind />) },
+  { path: '/mp/finance', element: page(<MpFinance />) },
+  { path: '/mp/locations', element: page(<MpLocations />) },
+  { path: '/mp/locations/:loc', element: page(<MpLocations />) },
+  { path: '/mp/browse', element: page(<MpBrowse />) },
+  { path: '/mp/profiles', element: <ProfilesRedirect /> },
+  { path: '/mp/accounts', element: page(<MpAccounts />) },
+  { path: '/mp/cart/:id', element: page(<MpCartDetail />) },
+  { path: '/mp/queue', element: page(<MpQueue />) },
+  { path: '/mp/analytics', element: page(<MpAnalytics />) },
+  { path: '/mp/post/:queueId', element: page(<MpPrepare />) },
+  { path: '/mp/prepare/:cartId', element: page(<MpPrepare />) },
 ];
 
 const AREA_ROUTES = [...CREATE_ROUTES, ...SHARE_ROUTES, ...CRM_ROUTES, ...TEAM_ROUTES, ...HELP_ROUTES, ...WH_ROUTES, ...SALES_ROUTES];
@@ -41,7 +47,9 @@ export function mpRoutes(guard: (el: React.ReactNode) => React.ReactNode) {
   return [...MP_ROUTES, ...AREA_ROUTES].map((r) => <Route key={r.path} path={r.path} element={guard(r.element)} />);
 }
 
-/** Public (no sign-in) routes such as storefronts. */
-export function publicRoutes() {
-  return [...PUBLIC_ROUTES, ...SALES_PUBLIC_ROUTES].map((r) => <Route key={r.path} path={r.path} element={r.element} />);
+/** Public (no sign-in) customer pages such as storefronts, quotes and booking. Rendered outside the signed-in app. */
+export const PUBLIC_PAGE_ROUTES: Array<{ path: string; element: ReactNode }> = [...PUBLIC_ROUTES, ...SALES_PUBLIC_ROUTES];
+
+export function publicRoutes(wrap: (el: React.ReactNode) => React.ReactNode = (el) => el) {
+  return PUBLIC_PAGE_ROUTES.map((r) => <Route key={r.path} path={r.path} element={wrap(r.element)} />);
 }

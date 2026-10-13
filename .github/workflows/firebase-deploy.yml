@@ -1,58 +1,168 @@
-# Deploys TIGON IOT (web dashboard + MP Assistant, Cloud Functions, Firestore rules)
-# to Firebase project "tigon-iot" on every push to main. Can also be run by hand
-# from the Actions tab ("Run workflow").
+# Deploys TIGON IOT (web dashboard + MP Assistant, Cloud Functions, Firestore/Storage rules)
+# to Firebase project "tigon-iot" on every push to main. Can also be run by hand from the Actions tab
+# ("Run workflow"), and is reused by rollback.yml to put an older version live (docs/RUNBOOK.md "Roll back").
 #
-# One-time setup: add a repository secret FIREBASE_SERVICE_ACCOUNT containing the
-# JSON key of a service account with deploy permissions (see mp-assistant/README.md).
+# Repository secrets:
+#   FIREBASE_SERVICE_ACCOUNT    JSON key of a service account with deploy permissions (required)
+#   ANDROID_KEYSTORE_BASE64     release signing key for the Android app, base64 (required when the app is rebuilt)
+#   ANDROID_KEYSTORE_PASSWORD   its password (required when the app is rebuilt)
+#   ANDROID_KEY_ALIAS           its key alias (optional, default "tigon")
+#   GOOGLE_SERVICES_JSON        google-services.json for Android push alerts (optional)
+#   GOOGLE_PLACES_KEY, TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN   optional "Sell more" keys
 name: Deploy to Firebase
 
 on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      build_android:
+        description: Rebuild the Android app even if no Android files changed
+        type: boolean
+        default: false
+  workflow_call:
+    inputs:
+      ref:
+        description: Git tag or commit to deploy (rollback)
+        type: string
+        required: true
 
-concurrency:
-  group: firebase-deploy
-  cancel-in-progress: false
+permissions:
+  contents: write   # push the deploy-YYYYMMDD-HHMM-<sha> tag
+
+env:
+  FIREBASE_TOOLS: firebase-tools@15.32.1
+  # First Android version code signed with the 2026 release key (see scripts/build-android.sh).
+  NEW_KEY_BASE: '3000000'
 
 jobs:
   deploy:
     runs-on: ubuntu-24.04
+    # Never run two deploys at once; a waiting deploy is not cancelled.
+    concurrency:
+      group: firebase-deploy
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          fetch-depth: 0
 
       - uses: actions/setup-node@v6
         with:
           node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            functions/package-lock.json
+
+      # Rebuild the phone app only when something native changed (frontend/android, Capacitor plugins,
+      # capacitor.config.ts, the build script). Otherwise the live APK + version.json are kept as they are.
+      # A rollback never rebuilds it (older code would build an older, lower-numbered app).
+      - name: Does the Android app need a rebuild?
+        id: android
+        env:
+          ROLLBACK_REF: ${{ inputs.ref }}
+          FORCE: ${{ inputs.build_android }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if [ -n "$ROLLBACK_REF" ]; then build=false
+          elif [ "$FORCE" = "true" ]; then build=true
+          elif [ "$GITHUB_EVENT_NAME" = "push" ]; then build=$(scripts/android-changed.sh "$BEFORE" "$GITHUB_SHA")
+          else build=false
+          fi
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+          echo "Rebuild Android app: $build"
 
       - name: Build web dashboard
         working-directory: frontend
         run: |
           npm ci
+          npm run typecheck --if-present   # older versions (rollbacks) have no typecheck script
           npm run build
 
       - name: Stage hosting files
+        env:
+          DEPLOY_REF: ${{ inputs.ref || github.ref_name }}
         run: |
           rm -rf dist
           cp -r frontend/dist dist
+          mkdir -p dist/downloads
+          # What is live: https://tigoniot.com/build-info.json
+          printf '{"sha":"%s","ref":"%s","deployedAt":"%s","run":"%s/%s/actions/runs/%s"}\n' \
+            "$(git rev-parse HEAD)" "$DEPLOY_REF" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" > dist/build-info.json
+          cat dist/build-info.json
 
-      # The Android phone app is built with every deploy and published on the website:
-      # https://tigoniot.com/downloads/tigon-iot.apk (+ version.json, used by the app's update check).
+      # No native changes: keep the published app. If the live app is missing or still the old-key build,
+      # fall through to a rebuild (normal deploys) or stop (rollbacks).
+      - name: Keep the published Android app
+        id: keep
+        if: steps.android.outputs.build != 'true'
+        env:
+          ROLLBACK_REF: ${{ inputs.ref }}
+        run: |
+          ok=false
+          if curl -fsSL --retry 3 -o dist/downloads/version.json https://tigoniot.com/downloads/version.json \
+             && curl -fsSL --retry 3 -o dist/downloads/tigon-iot.apk https://tigon-iot.firebaseapp.com/downloads/tigon-iot.apk; then
+            code=$(node -p "Number(require('./dist/downloads/version.json').versionCode || 0)")
+            size=$(stat -c %s dist/downloads/tigon-iot.apk)
+            if [ "$code" -ge "$NEW_KEY_BASE" ] && [ "$size" -gt 1000000 ] && unzip -tq dist/downloads/tigon-iot.apk >/dev/null; then
+              ok=true
+              echo "Keeping the live app (version code $code, $size bytes)."
+            else
+              echo "::notice::Live app is missing, damaged or signed with the old key (code $code) - rebuilding it."
+            fi
+          fi
+          if [ "$ok" != "true" ]; then
+            rm -f dist/downloads/version.json dist/downloads/tigon-iot.apk
+            if [ -n "$ROLLBACK_REF" ]; then
+              echo "::error::Could not copy the live Android app, and a rollback never rebuilds it. Try again, or run a normal deploy."
+              exit 1
+            fi
+          fi
+          echo "ok=$ok" >> "$GITHUB_OUTPUT"
+
       - uses: actions/setup-java@v5
+        if: steps.android.outputs.build == 'true' || steps.keep.outputs.ok == 'false'
         with:
           distribution: temurin
           java-version: 21
 
+      # Published at https://tigoniot.com/downloads/tigon-iot.apk (+ version.json, used by the app's update check).
+      # Fails (on purpose) when the signing-key secrets are missing: a public APK is never unsigned or debug-signed.
       - name: Build Android app for the Download page
+        if: steps.android.outputs.build == 'true' || steps.keep.outputs.ok == 'false'
         env:
           GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
-        run: scripts/build-android.sh "$GITHUB_WORKSPACE/dist/downloads/tigon-iot.apk"
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ] || [ -z "$ANDROID_KEYSTORE_PASSWORD" ]; then
+            echo "::error::The Android app can't be signed: add the repository secrets ANDROID_KEYSTORE_BASE64 and ANDROID_KEYSTORE_PASSWORD (docs/RUNBOOK.md 'Android signing key')."
+            exit 1
+          fi
+          scripts/build-android.sh "$GITHUB_WORKSPACE/dist/downloads/tigon-iot.apk"
 
+      # The zip and poster-version.json (read by the extension's update check) always match mp-assistant/poster.
       - name: Package the Tigon Poster Chrome extension for the Download page
         run: |
-          mkdir -p dist/downloads
+          STAGE="$RUNNER_TEMP/tigon-poster"
+          rm -rf "$STAGE" && cp -r mp-assistant/poster "$STAGE" && rm -f "$STAGE/README.md"
+          # Production zip: drop the http://localhost match (developer testing only).
+          node -e '
+            const fs = require("fs"); const f = process.argv[1];
+            const m = JSON.parse(fs.readFileSync(f, "utf8"));
+            for (const cs of m.content_scripts || []) cs.matches = cs.matches.filter((u) => !u.startsWith("http://localhost"));
+            fs.writeFileSync(f, JSON.stringify(m, null, 2) + "\n");
+          ' "$STAGE/manifest.json"
           # Files at the top of the zip, so "Extract All" gives Downloads\tigon-poster\manifest.json (the folder Chrome needs).
-          (cd mp-assistant/poster && zip -qr "$GITHUB_WORKSPACE/dist/downloads/tigon-poster.zip" . -x "README.md")
+          (cd "$STAGE" && zip -qr "$GITHUB_WORKSPACE/dist/downloads/tigon-poster.zip" .)
+          VERSION=$(node -p "require('./mp-assistant/poster/manifest.json').version")
+          printf '{"version":"%s","url":"https://tigon-iot.firebaseapp.com/downloads/tigon-poster.zip","builtAt":"%s"}\n' \
+            "$VERSION" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > dist/downloads/poster-version.json
+          cat dist/downloads/poster-version.json
 
       - name: Build Cloud Functions
         working-directory: functions
@@ -65,15 +175,23 @@ jobs:
         with:
           credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
 
-      # Only the MP Assistant functions are deployed from this repo. The live IoT functions
+      # Only the functions named in FUNCS are deployed from this repo. The live IoT functions
       # (onUserCreate, validateEmailDomain, ...) were deployed from other code that isn't in
-      # GitHub yet, so they must not be overwritten or deleted by this workflow.
+      # GitHub yet, so they must not be overwritten or deleted by this workflow (docs/RUNBOOK.md).
       # The AI listing writer is included only when the repository variable ENABLE_AI_WRITER
       # is "true" (it needs the ANTHROPIC_API_KEY secret in Google Secret Manager first).
       # Webhook Flows: submissions are processed by whProcess every minute. Set the repository
       # variable WH_REALTIME to "true" to also process them instantly with a Firestore trigger.
+      #
+      # Firestore indexes are NOT deployed (firestore.indexes.json is empty; deploying it would delete the
+      # indexes made in the Firebase console). Every query must work with single-field indexes.
+      #
+      # --force: with "--only functions:<name>" nothing outside the list can be deleted. --force only answers the
+      # remaining yes/no prompts (e.g. the Artifact Registry clean-up policy for old function images), which in
+      # --non-interactive mode would otherwise fail the deploy after the functions are already updated.
       - name: Deploy
         env:
+          ROLLBACK_REF: ${{ inputs.ref }}
           ENABLE_AI_WRITER: ${{ vars.ENABLE_AI_WRITER }}
           WH_REALTIME: ${{ vars.WH_REALTIME }}
           GOOGLE_PLACES_KEY: ${{ secrets.GOOGLE_PLACES_KEY }}
@@ -95,7 +213,23 @@ jobs:
             FUNCS="$FUNCS whOnSubmission"
             echo "WH_REALTIME=true" >> functions/.env
           fi
+          # A rollback to older code only deploys the functions that code has.
+          if [ -n "$ROLLBACK_REF" ]; then
+            KEEP=""
+            for f in $FUNCS; do
+              if grep -rqE "(exports\.$f *=|exports, \"$f\")" functions/lib; then KEEP="$KEEP $f"; else echo "Rollback: $f is not in this version - left as it is."; fi
+            done
+            FUNCS="$KEEP"
+          fi
           ONLY="firestore:rules,storage,hosting"
           for f in $FUNCS; do ONLY="$ONLY,functions:$f"; done
           echo "Deploying: $ONLY"
-          npx --yes firebase-tools@latest deploy --only "$ONLY" --project tigon-iot --non-interactive --force
+          npx --yes "$FIREBASE_TOOLS" deploy --only "$ONLY" --project tigon-iot --non-interactive --force
+
+      - name: Tag the deployed version
+        run: |
+          TAG="deploy-$(date -u +%Y%m%d-%H%M)-$(git rev-parse --short=7 HEAD)"
+          git tag "$TAG" HEAD
+          git push origin "refs/tags/$TAG"
+          echo "### Deployed $(git rev-parse --short=7 HEAD) as \`$TAG\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "Roll back to it later: Actions → Roll back → Run workflow → ref = $TAG" >> "$GITHUB_STEP_SUMMARY"

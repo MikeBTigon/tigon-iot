@@ -1,0 +1,144 @@
+# Checks every pull request (and every push to a branch other than main) before it can reach the live site:
+# frontend typecheck + lint + build, Cloud Functions typecheck, Firestore/Storage rules tests.
+# Pull requests from this repository also get a preview website at a temporary address
+# (Firebase Hosting preview channel "pr-<number>", deleted after 7 days). NOTE: preview pages use the
+# PRODUCTION database and Cloud Functions — anything you do there is real.
+name: Checks
+
+on:
+  pull_request:
+  push:
+    branches-ignore: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: checks-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  FIREBASE_TOOLS: firebase-tools@15.32.1
+
+jobs:
+  frontend:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - name: Typecheck
+        run: npx tsc -p tsconfig.app.json --noEmit
+      - name: Lint
+        run: npx eslint .
+      - name: Build
+        run: npm run build
+      - uses: actions/upload-artifact@v6
+        with:
+          name: web-dist
+          path: frontend/dist
+          retention-days: 3
+
+  functions:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: functions
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: functions/package-lock.json
+      - run: npm ci
+      - name: Typecheck
+        run: npx tsc --noEmit -p .
+
+  rules:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - name: Are there rules tests?
+        id: has
+        run: |
+          if [ -f tests/rules/package.json ]; then echo "yes=true" >> "$GITHUB_OUTPUT"; else echo "No tests/rules yet - skipped."; fi
+      - uses: actions/setup-node@v6
+        if: steps.has.outputs.yes == 'true'
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v5
+        if: steps.has.outputs.yes == 'true'
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Install
+        if: steps.has.outputs.yes == 'true'
+        working-directory: tests/rules
+        run: |
+          npm install -g "$FIREBASE_TOOLS"
+          if [ -f package-lock.json ]; then npm ci; else npm install; fi
+      - name: Rules tests (Firestore + Storage emulators)
+        if: steps.has.outputs.yes == 'true'
+        working-directory: tests/rules
+        run: npm test
+
+  preview:
+    # Same-repo pull requests only (forks get no secrets).
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    needs: frontend
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v7
+        with:
+          name: web-dist
+          path: dist
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+      - name: Deploy preview channel
+        id: deploy
+        env:
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          npx --yes "$FIREBASE_TOOLS" hosting:channel:deploy "pr-$PR" --expires 7d --project tigon-iot --json --non-interactive > "$RUNNER_TEMP/preview.json"
+          cat "$RUNNER_TEMP/preview.json"
+          URL=$(node -e '
+            const r = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).result || {};
+            const site = Object.values(r)[0] || {};
+            console.log(site.url || "");
+          ' "$RUNNER_TEMP/preview.json")
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          echo "Preview: $URL" >> "$GITHUB_STEP_SUMMARY"
+      - name: Comment the preview address on the pull request
+        if: steps.deploy.outputs.url != ''
+        uses: actions/github-script@v8
+        env:
+          URL: ${{ steps.deploy.outputs.url }}
+        with:
+          script: |
+            const marker = '<!-- tigon-preview -->';
+            const body = `${marker}\nPreview website: ${process.env.URL}\n\n` +
+              `Expires in 7 days. **It uses the live database and Cloud Functions** — changes made there are real.`;
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number });
+            const old = comments.find((c) => c.body && c.body.includes(marker));
+            if (old) await github.rest.issues.updateComment({ owner, repo, comment_id: old.id, body });
+            else await github.rest.issues.createComment({ owner, repo, issue_number, body });

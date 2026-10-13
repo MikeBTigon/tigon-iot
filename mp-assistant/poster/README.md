@@ -5,7 +5,15 @@ Assistive Facebook Marketplace autofill. Pulls carts from the TIGON IOT MP Assis
 
 ## Install
 1. `chrome://extensions` → turn on **Developer mode** → **Load unpacked** → pick the unzipped `tigon-poster` folder (the one with `manifest.json` directly inside).
-2. To update: click the reload arrow, then refresh any open Facebook tab.
+2. To update: the popup says **Update available** when tigoniot.com has a newer version
+   (`/downloads/poster-version.json`). Download the new zip, unzip it over the old folder, click the reload arrow
+   on `chrome://extensions`, then refresh any open Facebook tab.
+
+## Releasing a new version
+Bump `version` in `manifest.json` with every change — the deploy publishes the zip and writes that version to
+`poster-version.json`, which is what tells people to update. The published zip drops the `http://localhost`
+match (local testing only). `https://*.amazonaws.com/*` stays: cart photo URLs can come from the DMS as full
+S3 links, not only `s3.amazonaws.com/prod.docs.s3`.
 
 ## Use
 1. Open the popup and sign in with your TIGON IOT account (`@tigongolfcarts.com`).

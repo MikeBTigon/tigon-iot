@@ -39,12 +39,18 @@ import { phoneSummary } from '../devices/phoneSetup';
 import { isOnline, seenLabel } from '../devices/deviceStatus';
 import { formatDistanceToNow } from 'date-fns';
 
+/** Firestore Timestamp or millis (older devices may hold an ISO string; new Date() reads that too). */
+type TimeLike = { toDate: () => Date } | number | null | undefined;
+
+const toDateValue = (t: Exclude<TimeLike, null | undefined>): Date =>
+  typeof t === 'object' && typeof t.toDate === 'function' ? t.toDate() : new Date(t as number);
+
 interface Device {
   id: string;
   deviceName: string;
   deviceType: 'master' | 'worker';
   isActive: boolean;
-  lastActive: any;
+  lastActive: TimeLike;
   lastSeen?: number;
   status?: string;
   fcmToken?: string;
@@ -120,20 +126,20 @@ const Devices: React.FC = () => {
     }
   };
 
-  const getTimeAgo = (timestamp: any) => {
+  const getTimeAgo = (timestamp: TimeLike) => {
     if (!timestamp) return 'Never';
     try {
-      const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+      const date = toDateValue(timestamp);
       return formatDistanceToNow(date, { addSuffix: true });
     } catch {
       return 'Unknown';
     }
   };
 
-  const getStatusColor = (lastActive: any) => {
+  const getStatusColor = (lastActive: TimeLike) => {
     if (!lastActive) return 'error';
     try {
-      const date = lastActive.toDate ? lastActive.toDate() : new Date(lastActive);
+      const date = toDateValue(lastActive);
       const minutesAgo = (new Date().getTime() - date.getTime()) / 1000 / 60;
       if (minutesAgo < 5) return 'success';
       if (minutesAgo < 60) return 'warning';

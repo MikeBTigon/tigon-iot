@@ -12,6 +12,7 @@ import {
 } from './util';
 import type {Json, Person} from './util';
 import {PublicError} from './publicTypes';
+import {consentRecord, phoneDailyCap} from './publicGuard';
 import type {PublicHandler} from './publicTypes';
 
 // ===========================================================================
@@ -174,10 +175,10 @@ export const mpReviewsRefresh = onCall({timeoutSeconds: 120}, async (req) => {
 // 17. Referral program
 // ===========================================================================
 
-/** "maria" + 4 random characters. */
+/** "maria" + 8 random characters (cryptographically random, so codes can't be guessed). */
 export function referralCodeFor(name: unknown): string {
   const first = String(name || '').trim().split(/\s+/)[0].toLowerCase().normalize('NFD').replace(/[^a-z]/g, '').slice(0, 12) || 'friend';
-  return `${first}${code(4)}`;
+  return `${first}${code(8)}`;
 }
 
 export const referralLink = (c: string) => `${PUBLIC_ORIGIN}/r/${c}`;
@@ -343,8 +344,10 @@ const submitReferral: PublicHandler = async (req) => {
   if (!refSnap?.exists || !s.referral.enabled) throw new PublicError(404, 'This referral link is not active.');
   const ref = refSnap.data() || {};
   const storeId = storeOf(b.storeId) && b.storeId !== 'T0' ? String(b.storeId) : String(ref.storeId || '');
+  await phoneDailyCap('referral', phone);
   const people = await loadPeople();
   const now = Date.now();
+  const consent = consentRecord(b, 'referral form', req.ip, now);
 
   // Owner: the salesperson who sold to the referrer, else the store's manager.
   let ownerUid = '';
@@ -356,16 +359,18 @@ const submitReferral: PublicHandler = async (req) => {
   if (!ownerUid) ownerUid = managersFor(people, storeId)[0]?.uid || '';
 
   const note = [interest && `Looking for: ${interest}`, `Referred by ${ref.name || 'a customer'}`].filter(Boolean).join('\n');
-  // Same phone with an open lead → add to it instead of making a duplicate.
+  // Same phone with an open lead → add a note to it instead of making a duplicate (sold/lost leads are never reopened:
+  // a new lead is made). Only the note, the referral code (when it has none) and the consent (same phone) are saved.
   const existing = (await db().collection(C.leads).where('phone', 'in', phoneVariants(phone)).get()).docs
     .filter((d) => d.get('status') === 'new' || d.get('status') === 'talking')
+    .filter((d) => e164(d.get('phone')) === phone)
     .sort((x, y) => Number(y.get('createdAt') || 0) - Number(x.get('createdAt') || 0))[0];
   if (existing) {
     const notes = String(existing.get('notes') || '');
-    await existing.ref.set(clean({
-      notes: notes ? `${notes}\n${note}` : note, referralCode: existing.get('referralCode') || c,
-      email: existing.get('email') || email || undefined, smsConsent: true, updatedAt: now,
-    }), {merge: true});
+    await existing.ref.update(clean({
+      notes: `${notes ? `${notes}\n` : ''}${note}`.slice(-4000), referralCode: existing.get('referralCode') ? undefined : c,
+      ...consent, updatedAt: now,
+    }));
     if (!existing.get('referralCode')) await creditReferralLead(existing.id, c, now);
     const o = String(existing.get('ownerUid') || ownerUid);
     if (o) await notify(o, 'Referrals', `${name} came back through ${ref.name || 'a customer'}'s referral link. Call or text them: ${prettyPhone(phone)}`, {source: 'mp_referrals', leadId: existing.id});
@@ -373,7 +378,7 @@ const submitReferral: PublicHandler = async (req) => {
   }
   await db().collection(C.leads).add(clean({
     name, phone, email, channel: 'website', source: 'referral', status: 'new', ownerUid, locationId: storeId || undefined,
-    referralCode: c, notes: interest ? `Looking for: ${interest}` : '', smsConsent: true, createdAt: now, updatedAt: now,
+    referralCode: c, notes: interest ? `Looking for: ${interest}` : '', ...consent, createdAt: now, updatedAt: now,
   }));
   return {body: {ok: true}};
 };

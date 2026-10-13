@@ -1,5 +1,6 @@
 // "Sell more" release — shared server helpers (collections, New York time, notifications, people, templates).
 import * as admin from 'firebase-admin';
+import {randomInt} from 'crypto';
 import {STORE_BY_ID} from '../mpShare';
 import type {Store} from '../mpShare';
 
@@ -38,6 +39,12 @@ export const DAY_MS = 24 * HOUR_MS;
 export const PUBLIC_ORIGIN = 'https://tigoniot.com';
 
 export const db = () => admin.firestore();
+
+/** Firestore Timestamp `ms` from now — for `expireAt` fields (a TTL policy can use them; mpRetention deletes them). */
+export const expireIn = (ms: number) => admin.firestore.Timestamp.fromMillis(Date.now() + ms);
+/** Notifications are kept 60 days. */
+export const NOTIFICATION_TTL_MS = 60 * 24 * 60 * 60_000;
+export const notificationExpireAt = () => expireIn(NOTIFICATION_TTL_MS);
 
 /** Year/month/day/hour/minute/weekday of a moment in New York time. */
 export function nyParts(ts: number) {
@@ -110,7 +117,7 @@ export async function notify(uid: string, from: string, text: string, extra: Jso
   if (!uid) return;
   const data = {
     targetUserId: uid, sourceDeviceName: from, text: text.slice(0, 800), isHandled: false,
-    createdAt: admin.firestore.FieldValue.serverTimestamp(), ...extra,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(), expireAt: notificationExpireAt(), ...extra,
   };
   const ref = id ? db().collection(C.notifications).doc(id) : db().collection(C.notifications).doc();
   await ref.set(data, {merge: !!id});
@@ -173,11 +180,11 @@ export function leadTemplateData(lead: Json, ownerName = '', extra: Record<strin
   };
 }
 
-/** Short random code for public links (no look-alike characters). */
+/** Short random code for public links (no look-alike characters; cryptographically random). */
 export function code(len = 8): string {
   const abc = 'abcdefghjkmnpqrstuvwxyz23456789';
   let s = '';
-  for (let i = 0; i < len; i++) s += abc[Math.floor(Math.random() * abc.length)];
+  for (let i = 0; i < len; i++) s += abc[randomInt(abc.length)];
   return s;
 }
 

@@ -279,8 +279,10 @@ const nameOf = (people: Person[], uid: string) => people.find((p) => p.uid === u
 
 async function notifyAssignee(uid: string, leadId: string, lead: Json, claimMinutes: number, withDeadline: boolean, passed = false) {
   const tail = withDeadline ? ` Tap to claim it — you have ${claimMinutes} min.` : ' Call or text them now.';
+  // New lead: one notification per lead + person (a retried trigger can't notify twice). Passed leads can come back
+  // to the same person in a later round, so those get their own id.
   await notify(uid, 'Speed to lead', `${passed ? 'Lead passed to you' : 'New lead'}: ${leadLabel(lead)}.${tail}`,
-    {source: 'sales_assign', leadId}, `assign_${leadId}_${uid}_${Date.now()}`);
+    {source: 'sales_assign', leadId}, passed ? `pass_${leadId}_${uid}_${Date.now()}` : `assign_${leadId}_${uid}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -323,10 +325,12 @@ export async function speedTick(now: number, s: SalesSettings): Promise<void> {
 
   // 1. Speed alerts (not during quiet hours — the 8 AM list picks those leads up).
   if (s.speed.enabled && !isQuietHour(now, s.sms.quietStart, s.sms.quietEnd)) {
-    const snap = await db().collection(C.leads).where('status', '==', 'new').get();
+    // Only leads young enough to still be alerted (older than the last mark + 60 min are skipped by dueSpeedMarks).
+    const maxMark = Math.max(0, ...(s.speed.alertMinutes || []).map(Number).filter((m) => Number.isFinite(m)));
+    const snap = await db().collection(C.leads).where('createdAt', '>=', now - (maxMark + 60) * MIN_MS).get();
     for (const d of snap.docs) {
       const lead = d.data() as Json;
-      if (!isAutoLead(d.id, lead)) continue;
+      if (lead.status !== 'new' || !isAutoLead(d.id, lead)) continue;
       const due = dueSpeedMarks(lead, now, s.speed.alertMinutes);
       if (!due.length) continue;
       const mark = due[due.length - 1];
@@ -551,7 +555,8 @@ export async function fbMessageEcho(dev: Json, deviceId: string, item: Json, not
     return true;
   });
   if (created && cart) {
-    await db().collection(C.meta).doc('sales_fb_asks').set({[cart.id]: FV.increment(1), updatedAt: now}, {merge: true});
+    // How many Facebook buyers asked about this cart (shown on the cart). Replaces the old mp_meta/sales_fb_asks map.
+    await db().collection(C.carts).doc(cart.id).update({fbAsks: FV.increment(1), fbAsksAt: now}).catch(() => undefined);
   }
   await db().collection(C.notifications).doc(notificationId).set({leadId: id}, {merge: true}).catch(() => undefined);
   return true;

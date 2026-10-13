@@ -24,6 +24,24 @@ import java.util.concurrent.Executors;
 final class EchoStore {
     static final String PREFS = "tigon_echo";
     static final String DEFAULT_ENDPOINT = "https://tigoniot.com/api/echo";
+
+    /** Only our own servers may receive this phone's notifications (the device secret is sent with them). */
+    private static final String[] ALLOWED_HOSTS = {"tigoniot.com", "tigon-iot.web.app"};
+
+    /** The endpoint if it is https:// on an allowed host, otherwise the default one. */
+    static String safeEndpoint(String endpoint) {
+        if (endpoint == null || endpoint.isEmpty()) return DEFAULT_ENDPOINT;
+        try {
+            URL u = new URL(endpoint);
+            if (!"https".equalsIgnoreCase(u.getProtocol())) return DEFAULT_ENDPOINT;
+            if (u.getUserInfo() != null || (u.getPort() != -1 && u.getPort() != 443)) return DEFAULT_ENDPOINT;
+            String host = u.getHost() == null ? "" : u.getHost().toLowerCase(java.util.Locale.ROOT);
+            for (String h : ALLOWED_HOSTS) if (h.equals(host)) return endpoint;
+        } catch (Exception ignored) {
+            // malformed -> default
+        }
+        return DEFAULT_ENDPOINT;
+    }
     private static final int MAX_QUEUE = 200;
     private static final ExecutorService EXEC = Executors.newSingleThreadExecutor();
 
@@ -110,7 +128,8 @@ final class EchoStore {
     }
 
     private static Resp post(String endpoint, String json) throws Exception {
-        HttpURLConnection con = (HttpURLConnection) new URL(endpoint).openConnection();
+        HttpURLConnection con = (HttpURLConnection) new URL(safeEndpoint(endpoint)).openConnection();
+        con.setInstanceFollowRedirects(false);
         try {
             con.setRequestMethod("POST");
             con.setConnectTimeout(15000);

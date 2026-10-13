@@ -6,8 +6,20 @@ rules_version = '2';
 // shown in the brand library is controlled by the manager-only mp_assets collection.)
 service firebase.storage {
   match /b/{bucket}/o {
+    // Signed-in @tigongolfcarts.com account with a verified email (same as firestore.rules).
     function isValidEmail() {
-      return request.auth != null && request.auth.token.email.matches('.*@tigongolfcarts[.]com$');
+      return request.auth != null && request.auth.token.email.matches('.*@tigongolfcarts[.]com$') &&
+             request.auth.token.email_verified == true;
+    }
+    // Brand library files: images, fonts and PDFs. Browsers often send no type for font files
+    // (uploaded as application/octet-stream), so those are accepted by file extension.
+    function isBrandAssetFile() {
+      return request.resource.contentType.matches('image/.*') ||
+             request.resource.contentType.matches('font/.*') ||
+             request.resource.contentType.matches('application/(x-)?font-.*') ||
+             request.resource.contentType in ['application/pdf', 'application/vnd.ms-fontobject'] ||
+             (request.resource.contentType in ['application/octet-stream', ''] &&
+              request.resource.name.lower().matches('.*[.](ttf|otf|woff|woff2|eot)$'));
     }
     function isImageOrVideo() {
       return request.resource.contentType.matches('image/.*') || request.resource.contentType.matches('video/.*');
@@ -21,10 +33,10 @@ service firebase.storage {
       allow delete: if isValidEmail() && request.auth.uid == uid;
     }
 
-    // Shared brand library (logos, fonts, photos).
+    // Shared brand library (logos, fonts, photos, PDFs).
     match /mp_assets/{allPaths=**} {
       allow read: if isValidEmail();
-      allow create, update: if isValidEmail() && request.resource.size < 50 * 1024 * 1024;
+      allow create, update: if isValidEmail() && request.resource.size < 50 * 1024 * 1024 && isBrandAssetFile();
       allow delete: if isValidEmail();
     }
 

@@ -15,8 +15,11 @@ import {
 import { Visibility, VisibilityOff } from '@mui/icons-material';
 import { useAuth } from '../context/AuthContext';
 import { authErrorMessage, cleanEmail } from '../context/authErrors';
+import { useT } from '../i18n';
+import LanguageMenu from '../i18n/LanguageMenu';
 
 const Register: React.FC = () => {
+  const t = useT();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -45,17 +48,17 @@ const Register: React.FC = () => {
     const em = cleanEmail(email);
     setEmail(em);
     if (!em.endsWith('@tigongolfcarts.com')) {
-      setError('Please use your @tigongolfcarts.com email address');
+      setError(t('auth.useCompanyEmail'));
       return;
     }
 
     if (password !== confirmPassword) {
-      setError('Passwords do not match');
+      setError(t('auth.passwordsMismatch'));
       return;
     }
 
     if (password.length < 8) {
-      setError('Password must be at least 8 characters');
+      setError(t('auth.passwordTooShort'));
       return;
     }
 
@@ -77,17 +80,17 @@ const Register: React.FC = () => {
         <Box sx={{ marginTop: 8 }}>
           <Paper elevation={3} sx={{ p: 4 }}>
             <Typography variant="h5" align="center" gutterBottom color="primary">
-              Registration Successful!
+              {t('auth.registered')}
             </Typography>
             <Alert severity="success" sx={{ mt: 2, mb: 2 }}>
-              Please check your email to verify your account before logging in.
+              {t('auth.checkEmail')}
             </Alert>
             <Button
               fullWidth
               variant="contained"
               onClick={() => navigate('/login')}
             >
-              Go to Login
+              {t('auth.goToLogin')}
             </Button>
           </Paper>
         </Box>
@@ -105,12 +108,13 @@ const Register: React.FC = () => {
           alignItems: 'center',
         }}
       >
-        <Paper elevation={3} sx={{ p: 4, width: '100%' }}>
+        <Paper elevation={3} sx={{ p: 4, width: '100%', position: 'relative' }}>
+          <Box sx={{ position: 'absolute', top: 8, right: 8 }}><LanguageMenu /></Box>
           <Typography component="h1" variant="h4" align="center" gutterBottom color="primary">
             TIGON IOT
           </Typography>
           <Typography variant="body2" align="center" color="text.secondary" sx={{ mb: 3 }}>
-            Create Your Account
+            {t('auth.registerSubtitle')}
           </Typography>
 
           {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
@@ -121,21 +125,21 @@ const Register: React.FC = () => {
               required
               fullWidth
               id="email"
-              label="Email Address"
+              label={t('auth.email')}
               name="email"
               autoComplete="email"
               autoFocus
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               inputProps={{ autoCapitalize: 'none', autoCorrect: 'off', spellCheck: false, inputMode: 'email' }}
-              helperText="Must be @tigongolfcarts.com email"
+              helperText={t('auth.emailHelpRegister')}
             />
             <TextField
               margin="normal"
               required
               fullWidth
               name="password"
-              label="Password"
+              label={t('auth.password')}
               type={showPassword ? 'text' : 'password'}
               id="password"
               autoComplete="new-password"
@@ -146,6 +150,7 @@ const Register: React.FC = () => {
                   <InputAdornment position="end">
                     <IconButton
                       onClick={() => setShowPassword(!showPassword)}
+                      aria-label={showPassword ? t('auth.hidePassword') : t('auth.showPassword')}
                       edge="end"
                     >
                       {showPassword ? <VisibilityOff /> : <Visibility />}
@@ -157,7 +162,7 @@ const Register: React.FC = () => {
             {password && (
               <Box sx={{ mt: 1 }}>
                 <Typography variant="caption" color="text.secondary">
-                  Password Strength:
+                  {t('auth.strength')}
                 </Typography>
                 <LinearProgress
                   variant="determinate"
@@ -178,7 +183,7 @@ const Register: React.FC = () => {
               required
               fullWidth
               name="confirmPassword"
-              label="Confirm Password"
+              label={t('auth.confirmPassword')}
               type="password"
               id="confirmPassword"
               value={confirmPassword}
@@ -191,12 +196,12 @@ const Register: React.FC = () => {
               sx={{ mt: 3, mb: 2 }}
               disabled={loading}
             >
-              {loading ? 'Creating Account...' : 'Register'}
+              {loading ? t('auth.creating') : t('auth.register')}
             </Button>
             <Box sx={{ textAlign: 'center' }}>
               <Link to="/login" style={{ textDecoration: 'none' }}>
                 <Typography variant="body2" color="primary">
-                  Already have an account? Login
+                  {t('auth.haveAccount')}
                 </Typography>
               </Link>
             </Box>

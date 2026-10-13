@@ -8,7 +8,8 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "build:mp-ext": "esbuild src/mp/cartLogic.ts --bundle --format=iife --global-name=TigonCartLogic --target=chrome110 --outfile=../mp-assistant/shared/cart-logic.js && node -e \"for (const d of ['poster']) require('fs').copyFileSync('../mp-assistant/shared/cart-logic.js', '../mp-assistant/'+d+'/cart-logic.js')\""
+    "build:mp-ext": "esbuild src/mp/cartLogic.ts --bundle --format=iife --global-name=TigonCartLogic --target=chrome110 --outfile=../mp-assistant/shared/cart-logic.js && node -e \"for (const d of ['poster']) require('fs').copyFileSync('../mp-assistant/shared/cart-logic.js', '../mp-assistant/'+d+'/cart-logic.js')\"",
+    "typecheck": "tsc -p tsconfig.app.json --noEmit"
   },
   "dependencies": {
     "@capacitor-community/speech-recognition": "^7.0.1",

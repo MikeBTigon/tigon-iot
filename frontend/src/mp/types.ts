@@ -13,6 +13,8 @@ export interface MpProfile {
   location?: string;
   /** Display preferences (language, theme, large text, onboarding). */
   prefs?: UserPrefs;
+  /** Team approval: new sign-ups are 'pending' until an admin approves them; missing = active (older profiles). */
+  status?: 'active' | 'pending' | 'disabled';
 }
 
 export interface PostedAccountEntry {

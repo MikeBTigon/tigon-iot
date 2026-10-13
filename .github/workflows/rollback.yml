@@ -1,0 +1,23 @@
+# Puts an older version of TIGON IOT live again (website, Cloud Functions, Firestore/Storage rules).
+# GitHub → Actions → "Roll back" → Run workflow → ref = a deploy tag (e.g. deploy-20261013-1530-abc1234)
+# or a commit sha. Every successful deploy creates such a tag. The Android app on the Download page is
+# never rolled back (it stays the newest one). Firestore DATA is not touched — see docs/RUNBOOK.md.
+name: Roll back
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Deploy tag or commit sha to put live (e.g. deploy-20261013-1530-abc1234)
+        type: string
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  rollback:
+    uses: ./.github/workflows/firebase-deploy.yml
+    with:
+      ref: ${{ inputs.ref }}
+    secrets: inherit

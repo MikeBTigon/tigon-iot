@@ -4,13 +4,19 @@ apply plugin: 'com.android.application'
 def appVersionCode = (System.getenv("APP_VERSION_CODE") ?: "2000").toInteger()
 def appVersionName = System.getenv("APP_VERSION_NAME") ?: "2.0.0"
 
-// One fixed signing key so every new build installs as an UPDATE over the previous one.
-// (Keystore + password live in this folder; CI can override them with secrets.)
-def keystoreProps = new Properties()
-def keystorePropsFile = file("keystore.properties")
-if (keystorePropsFile.exists()) keystorePropsFile.withInputStream { keystoreProps.load(it) }
-def storePw = System.getenv("TIGON_STORE_PASSWORD") ?: keystoreProps.getProperty("TIGON_STORE_PASSWORD")
-def storePath = System.getenv("TIGON_KEYSTORE_PATH") ?: "tigon-release.keystore"
+// Release signing key: NEVER stored in git. CI decodes the ANDROID_KEYSTORE_BASE64 secret into a temp file and
+// passes it in with these environment variables (see docs/RUNBOOK.md "Android signing key").
+//   TIGON_KEYSTORE_PATH   path to the .keystore file
+//   TIGON_STORE_PASSWORD  keystore password
+//   TIGON_KEY_ALIAS       key alias (default "tigon")
+//   TIGON_KEY_PASSWORD    key password (default = store password)
+// Without them, `assembleRelease` fails on purpose: a public APK must never be unsigned or debug-signed.
+// Debug builds (`assembleDebug`, Android Studio "Run") use the normal Android debug key.
+def releaseStorePath = System.getenv("TIGON_KEYSTORE_PATH") ?: ""
+def releaseStorePw = System.getenv("TIGON_STORE_PASSWORD") ?: ""
+def releaseKeyAlias = System.getenv("TIGON_KEY_ALIAS") ?: "tigon"
+def releaseKeyPw = System.getenv("TIGON_KEY_PASSWORD") ?: releaseStorePw
+def hasReleaseKey = releaseStorePath && releaseStorePw && file(releaseStorePath).exists()
 
 android {
     namespace = "com.tigongolfcarts.iot"
@@ -29,19 +35,19 @@ android {
         }
     }
     signingConfigs {
-        tigon {
-            storeFile file(storePath)
-            storePassword storePw
-            keyAlias "tigon"
-            keyPassword storePw
+        if (hasReleaseKey) {
+            tigon {
+                storeFile file(releaseStorePath)
+                storePassword releaseStorePw
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPw
+            }
         }
     }
     buildTypes {
-        debug {
-            signingConfig signingConfigs.tigon
-        }
+        // debug: default Android debug key (for testing only; it cannot update the published app and is never published).
         release {
-            signingConfig signingConfigs.tigon
+            if (hasReleaseKey) signingConfig signingConfigs.tigon
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
@@ -67,6 +73,15 @@ dependencies {
 }
 
 apply from: 'capacitor.build.gradle'
+
+// Refuse to produce a release APK without the real signing key (it could not update the installed app).
+gradle.taskGraph.whenReady { graph ->
+    def wantsRelease = graph.allTasks.any { it.project == project && it.name.toLowerCase().contains("release") && (it.name.startsWith("assemble") || it.name.startsWith("bundle") || it.name.startsWith("package")) }
+    if (wantsRelease && !hasReleaseKey) {
+        throw new GradleException("Release signing key missing. Set TIGON_KEYSTORE_PATH and TIGON_STORE_PASSWORD " +
+            "(CI: add the ANDROID_KEYSTORE_BASE64 and ANDROID_KEYSTORE_PASSWORD repository secrets). See docs/RUNBOOK.md.")
+    }
+}
 
 try {
     def servicesJSON = file('google-services.json')
