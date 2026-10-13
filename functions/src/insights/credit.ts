@@ -10,6 +10,7 @@
 import * as logger from 'firebase-functions/logger';
 import {HttpsError, onCall, onRequest} from 'firebase-functions/v2/https';
 import * as admin from 'firebase-admin';
+import {FieldValue} from 'firebase-admin/firestore';
 import {STORE_BY_ID} from '../mpShare';
 import {C, db, loadPeople, managersFor, notify, nyDateKey, prettyPhone} from '../sales/util';
 import type {Json, Person} from '../sales/util';
@@ -256,7 +257,7 @@ The customer authorized us to share it to find financing. We did <b>not</b> coll
   const sentTo = {name: String(lender.name || ''), email: String(lender.email)};
   await ref.update({
     status: 'sent', sentAt: now, sentTo, lender: sentTo.name || sentTo.email, sentBy: me.uid, sentByName: me.name, updatedAt: now,
-    sendHistory: admin.firestore.FieldValue.arrayUnion({at: now, ...sentTo, by: me.uid}),
+    sendHistory: FieldValue.arrayUnion({at: now, ...sentTo, by: me.uid}),
   });
   if (a.leadId) {
     const lr = db().collection(C.leads).doc(String(a.leadId));

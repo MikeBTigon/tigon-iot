@@ -4,6 +4,7 @@ import {onRequest} from 'firebase-functions/v2/https';
 import {onDocumentCreated} from 'firebase-functions/v2/firestore';
 import {onSchedule} from 'firebase-functions/v2/scheduler';
 import * as admin from 'firebase-admin';
+import {Timestamp, FieldValue} from 'firebase-admin/firestore';
 
 admin.initializeApp();
 
@@ -43,8 +44,8 @@ export const onUserCreate = onRequest(async (req, res) => {
     await db.collection('users').doc(uid).set({
       email: email,
       emailVerified: decodedToken.email_verified || false,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      lastLogin: admin.firestore.FieldValue.serverTimestamp(),
+      createdAt: FieldValue.serverTimestamp(),
+      lastLogin: FieldValue.serverTimestamp(),
       role: 'user'
     });
     
@@ -164,7 +165,7 @@ export const cleanupOldNotifications = onSchedule({schedule: 'every 24 hours', t
   logger.info('Starting cleanup of old notifications');
   const thirtyDaysAgo = new Date();
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-  const snapshot = await db.collection('notifications').where('createdAt', '<', admin.firestore.Timestamp.fromDate(thirtyDaysAgo)).get();
+  const snapshot = await db.collection('notifications').where('createdAt', '<', Timestamp.fromDate(thirtyDaysAgo)).get();
   if (snapshot.empty) {
     logger.info('No old notifications to delete');
     return;
@@ -196,7 +197,7 @@ export const updateLastLogin = onRequest(async (req, res) => {
   try {
     const decodedToken = await auth.verifyIdToken(token);
     const userId = decodedToken.uid;
-    await db.collection('users').doc(userId).update({lastLogin: admin.firestore.FieldValue.serverTimestamp()});
+    await db.collection('users').doc(userId).update({lastLogin: FieldValue.serverTimestamp()});
     res.status(200).json({success: true});
   } catch (error) {
     logger.error('Error updating last login:', error);
@@ -224,6 +225,9 @@ export {mpHealth} from './health';
 export {mpRetention} from './retention';
 export {mpAuditUsers, mpAuditSettings, mpAuditOptOut, mpAuditWhSettings, mpUserPending} from './auditTriggers';
 
+// Customer timeline data, credit applications, weekly owner email, AI status.
+export * from './insights';
+
 // AI functions use the ANTHROPIC_API_KEY secret, so they are only exported (and therefore only
 // deployed) when AI is turned on: the deploy workflow writes ENABLE_AI_WRITER=true to functions/.env,
 // which Firebase loads both when deploying and at runtime.
@@ -232,4 +236,6 @@ if (process.env.ENABLE_AI_WRITER === 'true') {
   exports.mpAiListing = require('./mpAi').mpAiListing;
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   exports.mpAiSnap = require('./mpCreate').mpAiSnap;
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  exports.mpAiAssist = require('./insights/ai').mpAiAssist;
 }

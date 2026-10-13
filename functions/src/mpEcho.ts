@@ -6,6 +6,7 @@
 import * as logger from 'firebase-functions/logger';
 import {HttpsError, onCall, onRequest} from 'firebase-functions/v2/https';
 import * as admin from 'firebase-admin';
+import {FieldValue} from 'firebase-admin/firestore';
 import {createHash, randomBytes, timingSafeEqual} from 'crypto';
 import {isFacebookMessage} from './fbFilter';
 import {markOnline} from './presence';
@@ -123,7 +124,7 @@ export const mpEcho = onRequest({memory: '256MiB', timeoutSeconds: 30, maxInstan
           text: title && text ? `${title}: ${text}` : title || text,
           postedAt,
           isHandled: false,
-          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          createdAt: FieldValue.serverTimestamp(),
           expireAt: notificationExpireAt(),
           source: 'tigon-iot-echo',
         });

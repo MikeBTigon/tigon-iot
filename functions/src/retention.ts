@@ -9,6 +9,7 @@
 import * as logger from 'firebase-functions/logger';
 import {onSchedule} from 'firebase-functions/v2/scheduler';
 import * as admin from 'firebase-admin';
+import {Timestamp} from 'firebase-admin/firestore';
 import {raiseSystemAlert} from './alerts';
 import {nyDateKey} from './sales/util';
 
@@ -38,7 +39,7 @@ export async function deleteQuery(q: Q, deadline: number, filter?: (d: admin.fir
 
 export async function runRetention(now = Date.now(), budgetMs = 480_000): Promise<Record<string, number>> {
   const deadline = now + budgetMs;
-  const T = admin.firestore.Timestamp;
+  const T = Timestamp;
   const out: Record<string, number> = {};
   const step = async (name: string, fn: () => Promise<number>) => {
     try {

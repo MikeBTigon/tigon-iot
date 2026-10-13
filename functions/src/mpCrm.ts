@@ -4,6 +4,7 @@
 import * as logger from 'firebase-functions/logger';
 import {onSchedule} from 'firebase-functions/v2/scheduler';
 import * as admin from 'firebase-admin';
+import {FieldValue} from 'firebase-admin/firestore';
 import {notificationExpireAt} from './sales/util';
 import {raiseSystemAlert} from './alerts';
 
@@ -80,7 +81,7 @@ function notification(targetUserId: string, sourceDeviceName: string, text: stri
     sourceDeviceName,
     text,
     isHandled: false,
-    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    createdAt: FieldValue.serverTimestamp(),
     expireAt: notificationExpireAt(),
     ...extra,
   };

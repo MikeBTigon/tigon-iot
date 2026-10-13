@@ -3,6 +3,7 @@
 // succeeded is never re-run (replays/retries are safe). Failed steps retry on RETRY_DELAYS_MIN and then go to
 // the dead-letter list while the flow continues with the next step.
 import * as admin from 'firebase-admin';
+import {FieldValue} from 'firebase-admin/firestore';
 import * as logger from 'firebase-functions/logger';
 import {onSchedule} from 'firebase-functions/v2/scheduler';
 import {RETRY_DELAYS_MIN, WH} from './types';
@@ -24,7 +25,7 @@ const FINAL_RUN = ['success', 'skipped', 'dead'];
 
 type FlowKind = 'webhook' | 'master';
 type Cursor = {flow: FlowKind; index: number};
-const del = () => admin.firestore.FieldValue.delete();
+const del = () => FieldValue.delete();
 
 // ---------------------------------------------------------------------------
 // Test hook: override a step type's handler (null restores the real one).

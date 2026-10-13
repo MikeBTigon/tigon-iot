@@ -1,5 +1,6 @@
 // "Sell more" release — shared server helpers (collections, New York time, notifications, people, templates).
 import * as admin from 'firebase-admin';
+import {Timestamp, FieldValue} from 'firebase-admin/firestore';
 import {randomInt} from 'crypto';
 import {STORE_BY_ID} from '../mpShare';
 import {isInactiveStatus} from '../membership';
@@ -42,7 +43,7 @@ export const PUBLIC_ORIGIN = 'https://tigoniot.com';
 export const db = () => admin.firestore();
 
 /** Firestore Timestamp `ms` from now — for `expireAt` fields (a TTL policy can use them; mpRetention deletes them). */
-export const expireIn = (ms: number) => admin.firestore.Timestamp.fromMillis(Date.now() + ms);
+export const expireIn = (ms: number) => Timestamp.fromMillis(Date.now() + ms);
 /** Notifications are kept 60 days. */
 export const NOTIFICATION_TTL_MS = 60 * 24 * 60 * 60_000;
 export const notificationExpireAt = () => expireIn(NOTIFICATION_TTL_MS);
@@ -118,7 +119,7 @@ export async function notify(uid: string, from: string, text: string, extra: Jso
   if (!uid) return;
   const data = {
     targetUserId: uid, sourceDeviceName: from, text: text.slice(0, 800), isHandled: false,
-    createdAt: admin.firestore.FieldValue.serverTimestamp(), expireAt: notificationExpireAt(), ...extra,
+    createdAt: FieldValue.serverTimestamp(), expireAt: notificationExpireAt(), ...extra,
   };
   const ref = id ? db().collection(C.notifications).doc(id) : db().collection(C.notifications).doc();
   await ref.set(data, {merge: !!id});

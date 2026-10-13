@@ -12,6 +12,7 @@ import { db, functions } from '../../config/firebase';
 import { useSearchParams } from 'react-router-dom';
 import MpShell from '../components/MpShell';
 import WhTriage from '../../wh/pages/WhTriage';
+import HealthChecks from './HealthChecks';
 import { useMp } from '../MpDataContext';
 import { COLLECTIONS, ONLINE_WINDOW_MS } from '../constants';
 import { timeAgo } from '../cartUtils';
@@ -297,6 +298,7 @@ const MpStatus: React.FC = () => {
       {tab === 'forms' ? <WhTriage /> : (
         <>
           {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+          <HealthChecks />
           {body}
         </>
       )}

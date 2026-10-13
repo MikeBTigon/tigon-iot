@@ -6,6 +6,7 @@ import * as logger from 'firebase-functions/logger';
 import {HttpsError, onCall} from 'firebase-functions/v2/https';
 import {onSchedule} from 'firebase-functions/v2/scheduler';
 import * as admin from 'firebase-admin';
+import {FieldValue} from 'firebase-admin/firestore';
 import {notificationExpireAt} from './sales/util';
 import {GoogleAuth} from 'google-auth-library';
 import {raiseSystemAlert} from './alerts';
@@ -49,7 +50,7 @@ export const mpApprovalDigest = onSchedule({schedule: 'every 30 minutes', timeZo
       sourceDeviceName: 'MP Assistant',
       text,
       isHandled: false,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdAt: FieldValue.serverTimestamp(),
       expireAt: notificationExpireAt(),
       source: 'mp_approval',
     });

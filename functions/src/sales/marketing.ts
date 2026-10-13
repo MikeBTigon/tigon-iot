@@ -1,7 +1,7 @@
 // Track 5 — Marketing & managers (ideas 16, 17, 18): Google reviews + new-arrival posts, referral program, sales funnel.
 // The funnel is computed in the browser (frontend/src/mp/sales/marketing/marketingCalc.ts); the server keeps the Google
 // review snapshots (mp_reviews) and the referral codes and rewards (mp_referrals).
-import * as admin from 'firebase-admin';
+import {FieldValue} from 'firebase-admin/firestore';
 import * as logger from 'firebase-functions/logger';
 import {HttpsError, onCall} from 'firebase-functions/v2/https';
 import {loadSalesSettings} from './settings';
@@ -113,7 +113,7 @@ export async function refreshStoreReviews(storeId: string, placeId: string, s: S
     storeId, placeId, name: place.name, rating: place.rating, count: place.count, googleMapsUri: place.mapsUri,
     latest: place.reviews.map((r) => clean({author: r.author, rating: r.rating, text: r.text, time: r.time, uri: r.uri})),
     history, countWeekAgo: countDaysAgo(history, now, 7), countMonthAgo: countDaysAgo(history, now, 30),
-    seenIds, lastSeenTime, updatedAt: now, error: admin.firestore.FieldValue.delete(),
+    seenIds, lastSeenTime, updatedAt: now, error: FieldValue.delete(),
   }), {merge: true});
 
   const city = storeCity(storeId) || storeId;
@@ -236,7 +236,7 @@ export async function creditReferralLead(leadId: string, referralCode: string, n
     if (ref.leadId && ref.leadId === leadId) return false; // can't refer yourself
     const note = `Referred by ${ref.name || 'a customer'}`;
     const notes = String(lead.notes || '');
-    tx.update(refRef, {leads: admin.firestore.FieldValue.increment(1), lastUsedAt: now});
+    tx.update(refRef, {leads: FieldValue.increment(1), lastUsedAt: now});
     tx.update(leadRef, {
       referralCountedAt: now, referralCode: c,
       notes: notes.includes(note) ? notes : (notes ? `${notes}\n${note}` : note),

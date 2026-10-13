@@ -4,6 +4,7 @@ import * as logger from 'firebase-functions/logger';
 import {HttpsError, onCall} from 'firebase-functions/v2/https';
 import {onSchedule} from 'firebase-functions/v2/scheduler';
 import * as admin from 'firebase-admin';
+import {FieldValue} from 'firebase-admin/firestore';
 import {createHash} from 'crypto';
 import {cartActive, dmsDeleteFlag, handleCartSold, nextPriceHistory, priceDropOf, stockedAtOf} from './sales/inventory';
 import {raiseSystemAlert} from './alerts';
@@ -332,7 +333,7 @@ export async function syncInventory(trigger: string): Promise<SyncResult> {
       ...(warning ? {warning} : {}),
     };
     await statusRef.set({
-      ok: true, trigger, startedAt: started, finishedAt: Date.now(), ...result, error: admin.firestore.FieldValue.delete(),
+      ok: true, trigger, startedAt: started, finishedAt: Date.now(), ...result, error: FieldValue.delete(),
       leaseUntil: 0,
     }, {merge: true});
     logger.info('mpSync done', {trigger, ...result});

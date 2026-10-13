@@ -9,6 +9,7 @@
 //   provider 'twilio': mpSmsQueued sends new texts right away; textingTick sends delayed ones and retries.
 // Replies: Twilio → mpSmsInbound (/api/sms/inbound); texting phone → its Messages-app notifications (missedCallEcho).
 import * as admin from 'firebase-admin';
+import {FieldValue} from 'firebase-admin/firestore';
 import * as logger from 'firebase-functions/logger';
 import {HttpsError, onCall, onRequest} from 'firebase-functions/v2/https';
 import {onDocumentCreated} from 'firebase-functions/v2/firestore';
@@ -24,7 +25,7 @@ import {isOptedOut, markLeadTexted, queueSms} from './outbox';
 import {isInactiveStatus} from '../membership';
 import type {SmsDoc} from './outbox';
 
-const FV = admin.firestore.FieldValue;
+const FV = FieldValue;
 const MAX_ATTEMPTS = 3;
 /** A text taken by the texting phone / Twilio with no confirmation after this is marked failed (never resent). */
 const STUCK_MS = 10 * MIN_MS;

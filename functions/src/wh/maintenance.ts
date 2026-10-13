@@ -1,5 +1,6 @@
 // Webhook Flows — nightly maintenance: retention, expired rate counters, and the Master Digest email.
 import * as admin from 'firebase-admin';
+import {Timestamp, FieldValue} from 'firebase-admin/firestore';
 import * as logger from 'firebase-functions/logger';
 import {onSchedule} from 'firebase-functions/v2/scheduler';
 import {WH} from './types';
@@ -45,7 +46,7 @@ export async function runRetention(retentionDays: number, maxDocs = 3000) {
 export async function purgeRate(maxDocs = 5000) {
   let n = 0;
   while (n < maxDocs) {
-    const snap = await db().collection(WH.rate).where('expiresAt', '<', admin.firestore.Timestamp.now()).limit(500).get();
+    const snap = await db().collection(WH.rate).where('expiresAt', '<', Timestamp.now()).limit(500).get();
     if (snap.empty) break;
     const batch = db().batch();
     snap.docs.forEach((d) => batch.delete(d.ref));
@@ -140,7 +141,7 @@ export async function sendDailyDigest(now = Date.now()) {
     await markerRef.set({lastDay: day, sentAt: Date.now(), messageId: r.messageId}, {merge: true});
     return {sent: true, day};
   } catch (e) {
-    await markerRef.set({lastDay: admin.firestore.FieldValue.delete(), lastError: String(e)}, {merge: true});
+    await markerRef.set({lastDay: FieldValue.delete(), lastError: String(e)}, {merge: true});
     logger.error('wh digest failed', e);
     return {sent: false, reason: String(e)};
   }

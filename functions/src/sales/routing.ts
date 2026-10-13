@@ -6,12 +6,13 @@
 // assignHistory, fbAccountId, fbSender, fbMessages. firstResponseAt/responseMinutes are set by the app (call/text/email
 // tap, claim) and by outbox.markLeadTexted (texts a person sent).
 import * as admin from 'firebase-admin';
+import {FieldValue} from 'firebase-admin/firestore';
 import {createHash} from 'crypto';
 import type {SalesSettings} from './settings';
 import {C, MIN_MS, cartSummary, clean, commitAll, db, isQuietHour, loadPeople, managersFor, notificationExpireAt, notify, nyDateKey, nyTime} from './util';
 import type {Json, Person} from './util';
 
-const FV = admin.firestore.FieldValue;
+const FV = FieldValue;
 
 // ---------------------------------------------------------------------------
 // Pure helpers (unit-tested)

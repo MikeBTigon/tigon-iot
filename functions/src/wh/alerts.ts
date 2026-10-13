@@ -1,6 +1,6 @@
 // Webhook Flows — hourly alerts: websites with no leads, and step-failure spikes.
 // Alerts land in mp_alerts and as IoT notifications (→ phone push). State: wh_settings/alert_state.
-import * as admin from 'firebase-admin';
+import {FieldValue} from 'firebase-admin/firestore';
 import * as logger from 'firebase-functions/logger';
 import {onSchedule} from 'firebase-functions/v2/scheduler';
 import {WH} from './types';
@@ -30,7 +30,7 @@ export async function raiseWhAlert(alert: Record<string, unknown> & {kind: strin
       sourceDeviceName: 'Webhook Flows',
       text: alert.text,
       isHandled: false,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdAt: FieldValue.serverTimestamp(),
       expireAt: notificationExpireAt(),
       source: 'wh_alert',
       alertId: ref.id,

@@ -1,5 +1,6 @@
 // Webhook Flows — TIGON IOT integration: create an MP Leads (CRM) lead, and IoT notifications (phone push).
 import * as admin from 'firebase-admin';
+import {FieldValue} from 'firebase-admin/firestore';
 import {renderTemplate} from '../shared';
 import {notificationExpireAt} from '../../sales/util';
 import type {StepContext, StepResult} from '../engineTypes';
@@ -93,7 +94,7 @@ export async function notifyStep(ctx: StepContext): Promise<StepResult> {
     try {
       await db().collection('notifications').doc(`wh_${ctx.submission.id}_${uid}`).create({
         targetUserId: uid, sourceDeviceName: 'Webhook Flows', text, isHandled: false,
-        createdAt: admin.firestore.FieldValue.serverTimestamp(), expireAt: notificationExpireAt(), source: 'wh_lead',
+        createdAt: FieldValue.serverTimestamp(), expireAt: notificationExpireAt(), source: 'wh_lead',
         whSubmissionId: ctx.submission.id, ...(ctx.submission.mpLeadId ? {leadId: ctx.submission.mpLeadId} : {}),
       });
       created++;

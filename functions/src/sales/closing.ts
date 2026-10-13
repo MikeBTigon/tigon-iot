@@ -3,6 +3,7 @@
 // validates and size-limits its input, never returns another customer's data, and creates or attaches leads with the
 // Admin SDK. Queries use single-field indexes only (one field, or several == filters).
 import * as admin from 'firebase-admin';
+import {Timestamp} from 'firebase-admin/firestore';
 import * as logger from 'firebase-functions/logger';
 import {randomUUID} from 'crypto';
 import type {SalesSettings, WeekDay} from './settings';
@@ -615,7 +616,7 @@ const bookingHandlers: Record<string, PublicHandler> = {
       const mine = active.find((d) => e164(d.get('phone')) === phone);
       if (mine) return mine.id; // pressed "Book" twice
       if (active.length >= cap) throw new PublicError(409, 'Sorry, that time just filled up. Please pick another time.');
-      tx.set(lockRef, {count: active.length + 1, at: now, expireAt: admin.firestore.Timestamp.fromMillis(start + DAY_MS)});
+      tx.set(lockRef, {count: active.length + 1, at: now, expireAt: Timestamp.fromMillis(start + DAY_MS)});
       tx.set(apptRef, clean({
         storeId, name, phone, email: email || undefined, kind, cartId: cartId || undefined, cartTitle: cartTitle || undefined,
         startAt: start, endAt: start + step * MIN_MS, dateKey: date, status: 'booked', source: 'public', notes: notes || undefined,

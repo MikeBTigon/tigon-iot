@@ -5,7 +5,7 @@
 // smsConsent === true or the customer's consentSms === true. Texts the customer asked for (a reply, their booking's
 // reminders, the one missed-call text-back) don't need it.
 // `queueAt` (ms) is present only while a text is 'queued' — the texting phone / housekeeping query it (bounded reads).
-import * as admin from 'firebase-admin';
+import {FieldValue} from 'firebase-admin/firestore';
 import {C, afterQuiet, db, e164} from './util';
 import {loadSalesSettings} from './settings';
 
@@ -152,4 +152,4 @@ export async function markLeadTexted(leadId: string | undefined, at = Date.now()
   });
 }
 
-export const serverTime = () => admin.firestore.FieldValue.serverTimestamp();
+export const serverTime = () => FieldValue.serverTimestamp();

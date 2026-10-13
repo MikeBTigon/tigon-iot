@@ -5,6 +5,7 @@
 import * as logger from 'firebase-functions/logger';
 import {onRequest} from 'firebase-functions/v2/https';
 import * as admin from 'firebase-admin';
+import {FieldValue} from 'firebase-admin/firestore';
 import {loadSalesSettings, type DayHours, type WeekDay} from './sales/settings';
 
 const PUBLIC_ORIGIN = 'https://tigon-iot.web.app';
@@ -276,7 +277,7 @@ export const mpLink = onRequest({region: REGION, maxInstances: 20}, async (req, 
     if (link.variant) click.variant = link.variant;
     if (link.abTestId) click.abTestId = link.abTestId;
     const batch = db.batch();
-    batch.update(ref, {clicks: admin.firestore.FieldValue.increment(1), lastClickAt: Date.now()});
+    batch.update(ref, {clicks: FieldValue.increment(1), lastClickAt: Date.now()});
     batch.set(db.collection(CLICKS).doc(), click);
     await batch.commit().catch((e) => logger.warn('mpLink: count failed', code, e));
     res.redirect(302, target);

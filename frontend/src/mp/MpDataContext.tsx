@@ -14,6 +14,7 @@ import {
   setDoc,
   startAfter,
   updateDoc,
+  where,
   writeBatch,
   type Query,
   type QuerySnapshot,
@@ -174,11 +175,15 @@ export const MpDataProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setCartsError('');
     setCartMap(new Map());
     let cursor: QueryDocumentSnapshot | null = null;
+    // Only in-stock carts (`active` is kept by the server). Until the server has marked any cart, read them all.
+    let onlyActive = true;
+    let seen = 0;
     try {
       for (;;) {
+        const base = onlyActive ? [where('active', '==', true), orderBy(documentId())] : [orderBy(documentId())];
         const q: Query = cursor
-          ? query(collection(db, COLLECTIONS.carts), orderBy(documentId()), startAfter(cursor), limit(FETCH_BATCH))
-          : query(collection(db, COLLECTIONS.carts), orderBy(documentId()), limit(FETCH_BATCH));
+          ? query(collection(db, COLLECTIONS.carts), ...base, startAfter(cursor), limit(FETCH_BATCH))
+          : query(collection(db, COLLECTIONS.carts), ...base, limit(FETCH_BATCH));
         const snap: QuerySnapshot = await getDocs(q);
         if (run !== loadRun.current) return;
         setCartMap((prev) => {
@@ -189,6 +194,11 @@ export const MpDataProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           }
           return next;
         });
+        seen += snap.docs.length;
+        if (onlyActive && !cursor && seen === 0) {
+          onlyActive = false;
+          continue;
+        }
         if (snap.docs.length < FETCH_BATCH) break;
         cursor = snap.docs[snap.docs.length - 1];
       }

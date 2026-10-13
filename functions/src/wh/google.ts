@@ -7,7 +7,7 @@
 //     gaManual   {domainId, measurementId, apiSecret} → validates and saves pasted values
 //     gaDisconnect {domainId}
 //     repairSheet {spreadsheetId, tab?} → old-layout rows rewritten under the right headers, duplicate rows removed
-import * as admin from 'firebase-admin';
+import {FieldValue} from 'firebase-admin/firestore';
 import * as logger from 'firebase-functions/logger';
 import {HttpsError, onCall} from 'firebase-functions/v2/https';
 import {GoogleAuth} from 'google-auth-library';
@@ -160,7 +160,7 @@ async function checkSheets() {
   await db().collection(WH.settings).doc(STATUS_DOC).set({sheetsCheck: status}, {merge: true});
   if (allOk) {
     await db().collection(WH.settings).doc('sheets_status').set(
-      {lastError: admin.firestore.FieldValue.delete(), lastErrorAt: admin.firestore.FieldValue.delete()}, {merge: true});
+      {lastError: FieldValue.delete(), lastErrorAt: FieldValue.delete()}, {merge: true});
   }
   return status;
 }
@@ -224,7 +224,7 @@ async function ga4Validate(measurementId: string, apiSecret: string) {
 
 async function saveGa(domainId: string, values: Record<string, unknown>) {
   const patch: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(values)) patch[k] = v === undefined ? admin.firestore.FieldValue.delete() : v;
+  for (const [k, v] of Object.entries(values)) patch[k] = v === undefined ? FieldValue.delete() : v;
   if (domainId) {
     const ref = db().collection(WH.domains).doc(domainId);
     if (!(await ref.get()).exists) throw new HttpsError('not-found', 'Website not found.');

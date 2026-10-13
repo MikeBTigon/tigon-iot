@@ -4,6 +4,7 @@
 //     notifications              (every admin and manager → dashboard + phone push)
 //     email                      (optional, to iot@tigongolfcarts.com through the Webhook Flows email server)
 import * as admin from 'firebase-admin';
+import {FieldValue} from 'firebase-admin/firestore';
 import * as logger from 'firebase-functions/logger';
 import {expireIn, notificationExpireAt, nyDateKey} from './sales/util';
 import {isInactiveStatus} from './membership';
@@ -64,7 +65,7 @@ export async function raiseSystemAlert(a: SystemAlert): Promise<string | null> {
     for (const uid of uids.slice(0, 400)) {
       batch.set(db().collection('notifications').doc(`alert_${id}_${uid}`), {
         targetUserId: uid, sourceDeviceName: 'TIGON IOT', text, isHandled: false,
-        createdAt: admin.firestore.FieldValue.serverTimestamp(), expireAt: notificationExpireAt(),
+        createdAt: FieldValue.serverTimestamp(), expireAt: notificationExpireAt(),
         source: 'mp_alert', alertId: id,
       });
     }

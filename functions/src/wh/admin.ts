@@ -1,5 +1,6 @@
 // Webhook Flows — admin API (callables): whReplay, whTestWebhook.
 import * as admin from 'firebase-admin';
+import {FieldValue} from 'firebase-admin/firestore';
 import * as logger from 'firebase-functions/logger';
 import {HttpsError, onCall} from 'firebase-functions/v2/https';
 import type {CallableRequest} from 'firebase-functions/v2/https';
@@ -10,7 +11,7 @@ import {FINISHED_STATUSES, processSubmission, runSingleStep} from './engine';
 import {cleanValue, dedupeKeys} from './fields';
 import {bumpStats} from './stats';
 
-const del = () => admin.firestore.FieldValue.delete();
+const del = () => FieldValue.delete();
 
 export interface Caller {uid: string; name: string; role: string}
 

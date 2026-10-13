@@ -51,13 +51,23 @@ export function useCartLeads(cartId: string, uid: string | undefined, manager: b
 
 /** How many people asked about each cart on Facebook (server-kept counter, readable by the whole team). */
 export function useFbAskCount(cartId: string): number {
-  const [state, setState] = useState<{ id: string; n: number }>({ id: '', n: 0 });
-  useEffect(() => onSnapshot(
-    doc(db, 'mp_meta', 'sales_fb_asks'),
-    (s) => setState({ id: cartId, n: Number(s.get(cartId)) || 0 }),
-    () => setState({ id: cartId, n: 0 }),
-  ), [cartId]);
-  return state.id === cartId ? state.n : 0;
+  // New counter on the cart (fbAsks); older counts live in mp_meta/sales_fb_asks. Show the larger.
+  const [state, setState] = useState<{ id: string; cart: number; old: number }>({ id: '', cart: 0, old: 0 });
+  useEffect(() => {
+    if (!cartId) return;
+    const offCart = onSnapshot(
+      doc(db, COLLECTIONS.carts, cartId),
+      (s) => setState((p) => ({ id: cartId, cart: Number(s.get('fbAsks')) || 0, old: p.id === cartId ? p.old : 0 })),
+      () => undefined,
+    );
+    const offOld = onSnapshot(
+      doc(db, 'mp_meta', 'sales_fb_asks'),
+      (s) => setState((p) => ({ id: cartId, cart: p.id === cartId ? p.cart : 0, old: Number(s.get(cartId)) || 0 })),
+      () => undefined,
+    );
+    return () => { offCart(); offOld(); };
+  }, [cartId]);
+  return state.id === cartId ? Math.max(state.cart, state.old) : 0;
 }
 
 /** "I've got it": stops the claim timer and starts the response clock. */

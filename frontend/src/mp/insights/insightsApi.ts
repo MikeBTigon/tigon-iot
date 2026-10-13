@@ -74,20 +74,8 @@ export async function aiPostPicks(carts: PicksInput['carts']): Promise<Array<{ i
 // Texting: the server callable mpSendText when it is deployed, else the client outbox (mp_sms).
 // ---------------------------------------------------------------------------
 
-let noServerSend = false;
-
+/** Reply from the inbox: the server checks ownership, STOP opt-outs and limits, then queues the text. */
 export async function sendTextSmart(input: { to: string; body: string; leadId?: string; storeId?: string; createdBy: string }): Promise<void> {
-  if (!noServerSend) {
-    try {
-      await httpsCallable(functions, 'mpSendText')({ to: input.to, body: input.body, ...(input.leadId ? { leadId: input.leadId } : {}) });
-      return;
-    } catch (e) {
-      const code = (e as { code?: string }).code || '';
-      // Not deployed yet (a missing callable shows up as not-found or a failed request): use the client outbox.
-      if (!['functions/not-found', 'functions/unimplemented', 'functions/internal'].includes(code)) throw e;
-      noServerSend = true;
-    }
-  }
   await sendText({ to: input.to, body: input.body, createdBy: input.createdBy, storeId: input.storeId, leadId: input.leadId, kind: 'reply' });
 }
 

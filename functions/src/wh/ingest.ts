@@ -4,6 +4,7 @@
 import {createHash, createHmac, randomUUID, timingSafeEqual} from 'crypto';
 import busboy from 'busboy';
 import * as admin from 'firebase-admin';
+import {Timestamp, FieldValue} from 'firebase-admin/firestore';
 import * as logger from 'firebase-functions/logger';
 import {onRequest} from 'firebase-functions/v2/https';
 import {IMAGE_FIELDS, LEAD_FIELDS, WH} from './types';
@@ -229,11 +230,11 @@ export async function parseBody(req: IngestReq): Promise<Parsed> {
 export async function overRateLimit(ip: string, webhookId: string, perIp: number, perKey: number): Promise<boolean> {
   if (perIp <= 0 && perKey <= 0) return false;
   const minute = Math.floor(Date.now() / 60_000);
-  const expiresAt = admin.firestore.Timestamp.fromMillis((minute + 3) * 60_000);
+  const expiresAt = Timestamp.fromMillis((minute + 3) * 60_000);
   const col = db().collection(WH.rate);
   const ipRef = col.doc(`ip_${createHash('sha256').update(ip || 'none').digest('hex').slice(0, 20)}_${minute}`);
   const keyRef = col.doc(`key_${webhookId}_${minute}`);
-  const inc = admin.firestore.FieldValue.increment(1);
+  const inc = FieldValue.increment(1);
   const batch = db().batch();
   if (perIp > 0) batch.set(ipRef, {count: inc, expiresAt}, {merge: true});
   if (perKey > 0) batch.set(keyRef, {count: inc, expiresAt}, {merge: true});

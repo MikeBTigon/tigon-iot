@@ -6,6 +6,7 @@ import * as logger from 'firebase-functions/logger';
 import {HttpsError, onCall} from 'firebase-functions/v2/https';
 import {onSchedule} from 'firebase-functions/v2/scheduler';
 import * as admin from 'firebase-admin';
+import {FieldValue} from 'firebase-admin/firestore';
 import {createHash, randomBytes, randomInt} from 'crypto';
 import {isInactiveStatus} from './membership';
 import {raiseSystemAlert} from './alerts';
@@ -172,14 +173,14 @@ export const mpPairDevice = onCall(async (req) => {
   // Replacing an old phone with the same number: retire the old one.
   if (pairing.replaceDeviceId && pairing.replaceDeviceId !== deviceId) {
     await db().collection('devices').doc(String(pairing.replaceDeviceId))
-      .set({status: 'revoked', isActive: false, fcmToken: admin.firestore.FieldValue.delete(), replacedBy: deviceId}, {merge: true})
+      .set({status: 'revoked', isActive: false, fcmToken: FieldValue.delete(), replacedBy: deviceId}, {merge: true})
       .catch((e) => logger.warn('replace device failed', e));
   }
   // The same phone may have been set up before for another person: retire those records.
   const older = await db().collection('devices').where('installId', '==', installId).limit(20).get();
   for (const o of older.docs) {
     if (o.id !== deviceId && o.get('status') !== 'revoked') {
-      await o.ref.set({status: 'revoked', isActive: false, fcmToken: admin.firestore.FieldValue.delete(),
+      await o.ref.set({status: 'revoked', isActive: false, fcmToken: FieldValue.delete(),
         replacedBy: deviceId, retiredReason: 'phone-set-up-again'}, {merge: true});
     }
   }
@@ -199,8 +200,8 @@ export const mpPairDevice = onCall(async (req) => {
     osVersion: String(d.osVersion || '').slice(0, 30),
     appVersion: String(d.appVersion || '').slice(0, 30),
     status: 'active',
-    retiredReason: admin.firestore.FieldValue.delete(),
-    replacedBy: admin.firestore.FieldValue.delete(),
+    retiredReason: FieldValue.delete(),
+    replacedBy: FieldValue.delete(),
     pairedAt: Date.now(),
     lastSeen: Date.now(),
   }, {merge: true});
@@ -263,7 +264,7 @@ async function recordPushResults(targets: PushTarget[], responses: admin.messagi
     const r = responses[i];
     try {
       if (r?.success) {
-        if (t.hadError) await t.ref.update({pushError: admin.firestore.FieldValue.delete(), pushErrorAt: admin.firestore.FieldValue.delete()});
+        if (t.hadError) await t.ref.update({pushError: FieldValue.delete(), pushErrorAt: FieldValue.delete()});
       } else if (r?.error && DEAD_TOKEN_CODES.has(r.error.code)) {
         await t.ref.update({pushError: `${r.error.code}: ${r.error.message}`.slice(0, 300), pushErrorAt: now});
       }
@@ -294,7 +295,7 @@ async function dispatch(ref: admin.firestore.DocumentReference, item: Json) {
     await recordPushResults(targets, res.responses);
     if (res.successCount) {
       update.status = 'sent';
-      update.lastError = admin.firestore.FieldValue.delete();
+      update.lastError = FieldValue.delete();
     } else {
       update.lastError = res.responses.find((r) => r.error)?.error?.message || 'Push failed';
     }
@@ -372,7 +373,7 @@ async function raiseAlert(alert: Json, id: string, flagRef: admin.firestore.Docu
       sourceDeviceName: 'MP Assistant',
       text: alert.text,
       isHandled: false,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdAt: FieldValue.serverTimestamp(),
       expireAt: notificationExpireAt(),
       source: 'mp_alert',
       alertId,

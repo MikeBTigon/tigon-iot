@@ -1,6 +1,7 @@
 // Webhook Flows — Google Sheets: the step buffers one row (wh_sheet_buffer/{runId}); flushSheetBuffer appends in batches.
 import * as logger from 'firebase-functions/logger';
 import * as admin from 'firebase-admin';
+import {FieldValue} from 'firebase-admin/firestore';
 import {GoogleAuth} from 'google-auth-library';
 import {createHash} from 'crypto';
 import {LEAD_FIELDS, TRACKING_FIELDS, WH} from '../types';
@@ -402,7 +403,7 @@ export async function flushSheetBuffer(): Promise<{rows: number; errors: number}
       lastFlushAt: Date.now(), lastFlushRows: rows, flushLeaseUntil: 0,
       ...(pending !== null ? {pendingRows: pending} : {}), ...(dead !== null ? {deadRows: dead} : {}),
       // A clean flush that wrote rows clears the old error (System Triage / Needs attention).
-      ...(lastError ? {lastError, lastErrorAt: Date.now()} : rows > 0 ? {lastError: admin.firestore.FieldValue.delete(), lastErrorAt: admin.firestore.FieldValue.delete()} : {}),
+      ...(lastError ? {lastError, lastErrorAt: Date.now()} : rows > 0 ? {lastError: FieldValue.delete(), lastErrorAt: FieldValue.delete()} : {}),
     }, {merge: true});
   }
   if (newlyDead) {
