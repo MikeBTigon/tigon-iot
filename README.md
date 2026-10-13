@@ -1,5 +1,7 @@
 # TIGON IOT
 
+Built for **TIGON Golf Carts** by **Noah Jaslow, Jaslow Digital** ([jaslowdigital.com](https://jaslowdigital.com)).
+
 Internal web app and Android app for TIGON Golf Carts staff — live at **https://tigoniot.com**
 (Firebase project `tigon-iot`).
 
@@ -46,3 +48,13 @@ MP Assistant details: [mp-assistant/README.md](mp-assistant/README.md). Phone ap
 - Never commit secrets or signing keys (`*.keystore`, `.env`, service-account JSON).
 - Firestore indexes are not deployed: queries must work with single-field indexes.
 - Only the Cloud Functions listed in `FUNCS` in `.github/workflows/firebase-deploy.yml` are deployed — add new ones there.
+
+## Developer & contact
+
+This system was designed and built for **TIGON Golf Carts** by:
+
+**Noah Jaslow — Jaslow Digital**
+- Website: [https://jaslowdigital.com](https://jaslowdigital.com)
+- Email: [jaslowdigital@gmail.com](mailto:jaslowdigital@gmail.com) · [info@jaslowdigital.com](mailto:info@jaslowdigital.com)
+
+For questions, changes, support or new features, contact Jaslow Digital.
