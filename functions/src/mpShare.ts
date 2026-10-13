@@ -233,7 +233,7 @@ function ogHtml(target: string, c: PublicCart): string {
 }
 
 /** GET /l/:code → counts the click (humans only) and 302-redirects to the link's target. */
-export const mpLink = onRequest({region: REGION}, async (req, res) => {
+export const mpLink = onRequest({region: REGION, maxInstances: 20}, async (req, res) => {
   res.set('Cache-Control', 'no-store');
   const code = str(req.path.split('/').filter(Boolean).pop());
   if (!/^[A-Za-z0-9]{4,16}$/.test(code)) {
@@ -363,7 +363,7 @@ async function storeHours(): Promise<Record<WeekDay, DayHours> | null> {
 }
 
 /** GET /api/storefront/:slug → storefront + carts; GET /api/storefront/:slug/:cartId → one cart. */
-export const mpStorefrontApi = onRequest({region: REGION}, async (req, res) => {
+export const mpStorefrontApi = onRequest({region: REGION, maxInstances: 20}, async (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
   if (req.method === 'OPTIONS') {
     res.set('Access-Control-Allow-Methods', 'GET');

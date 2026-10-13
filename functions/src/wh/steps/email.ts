@@ -2,7 +2,6 @@
 import * as logger from 'firebase-functions/logger';
 import {HttpsError, onCall} from 'firebase-functions/v2/https';
 import * as admin from 'firebase-admin';
-import * as nodemailer from 'nodemailer';
 import type {Transporter} from 'nodemailer';
 import {createHash, randomBytes} from 'crypto';
 import {WH} from '../types';
@@ -125,6 +124,9 @@ function transportFor(integration: WhIntegration, setup: SmtpSetup): Transporter
       transports.delete(k);
     }
   }
+  // nodemailer is loaded on first use (most functions never send email).
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const nodemailer = require('nodemailer') as typeof import('nodemailer');
   const t = nodemailer.createTransport({
     host: setup.host,
     port: setup.port,

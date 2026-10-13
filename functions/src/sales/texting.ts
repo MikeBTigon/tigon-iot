@@ -182,7 +182,7 @@ const SERVICE_LABEL: Record<string, string> = {
 // ---------------------------------------------------------------------------
 
 export const twilioKeys = () => !!(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN);
-const twilioOn = (s: SalesSettings) => s.sms.provider === 'twilio' && twilioKeys();
+export const twilioOn = (s: SalesSettings) => s.sms.provider === 'twilio' && twilioKeys();
 
 /** Stores this phone sends for ('*' = it's the fallback phone). */
 function storesOfPhone(deviceId: string, s: SalesSettings): {stores: string[]; isDefault: boolean} {
@@ -197,7 +197,7 @@ const isTextingPhone = (deviceId: string, s: SalesSettings) => {
   return x.isDefault || x.stores.length > 0;
 };
 /** The phone a store's texts go out from ('' = none set up). */
-function phoneForStore(storeId: string, s: SalesSettings): string {
+export function phoneForStore(storeId: string, s: SalesSettings): string {
   return (storeId && s.sms.senderDeviceByStore?.[storeId]) || s.sms.defaultSenderDeviceId || '';
 }
 
@@ -749,7 +749,7 @@ function signedUrlCandidates(req: {originalUrl?: string; url?: string; headers: 
 const EMPTY_TWIML = '<?xml version="1.0" encoding="UTF-8"?><Response></Response>';
 
 /** Twilio webhooks: /api/sms/inbound (a customer texted the store's Twilio number) and /api/sms/status. */
-export const mpSmsInbound = onRequest({region: 'us-central1', memory: '256MiB', timeoutSeconds: 30}, async (req, res) => {
+export const mpSmsInbound = onRequest({region: 'us-central1', memory: '256MiB', timeoutSeconds: 30, maxInstances: 20}, async (req, res) => {
   if (req.method !== 'POST') {
     res.status(405).send('');
     return;

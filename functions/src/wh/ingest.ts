@@ -96,12 +96,15 @@ export function sniffImage(b: Buffer): {mime: string; ext: string} | null {
   return null;
 }
 
-/** Client IP, server side only: Fastly (Firebase Hosting) → X-Forwarded-For → socket. */
+/**
+ * Client IP, server side only: Fastly-Client-IP (Firebase Hosting) → the LAST X-Forwarded-For hop (added by Google's
+ * front end; the first entries can be anything the caller sent) → socket.
+ */
 export function clientIp(req: IngestReq): string {
   const f = header(req, 'fastly-client-ip').trim();
   if (f) return f;
-  const xff = header(req, 'x-forwarded-for').split(',')[0].trim();
-  if (xff) return xff;
+  const hops = header(req, 'x-forwarded-for').split(',').map((x) => x.trim()).filter(Boolean);
+  if (hops.length) return hops[hops.length - 1];
   return (req.ip || '').replace(/^::ffff:/, '');
 }
 
@@ -256,7 +259,7 @@ async function verifyTurnstile(secret: string, token: string, ip: string): Promi
     return !!j.success;
   } catch (e) {
     logger.warn('wh turnstile verification unavailable', e);
-    return null; // fail open: never lose a lead because Cloudflare is unreachable
+    return null; // unknown: the submission is held for spam review (never lost, never sent on unchecked)
   }
 }
 
@@ -427,7 +430,11 @@ export async function handleIngest(req: IngestReq, res: IngestRes): Promise<void
     if (!spamReason && spam.turnstileSecret) {
       const token = cleanValue(parsed.values['cf-turnstile-response']);
       if (!token) spamReason = 'Missing Turnstile check';
-      else if ((await verifyTurnstile(spam.turnstileSecret, token, ip)) === false) spamReason = 'Failed Turnstile check';
+      else {
+        const ok = await verifyTurnstile(spam.turnstileSecret, token, ip);
+        if (ok === false) spamReason = 'Failed Turnstile check';
+        else if (ok === null) spamReason = 'captcha unavailable'; // held as spam for review (Triage can release it)
+      }
     }
 
     const ref = db().collection(WH.submissions).doc();
@@ -523,6 +530,6 @@ export async function handleIngest(req: IngestReq, res: IngestRes): Promise<void
   }
 }
 
-export const whIngest = onRequest({memory: '512MiB', timeoutSeconds: 60}, async (req, res) => {
+export const whIngest = onRequest({memory: '512MiB', timeoutSeconds: 60, maxInstances: 20}, async (req, res) => {
   await handleIngest(req as unknown as IngestReq, res as unknown as IngestRes);
 });

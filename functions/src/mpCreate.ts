@@ -9,7 +9,8 @@ import {onSchedule} from 'firebase-functions/v2/scheduler';
 import * as admin from 'firebase-admin';
 import {isInactiveStatus} from './membership';
 import {createHash} from 'crypto';
-import Anthropic from '@anthropic-ai/sdk';
+// Types only at load time; the SDK itself is loaded on first use (keeps cold starts of other functions fast).
+import type Anthropic from '@anthropic-ai/sdk';
 
 // Secret referenced by name (not defineSecret) so merely loading this file never makes a deploy
 // look the secret up; it is only bound to the AI function when that function is exported.
@@ -278,7 +279,9 @@ export const mpAiSnap = onCall(
 
     const apiKey = (process.env[ANTHROPIC_SECRET] || '');
     if (!apiKey) throw new HttpsError('failed-precondition', 'AI is not configured (missing ANTHROPIC_API_KEY).');
-    const client = new Anthropic({apiKey, timeout: 90_000, maxRetries: 1});
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const Sdk = (require('@anthropic-ai/sdk') as typeof import('@anthropic-ai/sdk')).default;
+    const client = new Sdk({apiKey, timeout: 90_000, maxRetries: 1});
 
     let result: AiSnapResult | null = null;
     for (let attempt = 0; attempt < 2 && !result; attempt++) {
@@ -294,21 +297,21 @@ export const mpAiSnap = onCall(
         else logger.warn('mpAiSnap: unparseable model output', {uid, attempt});
       } catch (e) {
         if (e instanceof HttpsError) throw e;
-        if (e instanceof Anthropic.BadRequestError && photos.length) {
+        if (e instanceof Sdk.BadRequestError && photos.length) {
           // Most likely an image URL could not be fetched.
           logger.warn('mpAiSnap: bad request with photos', {uid, message: e.message});
           if (!text) throw new HttpsError('invalid-argument', "The AI couldn't open the photos. Try again or describe the cart instead.");
           photos = [];
           continue;
         }
-        if (e instanceof Anthropic.AuthenticationError || e instanceof Anthropic.PermissionDeniedError) {
+        if (e instanceof Sdk.AuthenticationError || e instanceof Sdk.PermissionDeniedError) {
           logger.error('mpAiSnap: Anthropic auth error', {status: e.status});
           throw new HttpsError('failed-precondition', 'AI is not configured (invalid ANTHROPIC_API_KEY).');
         }
-        if (e instanceof Anthropic.RateLimitError) {
+        if (e instanceof Sdk.RateLimitError) {
           throw new HttpsError('resource-exhausted', 'AI is busy. Try again in a minute.');
         }
-        if (e instanceof Anthropic.APIError) {
+        if (e instanceof Sdk.APIError) {
           logger.error('mpAiSnap: Anthropic API error', {status: e.status, message: e.message});
           throw new HttpsError('unavailable', 'AI is temporarily unavailable. Try again.');
         }

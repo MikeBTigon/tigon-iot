@@ -7,6 +7,8 @@ import {HttpsError, onCall} from 'firebase-functions/v2/https';
 import {onSchedule} from 'firebase-functions/v2/scheduler';
 import * as admin from 'firebase-admin';
 import {notificationExpireAt} from './sales/util';
+import {GoogleAuth} from 'google-auth-library';
+import {raiseSystemAlert} from './alerts';
 
 type Json = Record<string, any>;
 
@@ -92,23 +94,111 @@ async function runBackup(trigger: string): Promise<Json> {
       outputUriPrefix,
       collectionIds: [], // empty = every collection
     });
-    const record = {ok: true, trigger, startedAt, operation: operation.name || '', outputUriPrefix, error: ''};
+    // The export runs on Google's side; checkBackup() (mpHealth) polls `operation` until it is done.
+    const record = {ok: true, trigger, startedAt, operation: operation.name || '', outputUriPrefix, error: '', bucket, done: false};
     await ref.set(record);
     logger.info('Firestore export started', record);
     return record;
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
     logger.error('Firestore export failed', err);
-    const record = {ok: false, trigger, startedAt, operation: '', outputUriPrefix, error};
+    const record = {ok: false, trigger, startedAt, operation: '', outputUriPrefix, error, bucket, done: true};
     await ref.set(record);
+    await raiseSystemAlert({key: 'backup_failed', title: 'Nightly backup failed', text: `The Firestore backup could not start: ${error}`.slice(0, 600)});
     return record;
   }
 }
 
-/** Nightly Firestore export at 3am New York time. */
-export const mpBackup = onSchedule({schedule: 'every day 03:00', timeZone: TZ}, async () => {
-  await runBackup('schedule');
+/** Nightly Firestore export at 3am New York time; then backups older than 30 days are deleted. */
+export const mpBackup = onSchedule({schedule: 'every day 03:00', timeZone: TZ, timeoutSeconds: 540}, async () => {
+  const r = await runBackup('schedule');
+  try {
+    const removed = await pruneBackups(String(r.bucket || ''), BACKUP_KEEP_DAYS);
+    if (removed.length) logger.info('old backups deleted', removed);
+  } catch (e) {
+    logger.error('backup retention failed', e);
+    await raiseSystemAlert({key: 'backup_retention', title: 'Old backups not cleaned up', severity: 'warning',
+      text: `Old backups could not be deleted: ${e instanceof Error ? e.message : String(e)}`.slice(0, 600)});
+  }
 });
+
+export const BACKUP_KEEP_DAYS = 30;
+
+/** Date of a backup folder name ("backups/2026-10-13" or "backups/2026-10-13-manual-…/") in ms, or 0. */
+export function backupFolderDate(prefix: string): number {
+  const m = /backups\/(\d{4}-\d{2}-\d{2})/.exec(prefix);
+  return m ? Date.parse(`${m[1]}T12:00:00Z`) || 0 : 0;
+}
+
+/** Deletes export folders (backups/<date>…/) older than `keepDays`. Returns the deleted prefixes. */
+export async function pruneBackups(bucketName: string, keepDays: number, now = Date.now()): Promise<string[]> {
+  if (!bucketName) return [];
+  const bucket = admin.storage().bucket(bucketName);
+  const prefixes: string[] = [];
+  let pageToken: string | undefined;
+  do {
+    const [, next, api] = await bucket.getFiles({prefix: 'backups/', delimiter: '/', autoPaginate: false, maxResults: 1000, pageToken});
+    prefixes.push(...(((api as {prefixes?: string[]})?.prefixes) || []));
+    pageToken = (next as {pageToken?: string} | null)?.pageToken;
+  } while (pageToken);
+  const cutoff = now - keepDays * 24 * 3600_000;
+  const old = prefixes.filter((p) => {
+    const t = backupFolderDate(p);
+    return t > 0 && t < cutoff;
+  });
+  for (const p of old) await bucket.deleteFiles({prefix: p.endsWith('/') ? p : `${p}/`});
+  return old;
+}
+
+/**
+ * Polls the export started by runBackup (Firestore Admin REST: GET v1/{operation}) and records done/error in
+ * mp_meta/backup. Alerts when it failed or isn't done 6 hours after it started. Returns a health line.
+ */
+export async function checkBackup(now = Date.now(), fetcher: typeof fetch = fetch): Promise<{ok: boolean; detail: string}> {
+  const ref = db().doc('mp_meta/backup');
+  const b = (await ref.get()).data() as Json | undefined;
+  if (!b) return {ok: false, detail: 'No backup has run yet'};
+  const startedAt = Number(b.startedAt || 0);
+  if (b.ok === false) return {ok: false, detail: `Last backup failed to start: ${b.error || 'unknown error'}`};
+  if (now - startedAt > 30 * 3600_000) {
+    await raiseSystemAlert({key: 'backup_missing', title: 'No recent backup', text: `The last Firestore backup started ${Math.round((now - startedAt) / 3600_000)} hours ago.`});
+    return {ok: false, detail: 'No backup in the last 30 hours'};
+  }
+  if (b.done === true) {
+    return b.opError ? {ok: false, detail: `Last backup failed: ${b.opError}`} : {ok: true, detail: `Last backup finished ${new Date(Number(b.doneAt || startedAt)).toISOString()}`};
+  }
+  if (!b.operation) return {ok: true, detail: 'Backup started (no operation to check)'};
+  let done = false;
+  let opError = '';
+  try {
+    const auth = new GoogleAuth({scopes: ['https://www.googleapis.com/auth/datastore']});
+    const token = await auth.getAccessToken();
+    const r = await fetcher(`https://firestore.googleapis.com/v1/${b.operation}`, {
+      headers: {Authorization: `Bearer ${token}`}, signal: AbortSignal.timeout(15_000),
+    });
+    const j = (await r.json().catch(() => ({}))) as Json;
+    if (!r.ok) throw new Error(j.error?.message || `HTTP ${r.status}`);
+    done = j.done === true;
+    if (j.error) opError = String(j.error.message || JSON.stringify(j.error)).slice(0, 300);
+    const state = String(j.metadata?.operationState || '');
+    if (done || opError) {
+      await ref.set({done: true, doneAt: now, state, ...(opError ? {opError} : {})}, {merge: true});
+    } else {
+      await ref.set({state, checkedAt: now}, {merge: true});
+    }
+  } catch (e) {
+    return {ok: true, detail: `Backup running (could not check: ${e instanceof Error ? e.message : String(e)})`};
+  }
+  if (opError) {
+    await raiseSystemAlert({key: 'backup_failed', title: 'Nightly backup failed', text: `The Firestore backup failed: ${opError}`});
+    return {ok: false, detail: `Backup failed: ${opError}`};
+  }
+  if (!done && now - startedAt > 6 * 3600_000) {
+    await raiseSystemAlert({key: 'backup_unfinished', title: 'Backup not finished', text: 'The nightly Firestore backup is still not finished after 6 hours.'});
+    return {ok: false, detail: 'Backup not finished after 6 hours'};
+  }
+  return {ok: true, detail: done ? 'Backup finished' : 'Backup running'};
+}
 
 /** "Back up now" button on the Status page (admins). */
 export const mpBackupNow = onCall(async (req) => {

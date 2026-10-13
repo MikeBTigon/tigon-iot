@@ -40,7 +40,7 @@ const WhOverview: React.FC = () => {
   const { rows: subs, error: statsError } = useWhCollection<WhSubmission>(
     WH.submissions, [where('receivedAt', '>=', since), orderBy('receivedAt', 'desc'), limit(10000)], [since],
   );
-  const { rows: failedRuns } = useWhCollection<WhStepRun>(WH.stepRuns, [where('status', 'in', FAILED_STEP_STATUSES), limit(5000)]);
+  const { rows: failedRuns } = useWhCollection<WhStepRun>(WH.stepRuns, [where('status', 'in', FAILED_STEP_STATUSES), limit(2000)]);
   const dead = useMemo(() => failedRuns?.filter((r) => r.status === 'dead'), [failedRuns]);
 
   const domainName = useMemo(() => new Map((domains || []).map((d) => [d.id, d.name || d.url])), [domains]);
@@ -168,7 +168,7 @@ const WhOverview: React.FC = () => {
           </Panel>
           <Panel
             title="Needs attention"
-            action={<Button size="small" component={RouterLink} to="/wh/triage">System Triage</Button>}
+            action={<Button size="small" component={RouterLink} to="/mp/status?tab=forms">All problems</Button>}
           >
             {triageErr && <Alert severity="error" sx={{ mb: 1 }}>{triageErr}</Alert>}
             {!attention.length ? (

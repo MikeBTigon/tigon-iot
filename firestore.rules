@@ -424,6 +424,20 @@ service cloud.firestore {
       allow read: if isMpMember();
     }
 
+    // Credit applications (written only by the mpCreditApi function; team reads and sets status).
+    match /mp_credit_apps/{id} {
+      allow read: if isMpMember();
+      allow update: if isMpMember() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt']);
+      allow delete: if isMpManager();
+    }
+    // Texts inbox: each person's "last read" marker per conversation.
+    match /mp_inbox_reads/{id} {
+      allow read: if isMpMember() && resource.data.uid == request.auth.uid;
+      allow create, update: if isMpMember() && request.resource.data.uid == request.auth.uid &&
+                               id.matches(request.auth.uid + '_[0-9]{11}') &&
+                               request.resource.data.keys().hasOnly(['uid', 'phone', 'readAt']);
+    }
+
     // ---- Webhook Flows (website forms → flows) -----------------------------
     // Managers run websites, webhooks, flows and email templates; admins own global settings and
     // integrations. Submissions and step runs are written only by Cloud Functions.

@@ -7,7 +7,7 @@ import { Call, Email, ExpandMore, RocketLaunch, Search, Sms } from '@mui/icons-m
 import MpShell from '../components/MpShell';
 import PreferencesControls from '../../ui/PreferencesControls';
 import { useLanguage, useT } from '../../i18n';
-import { HELP_ARTICLES, SUPPORT, articleText } from './articles';
+import { HELP_AREAS, HELP_ARTICLES, SUPPORT, articleText, type HelpArticle } from './articles';
 
 /** /mp/help — searchable how-to articles, contact support, and display/language preferences. */
 const HelpCenter: React.FC = () => {
@@ -26,6 +26,14 @@ const HelpCenter: React.FC = () => {
       return tokens.every((tok) => hay.includes(tok));
     });
   }, [q, lang]);
+
+  // Without a search, show the articles grouped by area; with one, show the matches as one list.
+  const groups = useMemo(
+    () => (q.trim()
+      ? [{ area: '', list: articles }]
+      : HELP_AREAS.map((area) => ({ area, list: articles.filter((a) => a.area === area) })).filter((g) => g.list.length)),
+    [articles, q],
+  );
 
   // Deep link (?a=id): bring the article into view.
   useEffect(() => {
@@ -59,34 +67,43 @@ const HelpCenter: React.FC = () => {
             sx={{ mb: 2 }}
           />
           {articles.length === 0 && <Typography color="text.secondary">{t('help.noResults', { q })}</Typography>}
-          {articles.map((a) => {
-            const text = articleText(a, lang);
-            return (
-              <Accordion
-                key={a.id}
-                id={`help-${a.id}`}
-                expanded={openId === a.id}
-                onChange={(_, exp) => toggle(a.id, exp)}
-                disableGutters
-                sx={{ scrollMarginTop: 80 }}
-              >
-                <AccordionSummary expandIcon={<ExpandMore />} aria-controls={`help-${a.id}-body`}>
-                  <Box>
-                    <Typography sx={{ fontWeight: 600 }}>{text.title}</Typography>
-                    <Typography variant="body2" color="text.secondary">{text.summary}</Typography>
-                  </Box>
-                </AccordionSummary>
-                <AccordionDetails id={`help-${a.id}-body`}>
-                  <Box component="ol" sx={{ pl: 3, m: 0, '& li': { mb: 1 } }}>
-                    {text.steps.map((s, i) => <li key={i}><Typography variant="body2">{s}</Typography></li>)}
-                  </Box>
-                  {a.path && (
-                    <Button component={RouterLink} to={a.path} size="small" sx={{ mt: 1 }}>{t('common.open')}</Button>
-                  )}
-                </AccordionDetails>
-              </Accordion>
-            );
-          })}
+          {groups.map((g) => (
+            <Box key={g.area || 'results'} component="section" sx={{ mb: 2 }}>
+              {g.area && (
+                <Typography variant="overline" component="h3" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                  {t(`helpArea.${g.area}`)}
+                </Typography>
+              )}
+              {g.list.map((a: HelpArticle) => {
+                const text = articleText(a, lang);
+                return (
+                  <Accordion
+                    key={a.id}
+                    id={`help-${a.id}`}
+                    expanded={openId === a.id}
+                    onChange={(_, exp) => toggle(a.id, exp)}
+                    disableGutters
+                    sx={{ scrollMarginTop: 80 }}
+                  >
+                    <AccordionSummary expandIcon={<ExpandMore />} aria-controls={`help-${a.id}-body`}>
+                      <Box>
+                        <Typography sx={{ fontWeight: 600 }}>{text.title}</Typography>
+                        <Typography variant="body2" color="text.secondary">{text.summary}</Typography>
+                      </Box>
+                    </AccordionSummary>
+                    <AccordionDetails id={`help-${a.id}-body`}>
+                      <Box component="ol" sx={{ pl: 3, m: 0, '& li': { mb: 1 } }}>
+                        {text.steps.map((s, i) => <li key={i}><Typography variant="body2">{s}</Typography></li>)}
+                      </Box>
+                      {a.path && (
+                        <Button component={RouterLink} to={a.path} size="small" sx={{ mt: 1 }}>{t('common.open')}</Button>
+                      )}
+                    </AccordionDetails>
+                  </Accordion>
+                );
+              })}
+            </Box>
+          ))}
         </Box>
 
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>

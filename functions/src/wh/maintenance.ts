@@ -10,6 +10,7 @@ import {nyDay, nyDayBounds, TZ} from './stats';
 import {sendMail} from './steps';
 
 const DAY = 86_400_000;
+export const DEFAULT_RETENTION_DAYS = 730;
 const APP_URL = 'https://tigoniot.com/wh';
 
 /** Delete submissions older than retentionDays with their step runs and uploaded images. */
@@ -147,7 +148,10 @@ export async function sendDailyDigest(now = Date.now()) {
 
 export const whMaintenance = onSchedule({schedule: 'every day 03:15', timeZone: 'America/New_York', timeoutSeconds: 540, memory: '512MiB'}, async () => {
   const global = await loadGlobal(true);
-  const retention = await runRetention(Number(global.retentionDays) || 0).catch((e) => {
+  // No retention set → keep website submissions 2 years (730 days). 0 or a number set explicitly is respected.
+  const raw = (global as {retentionDays?: unknown}).retentionDays;
+  const days = raw === undefined || raw === null || raw === '' ? DEFAULT_RETENTION_DAYS : Number(raw) || 0;
+  const retention = await runRetention(days).catch((e) => {
     logger.error('wh retention failed', e);
     return null;
   });

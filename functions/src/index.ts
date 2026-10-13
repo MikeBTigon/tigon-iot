@@ -1,3 +1,4 @@
+import './globalOptions';
 import * as logger from 'firebase-functions/logger';
 import {onRequest} from 'firebase-functions/v2/https';
 import {onDocumentCreated} from 'firebase-functions/v2/firestore';
@@ -217,6 +218,11 @@ export * from './mpTeam';
 // Webhook Flows (website forms → flows → Master Flow)
 export * from './wh';
 export * from './sales';
+
+// Harden & polish release: health checks, data retention, server-side audit trail.
+export {mpHealth} from './health';
+export {mpRetention} from './retention';
+export {mpAuditUsers, mpAuditSettings, mpAuditOptOut, mpAuditWhSettings, mpUserPending} from './auditTriggers';
 
 // AI functions use the ANTHROPIC_API_KEY secret, so they are only exported (and therefore only
 // deployed) when AI is turned on: the deploy workflow writes ENABLE_AI_WRITER=true to functions/.env,
