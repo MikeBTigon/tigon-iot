@@ -81,6 +81,20 @@
         }
       },
       {
+        "source": "/sitemap.xml",
+        "function": {
+          "functionId": "mpSitemap",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/s/**",
+        "function": {
+          "functionId": "mpStorefrontPage",
+          "region": "us-central1"
+        }
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }

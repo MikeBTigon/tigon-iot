@@ -5,7 +5,7 @@ import {
 } from '@mui/material';
 import { AccessTime, Call, DirectionsCar, Place, Search } from '@mui/icons-material';
 import StorefrontHeader from './StorefrontHeader';
-import { fetchStorefront, hoursLines, money, photoRank, telHref, type PublicCart, type PublicDealership, type StorefrontResponse } from './api';
+import { fetchStorefront, hoursLines, money, photoRank, storefrontCartPath, telHref, type PublicCart, type PublicDealership, type StorefrontResponse } from './api';
 
 type Sort = 'featured' | 'price-asc' | 'price-desc';
 
@@ -211,7 +211,7 @@ const VisitUs: React.FC<{ stores: PublicDealership[]; store: PublicDealership | 
 
 const PublicCartCard: React.FC<{ cart: PublicCart; slug: string }> = ({ cart, slug }) => (
   <Card sx={{ display: 'flex', flexDirection: 'column' }}>
-    <CardActionArea component={RouterLink} to={`/s/${slug}/${encodeURIComponent(cart.id)}`} sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', alignItems: 'stretch' }}>
+    <CardActionArea component={RouterLink} to={storefrontCartPath(slug, cart)} sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', alignItems: 'stretch' }}>
       {cart.photos[0] ? (
         <Box component="img" src={cart.photos[0]} alt={cart.title} loading="lazy" sx={{ width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', display: 'block', bgcolor: 'grey.200' }} />
       ) : (

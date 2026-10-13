@@ -209,7 +209,7 @@ jobs:
           TWILIO_ACCOUNT_SID: ${{ secrets.TWILIO_ACCOUNT_SID }}
           TWILIO_AUTH_TOKEN: ${{ secrets.TWILIO_AUTH_TOKEN }}
         run: |
-          FUNCS="mpSyncInventory mpSyncNow mpCreatePairingCode mpPairDevice mpSendQueueItem mpDispatchQueue mpMonitor mpApprovalDigest mpBackup mpBackupNow mpRunImport mpImportScheduled mpCrmReminders mpWeeklyDigest mpLink mpStorefrontApi mpEchoRegister mpEcho mpPresenceDaily mpPresenceWeekly mpPresenceReport mpChangeRequestAlert"
+          FUNCS="mpSyncInventory mpSyncNow mpCreatePairingCode mpPairDevice mpSendQueueItem mpDispatchQueue mpMonitor mpApprovalDigest mpBackup mpBackupNow mpRunImport mpImportScheduled mpCrmReminders mpWeeklyDigest mpLink mpStorefrontApi mpStorefrontPage mpSitemap mpEchoRegister mpEcho mpPresenceDaily mpPresenceWeekly mpPresenceReport mpChangeRequestAlert"
           FUNCS="$FUNCS whIngest whProcess whReplay whTestEmail whTestWebhook whDeleteSubmissions whAlerts whMaintenance whGoogle"
           FUNCS="$FUNCS mpSalesLeadCreated mpSalesLeadUpdated mpSalesTick mpSalesHourly mpSalesPublic mpPriceChanged mpCartSold mpSimilarApi mpReviewsRefresh mpSmsQueued mpSmsInbound mpSmsAdmin mpSendText"
           FUNCS="$FUNCS mpHealth mpRetention mpAuditUsers mpAuditSettings mpAuditOptOut mpAuditWhSettings mpUserPending"

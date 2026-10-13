@@ -106,3 +106,13 @@ export function hoursLines(hours: StoreHours | null | undefined): string[] {
   }
   return out;
 }
+
+/** SEO-friendly URL slug for a cart, matching the server (functions/src/mpShare.ts cartSeoSlug). */
+export const cartSeoSlug = (c: Pick<PublicCart, 'year' | 'make' | 'model' | 'color' | 'isUsed'>) =>
+  [c.year, c.make, c.model, c.color, c.isUsed ? 'used' : '']
+    .filter(Boolean).join(' ').toLowerCase().normalize('NFKD')
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80) || 'golf-cart';
+
+/** Public cart page path with a readable, SEO-friendly tail (the id is what the page looks up). */
+export const storefrontCartPath = (slug: string, c: Pick<PublicCart, 'id' | 'year' | 'make' | 'model' | 'color' | 'isUsed'>) =>
+  `/s/${slug}/${encodeURIComponent(c.id)}/${cartSeoSlug(c)}`;

@@ -11,7 +11,7 @@ import { Close, ContentCopy, IosShare, Sms } from '@mui/icons-material';
 import { QRCodeSVG } from 'qrcode.react';
 import { cartTitle } from '../cartLogic';
 import { formatPrice } from '../cartUtils';
-import { createShortLink, trackedTarget } from './links';
+import { cartSeoSlug, createShortLink, trackedTarget } from './links';
 import type { MpCart } from '../types';
 
 /** True when the phone's native Share sheet is available (iOS Safari, Android Chrome, some desktops). */
@@ -35,7 +35,7 @@ const QuickShareDialog: React.FC<{ cart: MpCart; open: boolean; onClose: () => v
     // A tracked short link (clicks count in Share → Links). Fall back to the plain public link if that fails.
     createShortLink({ cart, platform: 'qr', campaign: 'quick_share' })
       .then(set)
-      .catch(() => set(trackedTarget('tigon', cart.docId, { platform: 'qr', campaign: 'quick_share', uid: '', deviceId: '' })));
+      .catch(() => set(trackedTarget('tigon', cart.docId, { platform: 'qr', campaign: 'quick_share', uid: '', deviceId: '', seo: cartSeoSlug({ year: cart.year, make: cart.make, model: cart.model, color: cart.color, isUsed: cart.isUsed }) })));
     return () => { live = false; };
   }, [open, ready, cart]);
 
