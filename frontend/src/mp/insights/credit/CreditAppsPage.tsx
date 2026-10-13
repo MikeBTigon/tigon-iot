@@ -24,6 +24,8 @@ import {
   CREDIT_APPS, CREDIT_SETTINGS_DOC, CREDIT_STATUS_COLOR, CREDIT_STATUS_LABEL, creditSections, type CreditApp, type CreditStatus, type Lender,
 } from './creditShared';
 import { creditPdfBase64, downloadCreditPdf } from './creditPdf';
+import LenderPicker from './LenderPicker';
+import { fillFromApp, fillFromLead } from './lenderLinks';
 
 const applyUrl = (store?: string, lead?: string) => {
   const q = [store ? `store=${encodeURIComponent(store)}` : '', lead ? `lead=${encodeURIComponent(lead)}` : ''].filter(Boolean).join('&');
@@ -157,6 +159,9 @@ const AppDialog: React.FC<{ app: CreditApp; lenders: Lender[]; onClose: () => vo
           ))}
           <Typography variant="caption" color="text.secondary">Customer agreed: "{app.consentText}"</Typography>
         </Box>
+        <Box sx={{ mt: 2, '@media print': { display: 'none' } }}>
+          <LenderPicker fill={fillFromApp(app)} customerName={`${app.firstName} ${app.lastName}`.trim()} title="Apply online with a lender" />
+        </Box>
         <Box sx={{ display: 'flex', gap: 1, mt: 2, flexWrap: 'wrap', alignItems: 'center' }}>
           <TextField select size="small" label="Status" value={app.status} onChange={(e) => setStatus(e.target.value as CreditStatus)} disabled={busy === 'status'} sx={{ minWidth: 170 }}>
             {STATUSES.map((s) => <MenuItem key={s} value={s}>{CREDIT_STATUS_LABEL[s]}</MenuItem>)}
@@ -249,6 +254,10 @@ const CreditAppsPage: React.FC = () => {
         {lead?.phone && <Button size="small" startIcon={<Sms />} onClick={textLink}>Text the link to {lead.name.split(/\s+/)[0] || 'customer'}</Button>}
         {leadId && <Button size="small" component={RouterLink} to="/mp/credit-app">See all applications</Button>}
       </Box>
+      <LenderPicker
+        fill={lead ? fillFromLead(lead) : null} customerName={lead?.name || ''}
+        title={lead ? 'Lenders' : 'Lenders — open an application below to fill a form in with the customer'}
+      />
       {isAdmin && <LendersEditor lenders={lenders} />}
       {!leadId && (
         <Box sx={{ display: 'flex', gap: 1, mb: 2, flexWrap: 'wrap', alignItems: 'center' }}>
