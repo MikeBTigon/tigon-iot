@@ -12,6 +12,12 @@ import {ONLINE, SLOTS_PER_DAY, SLOT_MIN, TZ, hoursOf, nySlot} from './presence';
 import {sendMail} from './wh/steps/email';
 import type {WhSettings} from './wh/types';
 import {isInactiveStatus} from './membership';
+import {nyTime} from './sales/util';
+import {raiseSystemAlert} from './alerts';
+
+/** Reports go only to company addresses (plus the default iot@ inbox). */
+export const isAllowedReportTo = (v: unknown) =>
+  typeof v === 'string' && /^[^@\s]+@tigongolfcarts\.com$/i.test(v.trim());
 
 const db = () => admin.firestore();
 const SETTINGS_DOC = 'mp_meta/presence';
@@ -32,7 +38,7 @@ export async function presenceSettings(): Promise<PresenceSettings> {
   return {
     minHours: Number.isFinite(minHours) && minHours > 0 ? minHours : 8,
     days: Array.isArray(s.days) && s.days.length ? s.days.map(Number) : [0, 1, 2, 3, 4, 5, 6],
-    reportTo: typeof s.reportTo === 'string' && s.reportTo.includes('@') ? s.reportTo : DEFAULT_TO,
+    reportTo: isAllowedReportTo(s.reportTo) ? String(s.reportTo).trim() : DEFAULT_TO,
   };
 }
 
@@ -89,11 +95,13 @@ type Posts = Map<string, Map<string, number>>;
 const NO_POSTS: Posts = new Map();
 
 async function loadPosts(from: string): Promise<Posts> {
-  const fromMs = Date.parse(`${from}T00:00:00-05:00`);
-  const [events, queue] = await Promise.all([
-    db().collection('mp_events').where('type', '==', 'post_marked').get(),
+  const fromMs = nyTime(from, '00:00');
+  const [eventsAll, queue] = await Promise.all([
+    // One range on one field (ts); the type is filtered here.
+    db().collection('mp_events').where('ts', '>=', fromMs).get(),
     db().collection('mp_queue').where('status', '==', 'posted').get(),
   ]);
+  const events = {docs: eventsAll.docs.filter((e) => e.get('type') === 'post_marked')};
   const out: Posts = new Map();
   const add = (uid: string, device: string, ts: number) => {
     if (!ts || ts < fromMs) return;
@@ -260,8 +268,24 @@ async function sendReports(kind: 'user' | 'allUsers' | 'overall', uid = '') {
       msgs.push(userReport(person, phones, online, per, cfg, posts));
     }
   }
-  for (const m of msgs) await sendMail(settings, {to: [cfg.reportTo], ...m});
-  return {sent: msgs.length, to: cfg.reportTo};
+  // One failed email never stops the others; failures raise one alert.
+  let sent = 0;
+  const errors: string[] = [];
+  for (const m of msgs) {
+    try {
+      await sendMail(settings, {to: [cfg.reportTo], ...m});
+      sent++;
+    } catch (e) {
+      errors.push(e instanceof Error ? e.message : String(e));
+      logger.warn('presence report not sent', m.subject, e);
+    }
+  }
+  if (errors.length) {
+    await raiseSystemAlert({key: 'presence_report', title: 'Phone reports not sent', severity: 'warning',
+      text: `${errors.length} phone online report(s) could not be emailed: ${errors[0]}`.slice(0, 600)});
+    if (!sent) throw new Error(errors[0]);
+  }
+  return {sent, failed: errors.length, to: cfg.reportTo};
 }
 
 // ---- alerts ----
@@ -269,7 +293,7 @@ async function lowHourAlerts() {
   const cfg = await presenceSettings();
   const day = addDays(today(), -1);
   if (!cfg.days.includes(weekday(day))) return 0;
-  const dayStart = Date.parse(`${day}T00:00:00-05:00`);
+  const dayStart = nyTime(day, '00:00');
   const [people, phones, online] = await Promise.all([loadPeople(), loadPhones(), loadOnline(day)]);
   let n = 0;
   for (const p of phones) {
@@ -317,7 +341,10 @@ export const mpPresenceReport = onCall({timeoutSeconds: 300, memory: '512MiB'}, 
   if (action === 'settings') {
     const minHours = Math.min(24, Math.max(0.5, Number(d.minHours) || 8));
     const days = Array.isArray(d.days) ? Array.from(new Set(d.days.map(Number).filter((x) => x >= 0 && x <= 6))) : [0, 1, 2, 3, 4, 5, 6];
-    const reportTo = typeof d.reportTo === 'string' && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(d.reportTo) ? d.reportTo : DEFAULT_TO;
+    if (d.reportTo !== undefined && d.reportTo !== '' && !isAllowedReportTo(d.reportTo)) {
+      throw new HttpsError('invalid-argument', 'Reports can only go to a @tigongolfcarts.com address.');
+    }
+    const reportTo = isAllowedReportTo(d.reportTo) ? String(d.reportTo).trim() : DEFAULT_TO;
     await db().doc(SETTINGS_DOC).set({minHours, days, reportTo, updatedAt: Date.now(), updatedBy: req.auth.uid}, {merge: true});
     return {minHours, days, reportTo};
   }
