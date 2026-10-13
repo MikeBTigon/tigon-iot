@@ -4,7 +4,6 @@ import {
   FormControlLabel, Paper, Switch, Typography,
 } from '@mui/material';
 import { DeleteOutline, DeleteSweep } from '@mui/icons-material';
-import WhShell from '../components/WhShell';
 import TriageList from '../components/TriageList';
 import { errText, useNow } from '../components/Wh1Hooks';
 import { useMp } from '../../mp/MpDataContext';
@@ -16,7 +15,7 @@ const SEVERITIES: Array<{ value: TriageSeverity | ''; label: string }> = [
   { value: '', label: 'All' }, { value: 'error', label: 'Errors' }, { value: 'warning', label: 'Warnings' },
 ];
 
-/** System Triage: every system notification (websites, Google Sheets, flows, phones, posting, DMS sync) with delete. */
+/** Problems (shown as a tab of System health, /mp/status?tab=forms): every system notification (websites, Google Sheets, flows, phones, posting, DMS sync) with delete. */
 const WhTriage: React.FC = () => {
   const { profile } = useMp();
   const now = useNow();
@@ -76,7 +75,10 @@ const WhTriage: React.FC = () => {
   const hasAlerts = (confirm || []).some((i) => i.source === 'alert');
 
   return (
-    <WhShell title="System Triage" subtitle="Every system notification in one place — fix it, then delete it">
+    <Box>
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+        Every system problem in one place — websites, Google Sheets, automations, phones, posting and DMS sync. Fix it, then delete it.
+      </Typography>
       {msg && <Alert severity={msg.ok ? 'success' : 'error'} sx={{ mb: 2 }} onClose={() => setMsg(null)}>{msg.text}</Alert>}
       {alertsError && <Alert severity="warning" sx={{ mb: 2 }}>Could not load the phone/posting alerts: {alertsError}</Alert>}
       {loading ? (
@@ -152,7 +154,7 @@ const WhTriage: React.FC = () => {
           <Button color="error" variant="contained" onClick={() => { const c = confirm || []; setConfirm(null); void doDelete(c); }}>Delete</Button>
         </DialogActions>
       </Dialog>
-    </WhShell>
+    </Box>
   );
 };
 

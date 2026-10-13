@@ -187,7 +187,7 @@ const WhSettingsPage: React.FC = () => {
               <li><b>Admins</b>: everything above plus these settings, integrations (connections) and the Master Flow.</li>
               <li><b>Sales</b>: no access to Webhook Flows (they receive leads in the CRM and notifications).</li>
             </ul>
-            Roles are changed in <Link component={RouterLink} to="/mp/profiles">MP Assistant → Profiles</Link>.
+            Roles are changed in <Link component={RouterLink} to="/mp/accounts">Team &amp; admin → Accounts</Link>.
           </Section>
           <Section title="Audit log">
             Changes to websites, webhooks, flows, templates and settings are recorded (who, what, when) in the admin audit log —

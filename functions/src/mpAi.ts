@@ -4,7 +4,9 @@
 import * as logger from 'firebase-functions/logger';
 import {HttpsError, onCall} from 'firebase-functions/v2/https';
 import * as admin from 'firebase-admin';
-import Anthropic from '@anthropic-ai/sdk';
+import {isInactiveStatus} from './membership';
+// Types only at load time; the SDK itself is loaded on first use (keeps cold starts of other functions fast).
+import type Anthropic from '@anthropic-ai/sdk';
 
 // Secret referenced by name (not defineSecret) so merely loading this file never makes a deploy
 // look the secret up; it is only bound to the AI function when that function is exported.
@@ -296,7 +298,7 @@ export const mpAiListing = onCall(
     if (!req.auth) throw new HttpsError('unauthenticated', 'Sign in first.');
     const uid = req.auth.uid;
     const userDoc = await admin.firestore().collection(USERS).doc(uid).get();
-    if (!userDoc.exists) throw new HttpsError('permission-denied', 'MP Assistant access required.');
+    if (!userDoc.exists || isInactiveStatus(userDoc.get('status'))) throw new HttpsError('permission-denied', 'MP Assistant access required.');
 
     const data = (req.data || {}) as Record<string, unknown>;
     const facts = cleanCart(data.cart);
@@ -307,7 +309,9 @@ export const mpAiListing = onCall(
     if (!apiKey) {
       throw new HttpsError('failed-precondition', 'AI writer is not configured (missing ANTHROPIC_API_KEY).');
     }
-    const client = new Anthropic({apiKey, timeout: 45_000, maxRetries: 1});
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const Sdk = (require('@anthropic-ai/sdk') as typeof import('@anthropic-ai/sdk')).default;
+    const client = new Sdk({apiKey, timeout: 45_000, maxRetries: 1});
 
     let result: AiListingResult | null = null;
     for (let attempt = 0; attempt < 2 && !result; attempt++) {
@@ -316,20 +320,20 @@ export const mpAiListing = onCall(
         if (!result) logger.warn('mpAiListing: unparseable model output', {uid, attempt});
       } catch (e) {
         if (e instanceof HttpsError) throw e;
-        if (e instanceof Anthropic.BadRequestError && photoUrl) {
+        if (e instanceof Sdk.BadRequestError && photoUrl) {
           // Most likely the image URL could not be fetched; retry text-only.
           logger.warn('mpAiListing: bad request with photo, retrying without it', {uid, message: e.message});
           photoUrl = null;
           continue;
         }
-        if (e instanceof Anthropic.AuthenticationError || e instanceof Anthropic.PermissionDeniedError) {
+        if (e instanceof Sdk.AuthenticationError || e instanceof Sdk.PermissionDeniedError) {
           logger.error('mpAiListing: Anthropic auth error', {status: e.status});
           throw new HttpsError('failed-precondition', 'AI writer is not configured (invalid ANTHROPIC_API_KEY).');
         }
-        if (e instanceof Anthropic.RateLimitError) {
+        if (e instanceof Sdk.RateLimitError) {
           throw new HttpsError('resource-exhausted', 'AI writer is busy. Try again in a minute.');
         }
-        if (e instanceof Anthropic.APIError) {
+        if (e instanceof Sdk.APIError) {
           logger.error('mpAiListing: Anthropic API error', {status: e.status, message: e.message});
           throw new HttpsError('unavailable', 'AI writer is temporarily unavailable. Try again.');
         }

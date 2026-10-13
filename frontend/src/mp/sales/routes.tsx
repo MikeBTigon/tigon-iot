@@ -1,5 +1,6 @@
 // "Sell more" release — pages (signed-in and public). Pages load on demand.
-import { lazy, Suspense, type ReactNode } from 'react';
+import { lazy, type ReactNode } from 'react';
+import { PublicSuspense, SignedInSuspense } from '../../ui/PageSuspense';
 
 const TodayPage = lazy(() => import('./speed/TodayPage'));
 const TextsPage = lazy(() => import('./texting/TextsPage'));
@@ -20,7 +21,8 @@ const PrequalPublicPage = lazy(() => import('./closing/PrequalPublicPage'));
 const ReferralPublicPage = lazy(() => import('./marketing/ReferralPublicPage'));
 const SimilarPublicPage = lazy(() => import('./inventory/SimilarPublicPage'));
 
-const page = (el: ReactNode) => <Suspense fallback={null}>{el}</Suspense>;
+const page = (el: ReactNode) => <SignedInSuspense>{el}</SignedInSuspense>;
+const publicPage = (el: ReactNode) => <PublicSuspense>{el}</PublicSuspense>;
 
 export const ROUTES: Array<{ path: string; element: ReactNode }> = [
   { path: '/mp/today', element: page(<TodayPage />) },
@@ -38,11 +40,11 @@ export const ROUTES: Array<{ path: string; element: ReactNode }> = [
 
 /** Customer pages (no sign-in). */
 export const PUBLIC_ROUTES: Array<{ path: string; element: ReactNode }> = [
-  { path: '/q/:code', element: page(<QuotePublicPage />) },
-  { path: '/book', element: page(<BookPublicPage />) },
-  { path: '/book/:storeId', element: page(<BookPublicPage />) },
-  { path: '/trade', element: page(<TradePublicPage />) },
-  { path: '/prequal', element: page(<PrequalPublicPage />) },
-  { path: '/r/:code', element: page(<ReferralPublicPage />) },
-  { path: '/similar/:cartId', element: page(<SimilarPublicPage />) },
+  { path: '/q/:code', element: publicPage(<QuotePublicPage />) },
+  { path: '/book', element: publicPage(<BookPublicPage />) },
+  { path: '/book/:storeId', element: publicPage(<BookPublicPage />) },
+  { path: '/trade', element: publicPage(<TradePublicPage />) },
+  { path: '/prequal', element: publicPage(<PrequalPublicPage />) },
+  { path: '/r/:code', element: publicPage(<ReferralPublicPage />) },
+  { path: '/similar/:cartId', element: publicPage(<SimilarPublicPage />) },
 ];

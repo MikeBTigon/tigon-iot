@@ -6,8 +6,7 @@ import {
   ListItemText, ListSubheader, TextField, Typography, useMediaQuery, useTheme,
 } from '@mui/material';
 import {
-  Close, Dashboard, Description, Devices, DirectionsCar, Download, History, ListAlt, People, PersonSearch, Search,
-  Settings,
+  Close, Description, Devices, DirectionsCar, History, ListAlt, People, PersonSearch, Search,
 } from '@mui/icons-material';
 import { db } from '../config/firebase';
 import { useAuth } from '../context/AuthContext';
@@ -20,7 +19,7 @@ import type { DeviceDoc, QueueItem } from '../mp/types';
 import { HELP_ARTICLES, articleText } from '../mp/help/articles';
 import { useLanguage, useT } from '../i18n';
 import { navIcon } from './navIcons';
-import { visibleNavItems } from './navUtils';
+import { navLabel, visibleNavItems } from './navUtils';
 import { readLocal, writeLocal } from './prefs';
 
 type GroupKey = 'pages' | 'help' | 'carts' | 'devices' | 'queue' | 'leads' | 'customers';
@@ -126,22 +125,12 @@ const GlobalSearch: React.FC<{ open: boolean; onClose: () => void }> = ({ open, 
     };
   }, [open, uid, cacheKey, isManager, profile, ensureCartsLoaded]);
 
-  // Static entries: pages + help articles.
+  // Static entries: every page from the one menu (mp/navRegistry, same labels) + help articles.
   const staticHits = useMemo<Hit[]>(() => {
-    const base: Hit[] = [
-      { id: 'p-dashboard', group: 'pages', title: t('layout.dashboard'), to: '/dashboard', icon: <Dashboard />, hay: '' },
-      { id: 'p-devices', group: 'pages', title: t('layout.devices'), to: '/devices', icon: <Devices />, hay: 'phones pair' },
-      { id: 'p-settings', group: 'pages', title: t('layout.settings'), to: '/settings', icon: <Settings />, hay: '' },
-      { id: 'p-download', group: 'pages', title: t('layout.download'), to: '/download', icon: <Download />, hay: 'app install' },
-    ];
-    const mp: Hit[] = profile
-      ? [
-        ...visibleNavItems(role).map((i) => ({
-          id: `p-${i.path}`, group: 'pages' as const, title: t(i.key), subtitle: i.path, to: i.path, icon: navIcon(i.path), hay: i.label,
-        })),
-        { id: 'p-welcome', group: 'pages', title: t('nav.welcome'), to: '/mp/welcome', icon: navIcon('/mp/help'), hay: 'onboarding setup' },
-      ]
-      : [];
+    const pages: Hit[] = visibleNavItems(role).map((i) => ({
+      id: `p-${i.path}`, group: 'pages' as const, title: navLabel(t, i), subtitle: t(i.group.key, i.group.label), to: i.path,
+      icon: navIcon(i.path), hay: `${i.label} ${i.keywords || ''} ${i.group.label}`,
+    }));
     const help: Hit[] = profile
       ? HELP_ARTICLES.map((a) => {
         const text = articleText(a, lang);
@@ -151,7 +140,7 @@ const GlobalSearch: React.FC<{ open: boolean; onClose: () => void }> = ({ open, 
         };
       })
       : [];
-    return [...base, ...mp, ...help].map((h) => ({ ...h, hay: `${h.title} ${h.subtitle || ''} ${h.hay}`.toLowerCase() }));
+    return [...pages, ...help].map((h) => ({ ...h, hay: `${h.title} ${h.subtitle || ''} ${h.hay}`.toLowerCase() }));
   }, [t, lang, profile, role]);
 
   const tokens = useMemo(() => q.toLowerCase().split(/\s+/).filter(Boolean), [q]);

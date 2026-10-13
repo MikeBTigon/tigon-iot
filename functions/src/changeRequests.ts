@@ -15,7 +15,7 @@ export const mpChangeRequestAlert = onDocumentCreated('change_requests/{id}', as
   const r = event.data?.data();
   if (!r) return;
   const people = await db().collection('mp_users').where('role', 'in', ['admin', 'manager']).get();
-  const to = Array.from(new Set(people.docs.map((d) => String(d.get('email') || '')).filter(Boolean)));
+  const to = Array.from(new Set(people.docs.filter((d) => d.get('status') !== 'pending' && d.get('status') !== 'disabled').map((d) => String(d.get('email') || '')).filter(Boolean)));
   if (!to.length) {
     logger.warn('change request: no admins or managers to email', {id: event.params.id});
     return;

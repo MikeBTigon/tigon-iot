@@ -25,6 +25,8 @@ import {
   CATEGORIES, EMPTY_FORM, cartDocFields, formFromPayload, newCartFields, parsePayload, parsePrice, previewCart,
   type ListingCategory, type ListingForm,
 } from './listingModel';
+import { useT } from '../../i18n';
+import type { TFunction } from 'i18next';
 
 type Json = Record<string, unknown>;
 
@@ -68,20 +70,20 @@ interface AiSnapRequest {
 
 const mpAiSnap = httpsCallable<AiSnapRequest, AiSnapResult>(functions, 'mpAiSnap');
 
-const STEPS = ['Photos', 'Details', 'Review & save'];
+const STEPS = ['photos', 'details', 'review'] as const;
 const MAX_PHOTOS = 20;
 
-function aiError(e: unknown): { message: string; unavailable: boolean } {
+function aiError(e: unknown, t: TFunction): { message: string; unavailable: boolean } {
   const err = (e ?? {}) as { code?: string; message?: string };
   const code = (err.code || '').replace(/^functions\//, '');
   const msg = err.message || '';
   if (code === 'failed-precondition' || code === 'not-found' || /not (been )?deployed|does not exist|ANTHROPIC_API_KEY/i.test(msg)) {
-    return { message: "AI fill isn't set up yet — fill in the form below (it only takes a minute).", unavailable: true };
+    return { message: t('listing.aiNotSetUp'), unavailable: true };
   }
   if (code === 'internal' && (!msg || /^internal$/i.test(msg))) {
-    return { message: 'AI fill could not be reached. Fill in the form manually or try again later.', unavailable: false };
+    return { message: t('listing.aiUnreachable'), unavailable: false };
   }
-  return { message: msg || 'AI fill failed. Try again.', unavailable: false };
+  return { message: msg || t('listing.aiFailed'), unavailable: false };
 }
 
 let keySeq = 0;
@@ -89,6 +91,7 @@ const newKey = () => `p${Date.now()}_${keySeq++}`;
 
 /** New listing / Snap-to-list: photos → AI or manual details → save as a manual mp_carts listing. */
 export default function MpNewListing() {
+  const t = useT();
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const editId = params.get('edit') || '';
@@ -171,7 +174,7 @@ export default function MpNewListing() {
     const list = Array.from(files || []).filter((f) => f.type.startsWith('image/') || /\.(jpe?g|png|heic|webp)$/i.test(f.name));
     const room = MAX_PHOTOS - photos.length;
     if (!list.length) return;
-    if (list.length > room) setError(`Up to ${MAX_PHOTOS} photos per listing.`);
+    if (list.length > room) setError(t('listing.maxPhotos', { max: MAX_PHOTOS }));
     const items = list.slice(0, Math.max(0, room)).map((f) => ({
       file: f,
       item: { key: newKey(), blob: f, preview: URL.createObjectURL(f), status: 'uploading' as const },
@@ -248,11 +251,11 @@ export default function MpNewListing() {
         return n;
       });
       setSuggestion({ price: r.suggestedPrice, reason: r.priceReason });
-      setAiMsg({ severity: 'success', text: 'Filled what the AI could see or hear. Check every field before saving.' });
+      setAiMsg({ severity: 'success', text: t('listing.aiFilled') });
       if (uid) void logEvent(uid, 'ai_listing', { message: 'snap' });
       setStep(1);
     } catch (e) {
-      const { message, unavailable } = aiError(e);
+      const { message, unavailable } = aiError(e, t);
       if (unavailable) setAiUnavailable(true);
       setAiMsg({ severity: unavailable ? 'info' : 'warning', text: message });
     } finally {
@@ -285,16 +288,16 @@ export default function MpNewListing() {
   const cart = useMemo(() => previewCart(form, readyUrls), [form, readyUrls]);
   const price = parsePrice(form.price);
   const problems = [
-    !form.make.trim() && !form.model.trim() ? 'Add the make or model.' : '',
-    !price ? 'Add a price.' : '',
-    !form.locationId ? 'Pick the store location.' : '',
+    !form.make.trim() && !form.model.trim() ? t('listing.needMakeModel') : '',
+    !price ? t('listing.needPrice') : '',
+    !form.locationId ? t('listing.needLocation') : '',
   ].filter(Boolean);
 
   const save = async () => {
     if (!uid || !profile) return;
     setError('');
     if (problems.length) return setError(problems.join(' '));
-    if (uploading) return setError('Wait for the photos to finish uploading.');
+    if (uploading) return setError(t('listing.waitUploads'));
     setSaving(true);
     try {
       if (editId) {
@@ -322,9 +325,9 @@ export default function MpNewListing() {
     return (
       <MpShell>
         {editState === 'loading' && <Box sx={{ py: 6, textAlign: 'center' }}><CircularProgress /></Box>}
-        {editState === 'missing' && <Alert severity="error">That listing wasn't found.{error ? ` ${error}` : ''}</Alert>}
+        {editState === 'missing' && <Alert severity="error">{t('listing.notFound')}{error ? ` ${error}` : ''}</Alert>}
         {editState === 'denied' && (
-          <Alert severity="warning">Only listings created in the app can be edited here, by the person who created them or a manager.</Alert>
+          <Alert severity="warning">{t('listing.denied')}</Alert>
         )}
       </MpShell>
     );
@@ -338,17 +341,17 @@ export default function MpNewListing() {
     <Box>
       <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.5, mb: 2 }}>
         <Button size="large" variant="contained" startIcon={<PhotoCamera />} onClick={() => cameraRef.current?.click()} sx={{ py: 2 }}>
-          Take photos
+          {t('listing.takePhotos')}
         </Button>
         <Button size="large" variant="outlined" startIcon={<AddPhotoAlternate />} onClick={() => pickRef.current?.click()} sx={{ py: 2 }}>
-          Upload
+          {t('listing.upload')}
         </Button>
         <input ref={cameraRef} hidden type="file" accept="image/*" capture="environment" multiple onChange={(e) => { addFiles(e.target.files); e.target.value = ''; }} />
         <input ref={pickRef} hidden type="file" accept="image/*" multiple onChange={(e) => { addFiles(e.target.files); e.target.value = ''; }} />
       </Box>
       {photos.length === 0 ? (
         <Typography color="text.secondary" sx={{ mb: 2 }}>
-          Snap the front, side, back, seats and dash. The first photo is the cover. Photos are resized before upload.
+          {t('listing.photosHint')}
         </Typography>
       ) : (
         <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(104px, 1fr))', gap: 1, mb: 2 }}>
@@ -358,18 +361,18 @@ export default function MpNewListing() {
               {p.status === 'uploading' && <LinearProgress sx={{ position: 'absolute', left: 0, right: 0, bottom: 0 }} />}
               {p.status === 'error' && (
                 <Button size="small" color="error" variant="contained" onClick={() => retry(p)} title={p.error} sx={{ position: 'absolute', left: 4, bottom: 4, minWidth: 0, px: 1, fontSize: 11 }}>
-                  Retry
+                  {t('listing.retry')}
                 </Button>
               )}
-              <IconButton size="small" onClick={() => removePhoto(p.key)} aria-label="Remove photo" sx={{ position: 'absolute', top: 2, right: 2, bgcolor: 'rgba(0,0,0,0.55)', color: '#fff', '&:hover': { bgcolor: 'rgba(0,0,0,0.75)' } }}>
+              <IconButton size="small" onClick={() => removePhoto(p.key)} aria-label={t('listing.removePhoto')} sx={{ position: 'absolute', top: 2, right: 2, bgcolor: 'rgba(0,0,0,0.55)', color: '#fff', '&:hover': { bgcolor: 'rgba(0,0,0,0.75)' } }}>
                 <Close fontSize="small" />
               </IconButton>
-              <Tooltip title={i === 0 ? 'Cover photo' : 'Make cover'}>
+              <Tooltip title={i === 0 ? t('listing.cover') : t('listing.makeCover')}>
                 <IconButton size="small" onClick={() => makeCover(p.key)} sx={{ position: 'absolute', top: 2, left: 2, bgcolor: 'rgba(0,0,0,0.55)', color: i === 0 ? '#ffd54f' : '#fff', '&:hover': { bgcolor: 'rgba(0,0,0,0.75)' } }}>
                   {i === 0 ? <Star fontSize="small" /> : <StarBorder fontSize="small" />}
                 </IconButton>
               </Tooltip>
-              <Tooltip title="Photo studio">
+              <Tooltip title={t('listing.studio')}>
                 <IconButton size="small" onClick={() => setStudio(i)} disabled={p.status === 'uploading'} sx={{ position: 'absolute', bottom: 2, right: 2, bgcolor: 'rgba(0,0,0,0.55)', color: '#fff', '&:hover': { bgcolor: 'rgba(0,0,0,0.75)' } }}>
                   <PhotoFilter fontSize="small" />
                 </IconButton>
@@ -378,16 +381,16 @@ export default function MpNewListing() {
           ))}
         </Box>
       )}
-      {failed > 0 && <Alert severity="warning" sx={{ mb: 2 }}>{failed} photo(s) failed to upload. Tap Retry or remove them.</Alert>}
+      {failed > 0 && <Alert severity="warning" sx={{ mb: 2 }}>{t('listing.failedPhotos', { count: failed })}</Alert>}
 
       <Paper variant="outlined" sx={{ p: 1.5 }}>
-        <Typography variant="subtitle2" sx={{ mb: 1 }}>Describe it (optional)</Typography>
+        <Typography variant="subtitle2" sx={{ mb: 1 }}>{t('listing.describe')}</Typography>
         <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start' }}>
           <TextField
             fullWidth
             multiline
             minRows={2}
-            placeholder="e.g. 2022 Evolution Classic 4 Plus, lithium, lifted, blue with white seats, used, great shape"
+            placeholder={t('listing.describeHint')}
             value={note}
             onChange={(e) => setNote(e.target.value)}
           />
@@ -404,10 +407,10 @@ export default function MpNewListing() {
             disabled={aiBusy || (!readyUrls.length && !note.trim())}
             onClick={runAi}
           >
-            {aiBusy ? 'Reading photos…' : 'Fill details with AI'}
+            {aiBusy ? t('listing.reading') : t('listing.fillAi')}
           </Button>
         )}
-        {uploading && !aiBusy && <Typography variant="caption" color="text.secondary">Uploading photos… AI uses the ones that are done.</Typography>}
+        {uploading && !aiBusy && <Typography variant="caption" color="text.secondary">{t('listing.uploadingAi')}</Typography>}
       </Paper>
       {aiMsg && <Alert severity={aiMsg.severity} sx={{ mt: 1.5 }}>{aiMsg.text}</Alert>}
     </Box>
@@ -417,26 +420,26 @@ export default function MpNewListing() {
     <Box>
       {aiMsg && aiMsg.severity === 'success' && <Alert severity="success" sx={{ mb: 2 }}>{aiMsg.text}</Alert>}
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', sm: 'repeat(3, 1fr)' }, gap: 1.5 }}>
-        <TextField label="Make" value={form.make} onChange={(e) => set('make', e.target.value)} required />
-        <TextField label="Model" value={form.model} onChange={(e) => set('model', e.target.value)} required />
-        <TextField label="Year" value={form.year} inputProps={{ inputMode: 'numeric', maxLength: 4 }} onChange={(e) => set('year', e.target.value.replace(/[^0-9]/g, ''))} />
-        <TextField label="Color" value={form.color} onChange={(e) => set('color', e.target.value)} />
-        <TextField label="Seat color" value={form.seatColor} onChange={(e) => set('seatColor', e.target.value)} />
-        <TextField label="Passengers" value={form.passengers} inputProps={{ inputMode: 'numeric' }} onChange={(e) => set('passengers', e.target.value.replace(/[^0-9]/g, ''))} />
+        <TextField label={t('listing.make')} value={form.make} onChange={(e) => set('make', e.target.value)} required />
+        <TextField label={t('listing.model')} value={form.model} onChange={(e) => set('model', e.target.value)} required />
+        <TextField label={t('listing.year')} value={form.year} inputProps={{ inputMode: 'numeric', maxLength: 4 }} onChange={(e) => set('year', e.target.value.replace(/[^0-9]/g, ''))} />
+        <TextField label={t('listing.color')} value={form.color} onChange={(e) => set('color', e.target.value)} />
+        <TextField label={t('listing.seatColor')} value={form.seatColor} onChange={(e) => set('seatColor', e.target.value)} />
+        <TextField label={t('listing.passengers')} value={form.passengers} inputProps={{ inputMode: 'numeric' }} onChange={(e) => set('passengers', e.target.value.replace(/[^0-9]/g, ''))} />
         <TextField
-          label="Price"
+          label={t('listing.price')}
           value={form.price}
           required
           inputProps={{ inputMode: 'decimal' }}
           InputProps={{ startAdornment: <Typography sx={{ mr: 0.5 }} color="text.secondary">$</Typography> }}
           onChange={(e) => set('price', e.target.value.replace(/[^0-9.,]/g, ''))}
         />
-        <TextField select label="Location" value={form.locationId} required onChange={(e) => set('locationId', e.target.value)}>
+        <TextField select label={t('listing.location')} value={form.locationId} required onChange={(e) => set('locationId', e.target.value)}>
           {DEALERSHIPS.map((d) => (
             <MenuItem key={d.id} value={d.id}>{d.id} · {d.cityState || d.name}</MenuItem>
           ))}
         </TextField>
-        <TextField select label="Category" value={form.category} onChange={(e) => set('category', e.target.value as ListingCategory)}>
+        <TextField select label={t('listing.category')} value={form.category} onChange={(e) => set('category', e.target.value as ListingCategory)}>
           {CATEGORIES.map((c) => <MenuItem key={c} value={c}>{c}</MenuItem>)}
         </TextField>
       </Box>
@@ -444,79 +447,79 @@ export default function MpNewListing() {
         <Alert
           severity="info"
           sx={{ mt: 1.5 }}
-          action={suggestion.price ? <Button color="inherit" size="small" onClick={() => set('price', String(suggestion.price))}>Use</Button> : undefined}
+          action={suggestion.price ? <Button color="inherit" size="small" onClick={() => set('price', String(suggestion.price))}>{t('listing.use')}</Button> : undefined}
         >
-          {suggestion.price ? <b>Suggested {formatPrice(suggestion.price)} · </b> : null}
+          {suggestion.price ? <b>{t('listing.suggested', { price: formatPrice(suggestion.price) })}</b> : null}
           {suggestion.reason}
         </Alert>
       )}
 
       <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', alignItems: 'center', mt: 2 }}>
         <ToggleButtonGroup exclusive size="small" value={form.isUsed ? 'used' : 'new'} onChange={(_, v) => v && set('isUsed', v === 'used')}>
-          <ToggleButton value="new">New</ToggleButton>
-          <ToggleButton value="used">Used</ToggleButton>
+          <ToggleButton value="new">{t('listing.new')}</ToggleButton>
+          <ToggleButton value="used">{t('listing.used')}</ToggleButton>
         </ToggleButtonGroup>
         <ToggleButtonGroup exclusive size="small" value={form.isElectric ? 'electric' : 'gas'} onChange={(_, v) => v && set('isElectric', v === 'electric')}>
-          <ToggleButton value="electric">Electric</ToggleButton>
-          <ToggleButton value="gas">Gas</ToggleButton>
+          <ToggleButton value="electric">{t('listing.electric')}</ToggleButton>
+          <ToggleButton value="gas">{t('listing.gas')}</ToggleButton>
         </ToggleButtonGroup>
       </Box>
       {form.isElectric && (
         <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.5, mt: 1.5 }}>
-          <TextField select label="Battery type" value={form.batteryType} onChange={(e) => set('batteryType', e.target.value)}>
+          <TextField select label={t('listing.batteryType')} value={form.batteryType} onChange={(e) => set('batteryType', e.target.value)}>
             {['', 'Lithium', 'Lead Acid', 'AGM', ...(form.batteryType && !['Lithium', 'Lead Acid', 'AGM'].includes(form.batteryType) ? [form.batteryType] : [])].map((b) => (
-              <MenuItem key={b || 'none'} value={b}>{b || 'Unknown'}</MenuItem>
+              <MenuItem key={b || 'none'} value={b}>{b || t('listing.unknown')}</MenuItem>
             ))}
           </TextField>
-          <TextField label="Voltage" placeholder="48" value={form.packVoltage} onChange={(e) => set('packVoltage', e.target.value)} />
+          <TextField label={t('listing.voltage')} placeholder="48" value={form.packVoltage} onChange={(e) => set('packVoltage', e.target.value)} />
         </Box>
       )}
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', sm: 'repeat(3, 1fr)' }, mt: 1 }}>
-        {toggle('isLifted', 'Lifted')}
-        {toggle('isStreetLegal', 'Street legal')}
-        {toggle('hasSoundSystem', 'Sound system')}
-        {toggle('hasExtendedTop', 'Extended roof')}
-        {toggle('hasHitch', 'Hitch')}
+        {toggle('isLifted', t('listing.lifted'))}
+        {toggle('isStreetLegal', t('listing.streetLegal'))}
+        {toggle('hasSoundSystem', t('listing.soundSystem'))}
+        {toggle('hasExtendedTop', t('listing.extendedRoof'))}
+        {toggle('hasHitch', t('listing.hitch'))}
       </Box>
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', sm: 'repeat(3, 1fr)' }, gap: 1.5, mt: 1 }}>
-        <TextField label="Tire / rim size" placeholder='14"' value={form.tireRimSize} onChange={(e) => set('tireRimSize', e.target.value)} />
-        <TextField label="Tire type" placeholder="All-terrain" value={form.tireType} onChange={(e) => set('tireType', e.target.value)} />
-        <TextField label="Serial / VIN (optional)" value={form.serial} onChange={(e) => set('serial', e.target.value)} sx={{ gridColumn: { xs: '1 / -1', sm: 'auto' } }} />
+        <TextField label={t('listing.tireSize')} placeholder='14"' value={form.tireRimSize} onChange={(e) => set('tireRimSize', e.target.value)} />
+        <TextField label={t('listing.tireType')} placeholder={t('listing.tireTypeHint')} value={form.tireType} onChange={(e) => set('tireType', e.target.value)} />
+        <TextField label={t('listing.serial')} value={form.serial} onChange={(e) => set('serial', e.target.value)} sx={{ gridColumn: { xs: '1 / -1', sm: 'auto' } }} />
       </Box>
 
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 2, mb: 1, flexWrap: 'wrap' }}>
-        <Typography variant="subtitle2" sx={{ flexGrow: 1 }}>Description</Typography>
+        <Typography variant="subtitle2" sx={{ flexGrow: 1 }}>{t('listing.description')}</Typography>
         {templates.length > 0 && (
           <TextField
             select
             size="small"
-            label="Apply template"
+            label={t('listing.applyTemplate')}
             value=""
             sx={{ minWidth: 180 }}
             onChange={(e) => {
-              const t = templates.find((x) => x.id === e.target.value);
-              if (t) set('description', fillTemplate(t.body, { cart, name: profile?.name }));
+              const tpl = templates.find((x) => x.id === e.target.value);
+              if (tpl) set('description', fillTemplate(tpl.body, { cart, name: profile?.name }));
             }}
           >
-            {templates.map((t) => <MenuItem key={t.id} value={t.id}>{t.title}</MenuItem>)}
+            {templates.map((tpl) => <MenuItem key={tpl.id} value={tpl.id}>{tpl.title}</MenuItem>)}
           </TextField>
         )}
         <VoiceButton value={form.description} onChange={(v) => set('description', v)} onError={(m) => setError(m)} />
       </Box>
-      <TextField fullWidth multiline minRows={4} value={form.description} onChange={(e) => set('description', e.target.value)} placeholder="What makes this cart great? Only facts you know." />
+      <TextField fullWidth multiline minRows={4} value={form.description} onChange={(e) => set('description', e.target.value)} placeholder={t('listing.descriptionHint')} />
     </Box>
   );
 
   const facts = [
-    form.isUsed ? 'Used' : 'New',
-    form.isElectric ? [form.packVoltage && `${form.packVoltage.replace(/v$/i, '')}V`, form.batteryType, 'electric'].filter(Boolean).join(' ') : 'Gas',
-    form.passengers && `${form.passengers} passenger`,
-    form.isLifted && 'Lifted',
-    form.isStreetLegal && 'Street legal',
-    form.hasSoundSystem && 'Sound system',
-    form.hasExtendedTop && 'Extended roof',
-    form.hasHitch && 'Hitch',
-    form.color && `${form.color}${form.seatColor ? ` / ${form.seatColor} seats` : ''}`,
+    form.isUsed ? t('listing.used') : t('listing.new'),
+    form.isElectric ? [form.packVoltage && `${form.packVoltage.replace(/v$/i, '')}V`, form.batteryType, t('listing.electricFact')].filter(Boolean).join(' ') : t('listing.gas'),
+    form.passengers && t('listing.passengerFact', { count: Number(form.passengers) || 0 }),
+    form.isLifted && t('listing.lifted'),
+    form.isStreetLegal && t('listing.streetLegal'),
+    form.hasSoundSystem && t('listing.soundSystem'),
+    form.hasExtendedTop && t('listing.extendedRoof'),
+    form.hasHitch && t('listing.hitch'),
+    form.color && `${form.color}${form.seatColor ? ` / ${t('listing.seatsFact', { color: form.seatColor })}` : ''}`,
     form.tireRimSize && `${form.tireRimSize} ${form.tireType}`.trim(),
     form.category !== 'golf cart' && form.category,
   ].filter(Boolean) as string[];
@@ -526,20 +529,20 @@ export default function MpNewListing() {
       {readyUrls[0] ? (
         <Box component="img" src={readyUrls[0]} alt="" sx={{ width: '100%', maxHeight: 360, objectFit: 'cover', display: 'block' }} />
       ) : (
-        <Box sx={{ p: 3, textAlign: 'center', bgcolor: 'grey.100' }}><Typography color="text.secondary">No photos yet</Typography></Box>
+        <Box sx={{ p: 3, textAlign: 'center', bgcolor: 'grey.100' }}><Typography color="text.secondary">{t('listing.noPhotos')}</Typography></Box>
       )}
       <Box sx={{ p: 2 }}>
         <Typography variant="h6">{cartTitle(cart)}</Typography>
-        <Typography variant="h5" color="primary" sx={{ fontWeight: 700 }}>{price ? formatPrice(price) : 'No price'}</Typography>
+        <Typography variant="h5" color="primary" sx={{ fontWeight: 700 }}>{price ? formatPrice(price) : t('listing.noPrice')}</Typography>
         <Typography color="text.secondary" variant="body2" sx={{ mb: 1 }}>
-          {[form.year, form.make, form.model].filter(Boolean).join(' ')} · {form.locationId ? `${form.locationId} ${locationName(form.locationId)}` : 'No location'}
+          {[form.year, form.make, form.model].filter(Boolean).join(' ')} · {form.locationId ? `${form.locationId} ${locationName(form.locationId)}` : t('listing.noLocation')}
           {form.serial ? ` · ${form.serial}` : ''}
         </Typography>
         <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', mb: 1.5 }}>
           {facts.map((f) => <Chip key={f} size="small" label={f} />)}
-          <Chip size="small" variant="outlined" label={`${readyUrls.length} photo${readyUrls.length === 1 ? '' : 's'}`} />
+          <Chip size="small" variant="outlined" label={t('listing.photoCount', { count: readyUrls.length })} />
         </Box>
-        <Typography sx={{ whiteSpace: 'pre-wrap' }} variant="body2">{form.description || <i>No description.</i>}</Typography>
+        <Typography sx={{ whiteSpace: 'pre-wrap' }} variant="body2">{form.description || <i>{t('listing.noDescription')}</i>}</Typography>
       </Box>
       {problems.length > 0 && <Alert severity="warning" sx={{ m: 2, mt: 0 }}>{problems.join(' ')}</Alert>}
     </Paper>
@@ -549,13 +552,13 @@ export default function MpNewListing() {
     <MpShell>
       <Box sx={{ maxWidth: 820, mx: 'auto', pb: 10 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-          <Typography variant="h5" sx={{ flexGrow: 1 }}>{editId ? 'Edit listing' : 'New listing'}</Typography>
-          {!editId && <Chip size="small" color="primary" variant="outlined" label="Snap to list" />}
+          <Typography variant="h5" sx={{ flexGrow: 1 }}>{editId ? t('listing.editTitle') : t('listing.newTitle')}</Typography>
+          {!editId && <Chip size="small" color="primary" variant="outlined" label={t('listing.snap')} />}
         </Box>
         <Stepper activeStep={step} alternativeLabel sx={{ mb: 1 }}>
           {STEPS.map((s, i) => (
             <Step key={s} completed={step > i}>
-              <StepLabel onClick={() => setStep(i)} sx={{ cursor: 'pointer' }}>{s}</StepLabel>
+              <StepLabel onClick={() => setStep(i)} sx={{ cursor: 'pointer' }}>{t(`listing.steps.${s}`)}</StepLabel>
             </Step>
           ))}
         </Stepper>
@@ -581,12 +584,12 @@ export default function MpNewListing() {
             startIcon={<ArrowBack />}
             onClick={() => (step === 0 ? navigate(-1) : setStep(step - 1))}
           >
-            {step === 0 ? 'Cancel' : 'Back'}
+            {step === 0 ? t('listing.cancel') : t('listing.back')}
           </Button>
           <Box sx={{ flexGrow: 1 }} />
           {step < 2 ? (
             <Button variant="contained" endIcon={<ArrowForward />} onClick={() => setStep(step + 1)} sx={{ minWidth: 140 }}>
-              {step === 0 && photos.length === 0 ? 'Skip photos' : 'Next'}
+              {step === 0 && photos.length === 0 ? t('listing.skipPhotos') : t('listing.next')}
             </Button>
           ) : (
             <Button
@@ -596,7 +599,7 @@ export default function MpNewListing() {
               onClick={save}
               sx={{ minWidth: 160 }}
             >
-              {uploading ? 'Uploading…' : editId ? 'Save changes' : 'Save listing'}
+              {uploading ? t('listing.uploading') : editId ? t('listing.saveChanges') : t('listing.save')}
             </Button>
           )}
         </Box>
@@ -611,7 +614,7 @@ export default function MpNewListing() {
           fileBase={cartTitle(cart)}
           locationId={form.locationId}
           onApply={applyStudio}
-          applyLabel="Use in listing"
+          applyLabel={t('listing.useInListing')}
         />
       )}
     </MpShell>

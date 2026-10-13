@@ -7,8 +7,17 @@ service cloud.firestore {
       return request.auth != null;
     }
     
+    // A signed-in @tigongolfcarts.com account whose email is verified (the app's VerifyEmailGate already
+    // requires this; phones set up with a QR code are marked verified by mpPairDevice).
     function isValidEmail() {
-      return request.auth != null && 
+      return request.auth != null &&
+             request.auth.token.email.matches('.*@tigongolfcarts[.]com$') &&
+             request.auth.token.email_verified == true;
+    }
+
+    // Same address check without verification — only for a person's own users/{uid} profile doc.
+    function isCompanyEmail() {
+      return request.auth != null &&
              request.auth.token.email.matches('.*@tigongolfcarts[.]com$');
     }
     
@@ -16,25 +25,56 @@ service cloud.firestore {
       return request.auth.uid == userId;
     }
     
-    // Users collection
+    // Users collection (IoT login record). Normally written by the createUserDocument function (admin SDK);
+    // a just-signed-up, not-yet-verified person may still create their own doc — it grants nothing.
+    // Nobody can give themselves a role or mark themselves verified.
     match /users/{userId} {
       allow read: if isAuthenticated() && isOwner(userId);
-      allow create: if isAuthenticated() && isOwner(userId) && isValidEmail();
-      allow update: if isAuthenticated() && isOwner(userId);
+      allow create: if isAuthenticated() && isOwner(userId) && isCompanyEmail() &&
+                       request.resource.data.get('role', 'user') == 'user' &&
+                       request.resource.data.get('emailVerified', false) == false;
+      allow update: if isAuthenticated() && isOwner(userId) &&
+                       !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'emailVerified', 'email']);
       allow delete: if isAuthenticated() && isOwner(userId);
     }
     
     // Devices collection
+    // Fields the phone app writes for its own record (native/deviceSession.ts registerDevice + heartbeat,
+    // native/phoneAlerts.ts, the Devices page rename). Everything else — userId (reassign), status (revoke),
+    // deviceNumber/locationId/accountId, echoSecretHash/echoRegisteredAt, pushError… — is for managers or
+    // Cloud Functions only.
+    function deviceOwnerFields() {
+      return ['deviceName', 'lastSeen', 'fcmToken', 'platform', 'model', 'osVersion', 'appVersion',
+              'isActive', 'updatedAt'];
+    }
+    function deviceCreateFields() {
+      return deviceOwnerFields().concat(['userId', 'deviceType', 'source', 'installId', 'status', 'pairedAt']);
+    }
+    // registerDevice(): a phone retired only because it was set up for someone else comes back when its
+    // owner signs in on it again (status revoked → active, retiredReason/replacedBy removed).
+    function deviceSelfRestore() {
+      return resource.data.get('status', '') == 'revoked' &&
+             resource.data.get('retiredReason', '') == 'phone-set-up-again' &&
+             request.resource.data.status == 'active' &&
+             request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(deviceOwnerFields().concat(['status', 'retiredReason', 'replacedBy'])) &&
+             !request.resource.data.keys().hasAny(['retiredReason', 'replacedBy']);
+    }
     match /devices/{deviceId} {
       // MP managers/admins can see and manage (rename, reassign, revoke) every phone.
-      allow read: if isAuthenticated() && 
+      allow read: if isAuthenticated() &&
                      (resource.data.userId == request.auth.uid || isMpManager());
-      allow create: if isAuthenticated() && 
+      allow create: if isValidEmail() &&
                        request.resource.data.userId == request.auth.uid &&
-                       isValidEmail();
-      allow update: if isAuthenticated() && 
-                       (resource.data.userId == request.auth.uid || isMpManager());
-      allow delete: if isAuthenticated() && 
+                       request.resource.data.keys().hasOnly(deviceCreateFields()) &&
+                       request.resource.data.get('status', 'active') == 'active' &&
+                       request.resource.data.get('deviceType', 'master') == 'master' &&
+                       request.resource.data.get('source', 'tigon-iot-app') == 'tigon-iot-app';
+      allow update: if isMpManager() ||
+                       (isValidEmail() && resource.data.userId == request.auth.uid &&
+                        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(deviceOwnerFields()) ||
+                         deviceSelfRestore()));
+      allow delete: if isAuthenticated() &&
                        (resource.data.userId == request.auth.uid || isMpAdmin());
     }
     
@@ -43,7 +83,8 @@ service cloud.firestore {
       // Owners see their own; MP managers/admins see every phone's notifications on the dashboard.
       allow read: if isAuthenticated() && 
                      (resource.data.targetUserId == request.auth.uid || isMpManager());
-      allow create: if isAuthenticated() && isValidEmail();
+      // The server (phone forwarding, alerts) creates notifications for anyone; the app only for yourself.
+      allow create: if isValidEmail() && request.resource.data.targetUserId == request.auth.uid;
       allow update: if isAuthenticated() && 
                        (resource.data.targetUserId == request.auth.uid || isMpManager());
       allow delete: if isAuthenticated() && 
@@ -87,8 +128,11 @@ service cloud.firestore {
       return /databases/$(database)/documents/mp_users/$(request.auth.uid);
     }
 
+    // A member has an mp_users profile that an admin approved. New sign-ups start as status 'pending';
+    // offboarded people are set to 'disabled'. Profiles from before approvals existed have no status (= active).
     function isMpMember() {
-      return isValidEmail() && exists(mpProfilePath());
+      return isValidEmail() && exists(mpProfilePath()) &&
+             !(get(mpProfilePath()).data.get('status', 'active') in ['pending', 'disabled']);
     }
 
     function isMpManager() {
@@ -113,16 +157,25 @@ service cloud.firestore {
 
     match /mp_users/{userId} {
       allow read: if isValidEmail();
+      // Self-enrolment (MpShell → ProfileSetup → saveProfile): a new member waits for an admin
+      // (status 'pending'); a bootstrap admin (systemConfig/mpAssistant.adminEmails) starts active.
+      // Once the doc exists (even 'disabled') this rule can't fire again, so an offboarded person can't
+      // re-enrol; only an admin deleting the doc allows a fresh (pending) sign-up.
       allow create: if isValidEmail() && isOwner(userId) &&
                        request.resource.data.email == request.auth.token.email &&
-                       (request.resource.data.role == 'sales' ||
-                        (request.resource.data.role == 'admin' && isMpBootstrapAdmin()));
+                       request.resource.data.keys().hasOnly(['email', 'name', 'legacyId', 'role', 'status', 'createdAt', 'updatedAt', 'prefs']) &&
+                       ((request.resource.data.role == 'sales' && request.resource.data.get('status', '') == 'pending') ||
+                        (request.resource.data.role == 'admin' && isMpBootstrapAdmin() &&
+                         request.resource.data.get('status', 'active') in ['active', 'pending']));
+      // Admins (Admin page) approve / reject / disable people and set roles.
       allow update: if isMpAdmin() ||
                        // Managers (Users page) may change a person's name and location.
                        (isMpManager() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'location', 'updatedAt'])) ||
+                       // Everyone may edit their own name, legacy identity and preferences — never their role,
+                       // approval status, location or email. Disabled people can't edit anything.
                        (isValidEmail() && isOwner(userId) &&
-                        request.resource.data.role == resource.data.role &&
-                        request.resource.data.email == resource.data.email);
+                        resource.data.get('status', 'active') != 'disabled' &&
+                        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'status', 'location', 'email']));
       allow delete: if isMpAdmin();
     }
 
@@ -195,10 +248,19 @@ service cloud.firestore {
       allow delete: if isMpManager();
     }
 
-    // Audit log: append-only, admins read.
+    // Audit log: append-only, admins read. The app's writeAudit() (mp/audit.ts) still appends entries in
+    // the person's own name with a fixed shape; Cloud Functions add authoritative entries server-side.
     match /mp_audit/{entryId} {
       allow read: if isMpAdmin();
-      allow create: if isMpMember() && request.resource.data.actorUid == request.auth.uid;
+      allow create: if isMpMember() && request.resource.data.actorUid == request.auth.uid &&
+                       request.resource.data.keys().hasOnly(['actorUid', 'actorName', 'action', 'target', 'details', 'ts']) &&
+                       request.resource.data.keys().hasAll(['actorUid', 'action', 'ts']) &&
+                       request.resource.data.action is string &&
+                       request.resource.data.action.size() > 0 && request.resource.data.action.size() <= 100 &&
+                       request.resource.data.get('actorName', '') is string && request.resource.data.get('actorName', '').size() <= 200 &&
+                       request.resource.data.get('target', '') is string && request.resource.data.get('target', '').size() <= 500 &&
+                       request.resource.data.get('details', '') is string && request.resource.data.get('details', '').size() <= 5000 &&
+                       request.resource.data.ts is number;
     }
 
     // Pairing codes are only ever touched by Cloud Functions.
@@ -243,11 +305,18 @@ service cloud.firestore {
     }
 
     // Public mini-storefronts (served publicly by the mpStorefrontApi function).
+    // Members save drafts (published false); only a manager can make a storefront public.
+    // The "tigon" address is reserved for the company storefront (admins).
+    function storefrontPublishOk() {
+      return request.resource.data.get('published', false) != true || isMpManager();
+    }
     match /mp_storefronts/{slug} {
       allow read: if isMpMember();
-      allow create: if isMpMember() && request.resource.data.userId == request.auth.uid;
-      allow update, delete: if isMpMember() && (resource.data.userId == request.auth.uid || isMpManager()) &&
-                               request.resource.data.userId == resource.data.userId;
+      allow create: if isMpMember() && request.resource.data.userId == request.auth.uid &&
+                       storefrontPublishOk() && (slug != 'tigon' || isMpAdmin());
+      allow update: if isMpMember() && (resource.data.userId == request.auth.uid || isMpManager()) &&
+                       request.resource.data.userId == resource.data.userId && storefrontPublishOk();
+      allow delete: if isMpMember() && (resource.data.userId == request.auth.uid || isMpManager());
     }
 
     // Leads: owners and managers.
@@ -285,12 +354,21 @@ service cloud.firestore {
     }
 
     // ---- Sell more release (speed to lead, texting, quotes, booking, trade-ins, referrals…) ----------
-    // Texts: anyone on the team may queue a text in their own name; delivery and status are server-only.
+    // Texts: anyone on the team may queue a text in their own name (salesData.sendText); delivery and
+    // status are server-only. Only kinds a PERSON sends from the app are allowed (automatic kinds —
+    // auto_lead, missed_call, cadence, price_drop, similar, no_show, service, reply — come from the server),
+    // to be sent now (no scheduling into the future), with a fixed set of fields.
     match /mp_sms/{id} {
       allow read: if isMpManager() ||
                      (isMpMember() && (resource.data.createdBy == request.auth.uid || resource.data.ownerUid == request.auth.uid));
       allow create: if isMpMember() && request.resource.data.createdBy == request.auth.uid &&
                        request.resource.data.status == 'queued' &&
+                       request.resource.data.kind in ['manual', 'quote', 'appointment', 'trade_in', 'prequal', 'referral'] &&
+                       request.resource.data.keys().hasOnly(['to', 'body', 'kind', 'storeId', 'createdBy', 'status', 'sendAt',
+                         'attempts', 'createdAt', 'leadId', 'customerId', 'queueAt']) &&
+                       request.resource.data.sendAt is number &&
+                       request.resource.data.sendAt <= request.time.toMillis() + 5 * 60 * 1000 &&
+                       request.resource.data.get('attempts', 0) == 0 &&
                        request.resource.data.to is string && request.resource.data.to.matches('^[+]1[0-9]{10}$') &&
                        request.resource.data.body is string && request.resource.data.body.size() > 0 &&
                        request.resource.data.body.size() <= 1200;
@@ -344,6 +422,20 @@ service cloud.firestore {
     }
     match /mp_reviews/{id} {
       allow read: if isMpMember();
+    }
+
+    // Credit applications (written only by the mpCreditApi function; team reads and sets status).
+    match /mp_credit_apps/{id} {
+      allow read: if isMpMember();
+      allow update: if isMpMember() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt']);
+      allow delete: if isMpManager();
+    }
+    // Texts inbox: each person's "last read" marker per conversation.
+    match /mp_inbox_reads/{id} {
+      allow read: if isMpMember() && resource.data.uid == request.auth.uid;
+      allow create, update: if isMpMember() && request.resource.data.uid == request.auth.uid &&
+                               id.matches(request.auth.uid + '_[0-9]{11}') &&
+                               request.resource.data.keys().hasOnly(['uid', 'phone', 'readAt']);
     }
 
     // ---- Webhook Flows (website forms → flows) -----------------------------

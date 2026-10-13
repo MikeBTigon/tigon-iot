@@ -2,14 +2,17 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { collection, doc, getDoc, getDocs, limit, orderBy, query, where } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import {
-  Alert, Box, Button, Chip, CircularProgress, List, ListItem, ListItemText, Paper, Typography,
+  Alert, Box, Button, Chip, CircularProgress, List, ListItem, ListItemText, Paper, Tab, Tabs, Typography,
 } from '@mui/material';
 import type { AlertColor } from '@mui/material';
 import {
   AutoAwesome, Backup, CloudSync, ErrorOutline, Extension, NotificationsActive, PhoneIphone, Queue, Refresh,
 } from '@mui/icons-material';
 import { db, functions } from '../../config/firebase';
+import { useSearchParams } from 'react-router-dom';
 import MpShell from '../components/MpShell';
+import WhTriage from '../../wh/pages/WhTriage';
+import HealthChecks from './HealthChecks';
 import { useMp } from '../MpDataContext';
 import { COLLECTIONS, ONLINE_WINDOW_MS } from '../constants';
 import { timeAgo } from '../cartUtils';
@@ -99,6 +102,8 @@ const Line: React.FC<{ label: string; value: React.ReactNode }> = ({ label, valu
 /** Managers: system health at a glance — DMS sync, queue, phones, alerts, imports, backups. */
 const MpStatus: React.FC = () => {
   const { profile, isAdmin, syncStatus, userName } = useMp();
+  const [params, setParams] = useSearchParams();
+  const tab: 'system' | 'forms' = params.get('tab') === 'forms' ? 'forms' : 'system';
   const isManager = profile?.role === 'admin' || profile?.role === 'manager';
   const [data, setData] = useState<Snapshot | null>(null);
   const [error, setError] = useState('');
@@ -128,7 +133,7 @@ const MpStatus: React.FC = () => {
   };
 
   if (profile && !isManager) {
-    return <MpShell><Alert severity="warning">The Status page is for managers and admins.</Alert></MpShell>;
+    return <MpShell><Alert severity="warning">System health is for managers and admins.</Alert></MpShell>;
   }
 
   let body: React.ReactNode = <CircularProgress />;
@@ -281,12 +286,22 @@ const MpStatus: React.FC = () => {
 
   return (
     <MpShell>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-        <Typography variant="h5" sx={{ flexGrow: 1 }}>System status</Typography>
-        <Button startIcon={<Refresh />} onClick={refresh}>Refresh</Button>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+        <Typography variant="h5" component="h2" sx={{ flexGrow: 1 }}>System health</Typography>
+        {tab === 'system' && <Button startIcon={<Refresh />} onClick={refresh}>Refresh</Button>}
       </Box>
-      {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-      {body}
+      <Tabs value={tab} onChange={(_e, v: 'system' | 'forms') => setParams(v === 'forms' ? { tab: 'forms' } : {}, { replace: true })}
+        variant="scrollable" allowScrollButtonsMobile sx={{ mb: 2, borderBottom: 1, borderColor: 'divider' }}>
+        <Tab value="system" label="Phones, posting & sync" />
+        <Tab value="forms" label="Website forms problems" />
+      </Tabs>
+      {tab === 'forms' ? <WhTriage /> : (
+        <>
+          {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+          <HealthChecks />
+          {body}
+        </>
+      )}
     </MpShell>
   );
 };

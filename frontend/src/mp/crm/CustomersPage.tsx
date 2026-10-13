@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Alert, Box, Button, Chip, Paper, TextField, Typography } from '@mui/material';
+import { Alert, Box, Button, ButtonBase, Chip, CircularProgress, Paper, TextField, Typography } from '@mui/material';
 import { Add, Campaign, Download, Search } from '@mui/icons-material';
 import MpShell from '../components/MpShell';
 import ChipFilter from '../components/ChipFilter';
@@ -14,7 +14,7 @@ import type { Customer } from '../growthTypes';
 /** Customer list: search, tag and store filters, opt-in consent, broadcast and CSV export. */
 export default function CustomersPage() {
   const { profile } = useMp();
-  const { customers, error } = useCustomers(profile);
+  const { customers, error, loaded } = useCustomers(profile);
   const [search, setSearch] = useState('');
   const [tag, setTag] = useState('all');
   const [loc, setLoc] = useState('all');
@@ -58,11 +58,14 @@ export default function CustomersPage() {
       {locations.length > 1 && (
         <ChipFilter label="Store" value={loc} options={[{ value: 'all', label: 'All' }, ...locations.map((l) => ({ value: l, label: l }))]} onChange={setLoc} />
       )}
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>{rows.length} customer{rows.length === 1 ? '' : 's'}</Typography>
-      {!rows.length && <Typography color="text.secondary" sx={{ py: 3 }}>No customers yet. Buyers are added automatically when you mark a lead sold.</Typography>}
+      {loaded && <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>{rows.length} customer{rows.length === 1 ? '' : 's'}</Typography>}
+      {!loaded && !error && <Box sx={{ py: 4, textAlign: 'center' }}><CircularProgress aria-label="Loading customers" /></Box>}
+      {loaded && !rows.length && <Typography color="text.secondary" sx={{ py: 3 }}>No customers yet. Buyers are added automatically when you mark a lead sold.</Typography>}
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 1 }}>
         {rows.map((c) => (
-          <Paper key={c.id} variant="outlined" onClick={() => setEditing(c)} sx={{ p: 1.25, cursor: 'pointer', '&:hover': { boxShadow: 2 } }}>
+          <Paper key={c.id} variant="outlined" sx={{ '&:hover': { boxShadow: 2 } }}>
+            <ButtonBase onClick={() => setEditing(c)}
+              sx={{ p: 1.25, width: '100%', display: 'block', textAlign: 'left', borderRadius: 'inherit' }}>
             <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1 }}>
               <Typography sx={{ fontWeight: 600, flexGrow: 1 }} noWrap>{c.name || c.phone || c.email}</Typography>
               {c.locationId && <Typography variant="caption" color="text.secondary">{locationName(c.locationId)}</Typography>}
@@ -81,6 +84,7 @@ export default function CustomersPage() {
                 {c.reviewRequestedAt ? `Review asked ${shortDateTime(c.reviewRequestedAt)}` : ''}
               </Typography>
             )}
+            </ButtonBase>
           </Paper>
         ))}
       </Box>

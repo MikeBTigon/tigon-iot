@@ -8,6 +8,8 @@
 //     → reports back → recordSmsResults().
 //   provider 'twilio': mpSmsQueued sends new texts right away; textingTick sends delayed ones and retries.
 // Replies: Twilio → mpSmsInbound (/api/sms/inbound); texting phone → its Messages-app notifications (missedCallEcho).
+import * as admin from 'firebase-admin';
+import {FieldValue} from 'firebase-admin/firestore';
 import * as logger from 'firebase-functions/logger';
 import {HttpsError, onCall, onRequest} from 'firebase-functions/v2/https';
 import {onDocumentCreated} from 'firebase-functions/v2/firestore';
@@ -15,15 +17,27 @@ import {createHash, createHmac, timingSafeEqual} from 'crypto';
 import {loadSalesSettings} from './settings';
 import type {CadenceStep, SalesSettings} from './settings';
 import {
-  C, DAY_MS, HOUR_MS, MIN_MS, PUBLIC_ORIGIN, clean, db, e164, fill, firstName, isManagerRole, leadTemplateData,
+  C, DAY_MS, HOUR_MS, MIN_MS, PUBLIC_ORIGIN, clean, db, e164, expireIn, fill, firstName, isManagerRole, leadTemplateData,
   loadPeople, managersFor, notify, nyDateKey, prettyPhone, storeCity,
 } from './util';
 import type {Json, Person} from './util';
-import {markLeadTexted, queueSms} from './outbox';
+import {isOptedOut, markLeadTexted, queueSms} from './outbox';
+import {isInactiveStatus} from '../membership';
 import type {SmsDoc} from './outbox';
 
+const FV = FieldValue;
 const MAX_ATTEMPTS = 3;
+/** A text taken by the texting phone / Twilio with no confirmation after this is marked failed (never resent). */
 const STUCK_MS = 10 * MIN_MS;
+/** Missed-call text-backs per texting device per day. */
+export const MISSED_CALL_DAILY_CAP = 30;
+/** One missed-call text-back per number per 30 days. */
+const MISSED_CALL_REPEAT_MS = 30 * DAY_MS;
+/** Manual texts (mpSendText) per person per hour. */
+export const MANUAL_TEXTS_PER_HOUR = 60;
+/** Queued texts read per page (queueAt order); a few pages at most per check-in. */
+const QUEUE_PAGE = 25;
+const QUEUE_MAX_PAGES = 8;
 /** A queued text nobody could send (no texting phone online) gives up after this. */
 const GIVE_UP_MS = 48 * HOUR_MS;
 const FROM = 'TIGON texting';
@@ -59,10 +73,20 @@ export function findPhone(text: string): string {
   return e164(`${m[1]}${m[2]}${m[3]}`);
 }
 
-const STOP_WORDS = new Set(['STOP', 'STOPALL', 'UNSUBSCRIBE', 'CANCEL', 'END', 'QUIT', 'STOP ALL', 'OPT OUT', 'OPTOUT', 'REVOKE']);
 const START_WORDS = new Set(['START', 'UNSTOP', 'RESUME']);
 const keyword = (body: string) => body.trim().toUpperCase().replace(/[^A-Z ]/g, '').replace(/\s+/g, ' ').trim();
-export const isStopWord = (body: string) => STOP_WORDS.has(keyword(body));
+/** Opt-out anywhere in the message (whole words, any case): STOP, STOPALL, UNSUBSCRIBE, CANCEL, END, QUIT, REVOKE,
+ * "opt out", "remove me", "don't text", "do not text" (also "dont"/curly apostrophes, "text me"/"message"). */
+const STOP_RE = new RegExp([
+  '\\b(?:stop|stopall|unsubscribe|cancel|end|quit|revoke|optout)\\b',
+  '\\bopt[\\s-]*out\\b',
+  '\\bremove\\s+me\\b',
+  '\\b(?:don[\'’]?t|do\\s+not)\\s+(?:text|message|msg|sms|contact)\\b',
+].join('|'), 'i');
+/** Unclear "no" — a person should look (we don't opt them out automatically). */
+const NEGATIVE_RE = /\b(?:not interested|no thanks|no thank you|wrong (?:number|person)|leave me alone|lose my number|take me off|stop (?:texting|messaging|contacting)|who is this|spam|harass\w*|no more)\b/i;
+export const isStopWord = (body: string) => STOP_RE.test(String(body || ''));
+export const isNegativeReply = (body: string) => !isStopWord(body) && NEGATIVE_RE.test(String(body || ''));
 export const isStartWord = (body: string) => START_WORDS.has(keyword(body));
 
 const DIALER_PACKAGES = new Set([
@@ -129,6 +153,15 @@ export function dueCadenceStep(lead: Json, steps: CadenceStep[], now: number): {
   return found;
 }
 
+/** When the lead's next cadence step is due (ms), or null when the cadence is over / stopped / the lead is closed. */
+export function nextCadenceAt(lead: Json, steps: CadenceStep[]): number | null {
+  if (!lead || lead.cadenceStopped || typeof lead.cadenceStartedAt !== 'number') return null;
+  if (lead.status && lead.status !== 'new' && lead.status !== 'talking') return null;
+  const list = sortedSteps(steps);
+  const from = Math.max(0, Number(lead.cadenceStep) || 0);
+  return from < list.length ? lead.cadenceStartedAt + Number(list[from].day) * DAY_MS : null;
+}
+
 /** Same day-of-month, `months` later (clamped to the month's last day). */
 export function addMonths(ts: number, months: number): number {
   const d = new Date(ts);
@@ -150,7 +183,7 @@ const SERVICE_LABEL: Record<string, string> = {
 // ---------------------------------------------------------------------------
 
 export const twilioKeys = () => !!(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN);
-const twilioOn = (s: SalesSettings) => s.sms.provider === 'twilio' && twilioKeys();
+export const twilioOn = (s: SalesSettings) => s.sms.provider === 'twilio' && twilioKeys();
 
 /** Stores this phone sends for ('*' = it's the fallback phone). */
 function storesOfPhone(deviceId: string, s: SalesSettings): {stores: string[]; isDefault: boolean} {
@@ -165,7 +198,7 @@ const isTextingPhone = (deviceId: string, s: SalesSettings) => {
   return x.isDefault || x.stores.length > 0;
 };
 /** The phone a store's texts go out from ('' = none set up). */
-function phoneForStore(storeId: string, s: SalesSettings): string {
+export function phoneForStore(storeId: string, s: SalesSettings): string {
   return (storeId && s.sms.senderDeviceByStore?.[storeId]) || s.sms.defaultSenderDeviceId || '';
 }
 
@@ -193,6 +226,8 @@ export async function onNewLeadTexting(id: string, lead: Json, s: SalesSettings)
   if (typeof lead.cadenceStartedAt !== 'number') {
     patch.cadenceStartedAt = Number(lead.createdAt) || Date.now();
     patch.cadenceStep = 0;
+    const next = nextCadenceAt({...lead, ...patch}, s.cadence.steps);
+    if (next !== null) patch.cadenceNextAt = next;
   }
   // 2. Instant auto-text (not the human first response: createdBy '' → markLeadTexted is never called for it).
   const a = s.autoText;
@@ -213,8 +248,8 @@ export async function onLeadUpdatedTexting(id: string, before: Json, after: Json
   const closed = after.status === 'sold' || after.status === 'lost';
   const wasClosed = before.status === 'sold' || before.status === 'lost';
   if (closed && !wasClosed) {
-    if (typeof after.cadenceStartedAt === 'number' && !after.cadenceStopped) {
-      await db().collection(C.leads).doc(id).set({cadenceStopped: true, cadenceStoppedReason: after.status}, {merge: true});
+    if ((typeof after.cadenceStartedAt === 'number' && !after.cadenceStopped) || after.cadenceNextAt !== undefined) {
+      await db().collection(C.leads).doc(id).set({cadenceStopped: true, cadenceStoppedReason: after.status, cadenceNextAt: FV.delete()}, {merge: true});
     }
     // Open cadence to-dos for this lead are no longer needed.
     const tasks = await db().collection(C.tasks).where('leadId', '==', id).get();
@@ -266,7 +301,36 @@ async function createServiceTasks(id: string, lead: Json, s: SalesSettings) {
 export async function textingTick(now: number, s: SalesSettings): Promise<void> {
   await recoverStuck(now);
   await queuedHousekeeping(now, s);
+  await hourly('queueAtMigrate', now, () => migrateQueueAt(now));
   if (s.cadence.enabled) await hourly('cadence', now, () => cadenceTick(now, s));
+}
+
+/** Due queued texts, oldest first, one small page at a time (single-field index on queueAt). */
+export async function dueQueued(now: number, want: (d: admin.firestore.QueryDocumentSnapshot) => boolean, max: number,
+  pages = QUEUE_MAX_PAGES): Promise<admin.firestore.QueryDocumentSnapshot[]> {
+  const out: admin.firestore.QueryDocumentSnapshot[] = [];
+  let last: admin.firestore.QueryDocumentSnapshot | undefined;
+  for (let p = 0; p < pages && out.length < max; p++) {
+    let q = db().collection(C.sms).where('queueAt', '<=', now).orderBy('queueAt').limit(QUEUE_PAGE);
+    if (last) q = q.startAfter(last);
+    const snap = await q.get();
+    for (const d of snap.docs) if (d.get('status') === 'queued' && want(d) && out.length < max) out.push(d);
+    if (snap.size < QUEUE_PAGE) break;
+    last = snap.docs[snap.docs.length - 1];
+  }
+  return out;
+}
+
+/** One-off (hourly until done): queued texts written before queueAt existed get queueAt = sendAt. */
+async function migrateQueueAt(now: number) {
+  const ref = db().collection(C.meta).doc('sales_texting');
+  if ((await ref.get()).get('queueAtMigratedAt')) return;
+  const snap = await db().collection(C.sms).where('status', '==', 'queued').limit(500).get();
+  const missing = snap.docs.filter((d) => typeof d.get('queueAt') !== 'number');
+  const batch = db().batch();
+  for (const d of missing) batch.update(d.ref, {queueAt: Number(d.get('sendAt')) || Number(d.get('createdAt')) || now});
+  if (missing.length) await batch.commit();
+  if (snap.size < 500) await ref.set({queueAtMigratedAt: now}, {merge: true});
 }
 
 /** Runs `fn` at most once every ~hour (shared across instances). */
@@ -281,20 +345,22 @@ async function hourly(key: string, now: number, fn: () => Promise<void>) {
   if (go) await fn();
 }
 
-/** Texts a phone/Twilio took but never confirmed → back in the queue (or failed after 3 tries). */
+/**
+ * Texts a phone/Twilio took but never confirmed (10 min) → failed, NOT resent: the customer may already have it, and a
+ * second copy is worse than none. (A late "sent" report from the phone still marks it sent.)
+ */
 async function recoverStuck(now: number) {
-  const snap = await db().collection(C.sms).where('status', '==', 'sending').get();
+  const snap = await db().collection(C.sms).where('status', '==', 'sending').limit(500).get();
   const batch = db().batch();
   let n = 0;
   for (const d of snap.docs) {
     const x = d.data() as SmsDoc;
     const taken = Number(x.takenAt || x.sendAt || x.createdAt || 0);
     if (now - taken < STUCK_MS) continue;
-    if ((x.attempts || 0) >= MAX_ATTEMPTS) {
-      batch.update(d.ref, {status: 'failed', error: 'The texting phone never confirmed this text', failedAt: now});
-    } else {
-      batch.update(d.ref, {status: 'queued', error: 'Retrying — the texting phone didn\'t confirm it'});
-    }
+    const error = x.provider === 'twilio' ?
+      'Unconfirmed — Twilio never answered, so it was not sent again (to avoid a double text)' :
+      'No confirmation from texting phone — not sent again (to avoid a double text)';
+    batch.update(d.ref, {status: 'failed', error, unconfirmed: true, failedAt: now, queueAt: FV.delete()});
     n++;
   }
   if (n) await batch.commit();
@@ -302,19 +368,18 @@ async function recoverStuck(now: number) {
 
 /** Twilio: send due + retry. Phone: flag texts that have no texting phone, give up after 48 h. */
 async function queuedHousekeeping(now: number, s: SalesSettings) {
-  const snap = await db().collection(C.sms).where('status', '==', 'queued').limit(500).get();
-  const due = snap.docs.filter((d) => Number(d.get('sendAt') || 0) <= now)
-    .sort((a, b) => Number(a.get('sendAt')) - Number(b.get('sendAt')));
   if (twilioOn(s)) {
-    for (const d of due.slice(0, 60)) await twilioSend(d.id, s);
+    const due = await dueQueued(now, () => true, 60, 3);
+    for (const d of due) await twilioSend(d.id, s);
     return;
   }
+  const due = await dueQueued(now, () => true, 100, 4);
   const batch = db().batch();
   let n = 0;
   for (const d of due) {
     const x = d.data() as SmsDoc;
     if (now - Number(x.createdAt || now) > GIVE_UP_MS) {
-      batch.update(d.ref, {status: 'failed', error: 'Not sent — no texting phone picked it up for 2 days', failedAt: now});
+      batch.update(d.ref, {status: 'failed', error: 'Not sent — no texting phone picked it up for 2 days', failedAt: now, queueAt: FV.delete()});
       n++;
     } else if (!phoneForStore(x.storeId, s) && !x.error) {
       batch.update(d.ref, {error: 'Waiting — no texting phone is set up for this store yet'});
@@ -327,24 +392,51 @@ async function queuedHousekeeping(now: number, s: SalesSettings) {
 async function cadenceTick(now: number, s: SalesSettings) {
   const steps = sortedSteps(s.cadence.steps);
   if (!steps.length) return;
-  const [a, b] = await Promise.all([
-    db().collection(C.leads).where('status', '==', 'new').get(),
-    db().collection(C.leads).where('status', '==', 'talking').get(),
-  ]);
+  await migrateCadenceNextAt(now, steps);
+  // Only leads whose next step is due (cadenceNextAt is set while a cadence is running).
+  const snap = await db().collection(C.leads).where('cadenceNextAt', '<=', now).limit(500).get();
+  if (!snap.size) return;
   const people = await loadPeople();
-  for (const d of [...a.docs, ...b.docs]) {
+  for (const d of snap.docs) {
     const lead = d.data();
     const due = dueCadenceStep(lead, steps, now);
-    if (!due) continue;
+    if (!due) {
+      // Stopped, closed, or the steps changed: point at the real next step (or end the cadence).
+      const next = nextCadenceAt(lead, steps);
+      await d.ref.update({cadenceNextAt: next !== null && next > now ? next : FV.delete()}).catch(() => undefined);
+      continue;
+    }
     try {
-      await createCadenceTask(d.id, lead, due, people);
+      await createCadenceTask(d.id, lead, due, people, steps);
     } catch (e) {
       logger.warn('cadence task failed', d.id, e);
     }
   }
 }
 
-async function createCadenceTask(id: string, lead: Json, due: {index: number; step: CadenceStep; dueAt: number}, people: Person[]) {
+/** One-off: open leads with a running cadence but no cadenceNextAt (from before the field existed). */
+async function migrateCadenceNextAt(now: number, steps: CadenceStep[]) {
+  const metaRef = db().collection(C.meta).doc('sales_texting');
+  if ((await metaRef.get()).get('cadenceNextAtMigratedAt')) return;
+  const [a, b] = await Promise.all([
+    db().collection(C.leads).where('status', '==', 'new').get(),
+    db().collection(C.leads).where('status', '==', 'talking').get(),
+  ]);
+  const ops: Array<(x: admin.firestore.WriteBatch) => void> = [];
+  for (const d of [...a.docs, ...b.docs]) {
+    if (d.get('cadenceNextAt') !== undefined) continue;
+    const next = nextCadenceAt(d.data(), steps);
+    if (next !== null) ops.push((x) => x.update(d.ref, {cadenceNextAt: next}));
+  }
+  for (let i = 0; i < ops.length; i += 400) {
+    const batch = db().batch();
+    ops.slice(i, i + 400).forEach((op) => op(batch));
+    await batch.commit();
+  }
+  await metaRef.set({cadenceNextAtMigratedAt: now}, {merge: true});
+}
+
+async function createCadenceTask(id: string, lead: Json, due: {index: number; step: CadenceStep; dueAt: number}, people: Person[], steps: CadenceStep[]) {
   const ownerName = await ownerNameOf(lead.ownerUid, people);
   const data = leadTemplateData(lead, ownerName);
   const filled = fill(due.step.template || '', data);
@@ -369,7 +461,8 @@ async function createCadenceTask(id: string, lead: Json, due: {index: number; st
         storeId: lead.locationId || undefined, dueAt: due.dueAt, status: 'open', createdAt: now,
       }));
     }
-    tx.update(leadRef, {cadenceStep: due.index + 1, cadenceLastAt: now});
+    const next = nextCadenceAt({...l.data(), cadenceStep: due.index + 1}, steps);
+    tx.update(leadRef, {cadenceStep: due.index + 1, cadenceLastAt: now, cadenceNextAt: next === null ? FV.delete() : next});
   });
 }
 
@@ -386,13 +479,11 @@ export async function pendingSmsFor(deviceId: string): Promise<Json[]> {
   if (!isDefault && !stores.length) return [];
   const now = Date.now();
   const map = s.sms.senderDeviceByStore || {};
-  const snap = await db().collection(C.sms).where('status', '==', 'queued').limit(500).get();
-  const mine = snap.docs.filter((d) => {
-    if (Number(d.get('sendAt') || 0) > now) return false;
+  const mine = await dueQueued(now, (d) => {
     const store = String(d.get('storeId') || '');
     if (store && stores.includes(store)) return true;
     return isDefault && (!store || !map[store]);
-  }).sort((a, b) => Number(a.get('sendAt')) - Number(b.get('sendAt'))).slice(0, 10);
+  }, 10);
   if (!mine.length) return [];
   return db().runTransaction(async (tx) => {
     const refs = mine.map((d) => d.ref);
@@ -402,11 +493,12 @@ export async function pendingSmsFor(deviceId: string): Promise<Json[]> {
     docs.forEach((d, i) => {
       if (!d.exists || d.get('status') !== 'queued') return;
       if (outs[i].exists) {
-        tx.update(d.ref, {status: 'skipped', error: 'They replied STOP — not texted'});
+        tx.update(d.ref, {status: 'skipped', error: 'They replied STOP — not texted', queueAt: FV.delete()});
         return;
       }
       tx.update(d.ref, {
         status: 'sending', provider: 'phone', deviceId, attempts: (Number(d.get('attempts')) || 0) + 1, takenAt: now,
+        queueAt: FV.delete(),
       });
       items.push({id: d.id, to: String(d.get('to')), body: String(d.get('body'))});
     });
@@ -425,16 +517,20 @@ export async function recordSmsResults(deviceId: string, results: Json[]): Promi
       const d = await tx.get(ref);
       if (!d.exists || d.get('deviceId') !== deviceId) return null;
       const status = d.get('status');
-      if (status !== 'sending' && status !== 'queued') return null;
+      // A late report for a text we gave up on (marked failed, never resent) still counts.
+      const late = status === 'failed' && d.get('unconfirmed') === true;
+      if (status !== 'sending' && status !== 'queued' && !late) return null;
       if (r.ok === true) {
-        tx.update(ref, {status: 'sent', sentAt: now, error: ''});
+        tx.update(ref, {status: 'sent', sentAt: now, error: '', queueAt: FV.delete(), ...(late ? {unconfirmed: FV.delete()} : {})});
         return {sent: true, leadId: d.get('leadId'), createdBy: d.get('createdBy')};
       }
+      if (late) return null;
+      // Only an explicit failure report from the phone puts a text back in the queue.
       const error = str(r.error, 300) || 'The phone could not send it';
       if ((Number(d.get('attempts')) || 0) >= MAX_ATTEMPTS) {
-        tx.update(ref, {status: 'failed', error, failedAt: now});
+        tx.update(ref, {status: 'failed', error, failedAt: now, queueAt: FV.delete()});
       } else {
-        tx.update(ref, {status: 'queued', error: `Retrying — ${error}`, sendAt: now + 2 * MIN_MS});
+        tx.update(ref, {status: 'queued', error: `Retrying — ${error}`, sendAt: now + 2 * MIN_MS, queueAt: now + 2 * MIN_MS});
       }
       return {sent: false};
     });
@@ -458,11 +554,11 @@ export async function twilioSend(id: string, s: SalesSettings): Promise<void> {
     if (!d.exists || d.get('status') !== 'queued' || Number(d.get('sendAt') || 0) > now + 30_000) return null;
     const out = await tx.get(db().collection(C.smsOptOut).doc(String(d.get('to') || '_')));
     if (out.exists) {
-      tx.update(ref, {status: 'skipped', error: 'They replied STOP — not texted'});
+      tx.update(ref, {status: 'skipped', error: 'They replied STOP — not texted', queueAt: FV.delete()});
       return null;
     }
     const attempts = (Number(d.get('attempts')) || 0) + 1;
-    tx.update(ref, {status: 'sending', provider: 'twilio', attempts, takenAt: now});
+    tx.update(ref, {status: 'sending', provider: 'twilio', attempts, takenAt: now, queueAt: FV.delete()});
     return {...(d.data() as SmsDoc), attempts};
   });
   if (!doc) return;
@@ -477,6 +573,7 @@ export async function twilioSend(id: string, s: SalesSettings): Promise<void> {
       method: 'POST',
       headers: {'Authorization': `Basic ${Buffer.from(`${sid}:${token}`).toString('base64')}`, 'Content-Type': 'application/x-www-form-urlencoded'},
       body: form.toString(),
+      signal: AbortSignal.timeout(15_000),
     });
     const j = (await r.json().catch(() => ({}))) as Json;
     if (r.ok && j.sid) {
@@ -490,13 +587,22 @@ export async function twilioSend(id: string, s: SalesSettings): Promise<void> {
       // The number unsubscribed at Twilio (replied STOP before).
       await db().collection(C.smsOptOut).doc(doc.to).set({phone: doc.to, at: Date.now(), via: 'twilio', reason: 'twilio 21610'}, {merge: true});
     }
+    // Twilio said no (it did not send): retry 429/5xx a few times; other 4xx are final.
     const permanent = (r.status >= 400 && r.status < 500 && r.status !== 429) || doc.attempts >= MAX_ATTEMPTS;
+    const retryAt = Date.now() + 5 * MIN_MS;
     await ref.update(permanent ? {status: 'failed', error: msg, failedAt: Date.now()} :
-      {status: 'queued', error: `Retrying — ${msg}`, sendAt: Date.now() + 5 * MIN_MS});
+      {status: 'queued', error: `Retrying — ${msg}`, sendAt: retryAt, queueAt: retryAt});
   } catch (e) {
+    // Couldn't even connect (DNS / refused): Twilio never got it → safe to retry. Anything else (timeout, dropped
+    // connection) may have been sent → mark failed, never resend (no double texts).
+    const code = String((e as {cause?: {code?: string}})?.cause?.code || '');
+    const neverSent = ['ENOTFOUND', 'EAI_AGAIN', 'ECONNREFUSED'].includes(code);
     const msg = `Twilio: ${(e as Error).message || 'network error'}`;
-    await ref.update(doc.attempts >= MAX_ATTEMPTS ? {status: 'failed', error: msg, failedAt: Date.now()} :
-      {status: 'queued', error: `Retrying — ${msg}`, sendAt: Date.now() + 5 * MIN_MS});
+    const retryAt = Date.now() + 5 * MIN_MS;
+    await ref.update(neverSent && doc.attempts < MAX_ATTEMPTS ?
+      {status: 'queued', error: `Retrying — ${msg}`, sendAt: retryAt, queueAt: retryAt} :
+      {status: 'failed', error: neverSent ? msg : `${msg} — unconfirmed, not sent again (to avoid a double text)`,
+        unconfirmed: !neverSent, failedAt: Date.now()});
   }
 }
 
@@ -514,6 +620,15 @@ export const mpSmsQueued = onDocumentCreated(`${C.sms}/{id}`, async (event) => {
     logger.warn('mpSmsQueued: owner lookup failed', e);
   }
   if (x.status !== 'queued') return;
+  if (typeof x.queueAt !== 'number') {
+    // Texts written by the app (sendText) don't carry queueAt; the queue is read by it.
+    await db().runTransaction(async (tx) => {
+      const cur = await tx.get(snap.ref);
+      if (cur.get('status') === 'queued' && typeof cur.get('queueAt') !== 'number') {
+        tx.update(snap.ref, {queueAt: Number(x.sendAt) || Number(x.createdAt) || Date.now()});
+      }
+    }).catch((e) => logger.warn('mpSmsQueued: queueAt', e));
+  }
   const s = await loadSalesSettings();
   if (twilioOn(s) && Number(x.sendAt || 0) <= Date.now() + 30_000) await twilioSend(snap.id, s);
 });
@@ -563,23 +678,28 @@ interface Inbound {
 
 export async function handleInbound(m: Inbound): Promise<{leadId?: string; stop?: boolean; start?: boolean; dup?: boolean}> {
   const now = Date.now();
-  const lead = m.from ? await findLeadByPhone(m.from) : m.fromName ? await findLeadByName(m.fromName) : null;
-  const from = m.from || e164(lead?.data.phone) || '';
+  // A contact name (no number) only routes the notification to the right salesperson — it never opts anyone out.
+  const byPhone = m.from ? await findLeadByPhone(m.from) : null;
+  const byName = !m.from && m.fromName ? await findLeadByName(m.fromName) : null;
+  const lead = byPhone || byName;
+  const from = m.from;
   const ref = db().collection(C.smsInbound).doc(m.docId);
   try {
     await ref.create(clean({
       from, fromName: m.fromName || undefined, body: m.body.slice(0, 1600), via: m.via, storeId: m.storeId || lead?.data.locationId || undefined,
-      leadId: lead?.id, deviceId: m.deviceId, sid: m.sid, receivedAt: now,
+      leadId: lead?.id, leadMatchedBy: byPhone ? 'phone' : byName ? 'name' : undefined, deviceId: m.deviceId, sid: m.sid, receivedAt: now,
     }));
   } catch {
     return {dup: true}; // same reply delivered twice
   }
   const who = lead ? String(lead.data.name || prettyPhone(from)) : m.fromName || prettyPhone(from) || 'a customer';
-  const stop = isStopWord(m.body);
-  const start = !stop && isStartWord(m.body);
-  if (stop && from) {
+  const stopWord = isStopWord(m.body);
+  const stop = stopWord && !!from;
+  const start = !stopWord && isStartWord(m.body) && !!from;
+  const negative = !stopWord && isNegativeReply(m.body);
+  if (stop) {
     await db().collection(C.smsOptOut).doc(from).set(clean({
-      phone: from, at: now, via: m.via, storeId: m.storeId || undefined, leadId: lead?.id, word: keyword(m.body),
+      phone: from, at: now, via: m.via, storeId: m.storeId || undefined, leadId: byPhone?.id, word: m.body.slice(0, 160),
     }));
     // Nothing else goes out to them.
     const queued = await db().collection(C.sms).where('to', '==', from).limit(200).get();
@@ -587,20 +707,27 @@ export async function handleInbound(m: Inbound): Promise<{leadId?: string; stop?
     let n = 0;
     for (const d of queued.docs) {
       if (d.get('status') === 'queued') {
-        batch.update(d.ref, {status: 'skipped', error: 'They replied STOP — not texted'});
+        batch.update(d.ref, {status: 'skipped', error: 'They replied STOP — not texted', queueAt: FV.delete()});
         n++;
       }
     }
     if (n) await batch.commit();
-  } else if (start && from) {
+  } else if (start) {
     await db().collection(C.smsOptOut).doc(from).delete();
   }
   if (lead) {
-    await db().collection(C.leads).doc(lead.id).set({lastInboundAt: now, ...(stop ? {smsConsent: false, cadenceStopped: true} : {})}, {merge: true});
+    await db().collection(C.leads).doc(lead.id).set({
+      lastInboundAt: now,
+      ...(stop && byPhone ? {smsConsent: false, smsOptOutAt: now, cadenceStopped: true, cadenceNextAt: FV.delete()} : {}),
+    }, {merge: true});
   }
+  const quoted = `"${m.body.slice(0, 200)}"`;
   const text = stop ? `${who} replied STOP — we won't text them again.` :
-    start ? `${who} replied START — texts to them are back on.` :
-      `Reply from ${who}: ${m.body}`;
+    stopWord ? `${who} asked us to stop texting (${quoted}), but the texting phone only showed a name, not the number. ` +
+      'Please stop texting them by hand.' :
+      start ? `${who} replied START — texts to them are back on.` :
+        negative ? `${who} replied ${quoted} — they may not want texts. Please check before texting them again.` :
+          `Reply from ${who}: ${m.body}`;
   const targets = lead?.data.ownerUid ? [String(lead.data.ownerUid)] : m.fallbackUids;
   for (const uid of Array.from(new Set(targets)).slice(0, 10)) {
     await notify(uid, FROM, text, clean({source: 'sales-texting', kind: 'sms_reply', leadId: lead?.id, phone: from || undefined}), `smsin_${m.docId}_${uid}`.slice(0, 1400));
@@ -623,7 +750,7 @@ function signedUrlCandidates(req: {originalUrl?: string; url?: string; headers: 
 const EMPTY_TWIML = '<?xml version="1.0" encoding="UTF-8"?><Response></Response>';
 
 /** Twilio webhooks: /api/sms/inbound (a customer texted the store's Twilio number) and /api/sms/status. */
-export const mpSmsInbound = onRequest({region: 'us-central1', memory: '256MiB', timeoutSeconds: 30}, async (req, res) => {
+export const mpSmsInbound = onRequest({region: 'us-central1', memory: '256MiB', timeoutSeconds: 30, maxInstances: 20}, async (req, res) => {
   if (req.method !== 'POST') {
     res.status(405).send('');
     return;
@@ -714,6 +841,8 @@ export async function missedCallEcho(dev: Json, deviceId: string, item: Json, s:
   const now = Number(item.postedAt) || Date.now();
   const day = nyDateKey(now);
   const d10 = digits10(mc.number);
+  // Abuse limits: at most one text-back per number per 30 days, and MISSED_CALL_DAILY_CAP per phone per day.
+  const textBack = s.missedCall.template.trim() ? await missedCallAllowed(deviceId, d10, Date.now()) : 'off';
   const storeId = await storeOfUser(ownerUid);
   const people = await loadPeople();
   const owner = people.find((p) => p.uid === ownerUid);
@@ -740,15 +869,34 @@ export async function missedCallEcho(dev: Json, deviceId: string, item: Json, s:
   }
   const lead = leadId ? (await db().collection(C.leads).doc(leadId).get()).data() || {} : {};
   const data = leadTemplateData({...lead, locationId: lead.locationId || storeId, name: leadName || realName(lead.name)}, owner?.name || '');
-  const smsId = s.missedCall.template.trim() ? await queueSms({
+  const smsId = textBack === 'ok' ? await queueSms({
     to: mc.number, kind: 'missed_call', storeId: String(lead.locationId || storeId || ''), leadId: leadId || undefined, createdBy: '',
     dedupeKey: `mc_${d10}_${day}`, body: fill(s.missedCall.template, data),
   }) : null;
+  if (textBack === 'cap') logger.warn('missed-call text-back: daily cap reached', {deviceId});
   const who = leadName ? `${leadName} (${prettyPhone(mc.number)})` : prettyPhone(mc.number);
   const msg = smsId ? `Missed call from ${who} — we texted them back.` : `Missed call from ${who}.`;
   await notify(ownerUid, String(dev.deviceName || FROM), `${msg}${leadId ? ' It\'s in your leads.' : ''}`,
     clean({source: 'sales-texting', kind: 'missed_call', leadId: leadId || undefined, phone: mc.number}), `mc_${d10}_${day}_${ownerUid}`);
   return true;
+}
+
+/**
+ * Claims the missed-call text-back for this number: 'ok', 'recent' (texted back in the last 30 days) or 'cap'
+ * (this phone already sent MISSED_CALL_DAILY_CAP today). Counters live in mp_meta with a Timestamp expireAt.
+ */
+export async function missedCallAllowed(deviceId: string, d10: string, now = Date.now()): Promise<'ok' | 'recent' | 'cap'> {
+  const numRef = db().collection(C.meta).doc(`mc_tb_${d10}`);
+  const capRef = db().collection(C.meta).doc(`mc_cap_${deviceId.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 150)}_${nyDateKey(now).replace(/-/g, '')}`);
+  return db().runTransaction(async (tx) => {
+    const [n, c] = await Promise.all([tx.get(numRef), tx.get(capRef)]);
+    if (n.exists && now - Number(n.get('at') || 0) < MISSED_CALL_REPEAT_MS) return 'recent' as const;
+    const count = Number(c.get('count') || 0);
+    if (count >= MISSED_CALL_DAILY_CAP) return 'cap' as const;
+    tx.set(numRef, {at: now, deviceId, expireAt: expireIn(MISSED_CALL_REPEAT_MS)});
+    tx.set(capRef, {count: count + 1, deviceId, expireAt: expireIn(2 * DAY_MS)});
+    return 'ok' as const;
+  });
 }
 
 /** A lead's name, or '' when it's just the phone number (missed-call leads). */
@@ -777,7 +925,7 @@ export const mpSmsAdmin = onCall(async (req) => {
   if (!req.auth) throw new HttpsError('unauthenticated', 'Sign in first');
   const me = await db().collection(C.users).doc(req.auth.uid).get();
   const role = String(me.get('role') || '');
-  if (!me.exists) throw new HttpsError('permission-denied', 'Not on the team');
+  if (!me.exists || isInactiveStatus(me.get('status'))) throw new HttpsError('permission-denied', 'Not on the team');
   const action = str(req.data?.action, 20);
   const s = await loadSalesSettings(true);
   if (action === 'status') {
@@ -798,4 +946,62 @@ export const mpSmsAdmin = onCall(async (req) => {
     return {ok: true};
   }
   throw new HttpsError('invalid-argument', 'Unknown action');
+});
+
+// ---------------------------------------------------------------------------
+// Manual texts (callable) — the app's "Send text" goes through here
+// ---------------------------------------------------------------------------
+
+const PERSON_KINDS = new Set(['manual', 'quote', 'appointment', 'trade_in', 'prequal', 'referral', 'reply', 'cadence', 'service']);
+
+/**
+ * mpSendText({to?, body, leadId?, customerId?, storeId?, kind?}) → {id}
+ * Members only. With a lead: the caller must own it (or be a manager/admin) and the text goes to the lead's phone.
+ * Checks STOP (opt-out) and a per-person limit (MANUAL_TEXTS_PER_HOUR), then writes mp_sms server-side.
+ */
+export const mpSendText = onCall({timeoutSeconds: 30}, async (req) => {
+  if (!req.auth) throw new HttpsError('unauthenticated', 'Sign in first');
+  const uid = req.auth.uid;
+  const me = await db().collection(C.users).doc(uid).get();
+  if (!me.exists || isInactiveStatus(me.get('status'))) throw new HttpsError('permission-denied', 'Not on the team');
+  const manager = isManagerRole(String(me.get('role') || ''));
+  const d = (req.data || {}) as Json;
+  const body = str(d.body, 1170).trim();
+  if (!body) throw new HttpsError('invalid-argument', 'Type a message.');
+  const leadId = str(d.leadId, 128);
+  const customerId = str(d.customerId, 128);
+  if ((leadId && !/^[A-Za-z0-9_-]+$/.test(leadId)) || (customerId && !/^[A-Za-z0-9_-]+$/.test(customerId))) {
+    throw new HttpsError('invalid-argument', 'Bad id');
+  }
+  let to = e164(d.to);
+  let storeId = /^T\d{1,2}$/.test(str(d.storeId, 4)) ? str(d.storeId, 4) : '';
+  if (leadId) {
+    const lead = await db().collection(C.leads).doc(leadId).get();
+    if (!lead.exists) throw new HttpsError('not-found', 'That lead no longer exists.');
+    if (!manager && lead.get('ownerUid') !== uid) throw new HttpsError('permission-denied', 'Only the lead\'s salesperson or a manager can text this lead.');
+    to = e164(lead.get('phone')) || to;
+    storeId = storeId || String(lead.get('locationId') || '');
+  }
+  if (!to) throw new HttpsError('invalid-argument', 'Enter a 10-digit US phone number.');
+  if (await isOptedOut(to)) throw new HttpsError('failed-precondition', 'They replied STOP — we can\'t text this number.');
+  // Per-person limit.
+  const hour = Math.floor(Date.now() / HOUR_MS);
+  const rateRef = db().collection(C.meta).doc(`sendtext_rate_${uid}_${hour}`);
+  const n = await db().runTransaction(async (tx) => {
+    const r = await tx.get(rateRef);
+    const c = Number(r.get('count') || 0) + 1;
+    tx.set(rateRef, {count: c, uid, expireAt: expireIn(2 * HOUR_MS)});
+    return c;
+  });
+  if (n > MANUAL_TEXTS_PER_HOUR) {
+    throw new HttpsError('resource-exhausted', `That's ${MANUAL_TEXTS_PER_HOUR} texts this hour — please wait a bit before sending more.`);
+  }
+  const kindIn = str(d.kind, 20);
+  const kind = (PERSON_KINDS.has(kindIn) ? kindIn : 'manual') as SmsDoc['kind'];
+  const id = await queueSms({
+    to, body, kind, storeId: storeId || String(me.get('location') || ''), leadId: leadId || undefined,
+    customerId: customerId || undefined, createdBy: uid,
+  });
+  if (!id) throw new HttpsError('failed-precondition', 'This text could not be queued (the number may have opted out).');
+  return {id};
 });

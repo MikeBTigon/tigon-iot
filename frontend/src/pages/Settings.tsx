@@ -1,294 +1,181 @@
 import React, { useState } from 'react';
+import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import {
-  Box,
-  Typography,
-  Paper,
-  Grid,
-  TextField,
-  Button,
-  Divider,
-  Switch,
-  FormControlLabel,
-  Alert,
-  Card,
-  CardContent,
+  Alert, Box, Button, Card, CardActionArea, CardContent, Divider, Grid, Paper, Stack, Typography,
 } from '@mui/material';
 import {
-  Save as SaveIcon,
-  Password as PasswordIcon,
-  Delete as DeleteIcon,
-  Email as EmailIcon,
+  AccountCircle, ChevronRight, Devices, Email, Logout, NotificationsActive, Palette, Storefront, Tune, Webhook, LockReset,
 } from '@mui/icons-material';
+import { sendEmailVerification } from 'firebase/auth';
 import { useAuth } from '../context/AuthContext';
 import DashboardLayout from '../components/Layout/DashboardLayout';
-import { updatePassword, deleteUser, sendEmailVerification } from 'firebase/auth';
+import PreferencesControls from '../ui/PreferencesControls';
+import PhoneAlertsCard from '../native/PhoneAlertsCard';
+import { isNativeApp } from '../native/platform';
+import { disablePhoneAlerts } from '../native/phoneAlerts';
+import { useMp } from '../mp/MpDataContext';
+import { ProfileSetup } from '../mp/components/MpShell';
+import { canSee, type MinRole } from '../mp/navRegistry';
+import { ROLE_LABELS } from '../mp/constants';
+import { useT } from '../i18n';
 
+const Section: React.FC<{ icon: React.ReactNode; title: string; children: React.ReactNode }> = ({ icon, title, children }) => (
+  <Paper sx={{ p: { xs: 2, sm: 3 }, height: '100%' }}>
+    <Typography variant="h6" component="h2" color="primary" sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+      {icon} {title}
+    </Typography>
+    <Divider sx={{ mb: 2 }} />
+    {children}
+  </Paper>
+);
+
+interface HubLink { title: string; text: string; to: string; min: MinRole; icon: React.ReactNode }
+
+const LINKS: HubLink[] = [
+  { title: 'Phones', text: 'Set up a phone, see which phones are online, rename or remove one.', to: '/devices', min: 'sales', icon: <Devices /> },
+  { title: 'MP Assistant settings', text: 'Manager approval for posts, default phone, relist reminder and logo.', to: '/mp/settings', min: 'admin', icon: <Storefront /> },
+  { title: 'Sell more settings', text: 'Leads & speed, texting, quotes & booking, inventory, reviews & referrals.', to: '/mp/sales-settings', min: 'admin', icon: <Tune /> },
+  { title: 'Website forms settings', text: 'Defaults for every website, spam protection, connections and who can do what.', to: '/wh/settings', min: 'admin', icon: <Webhook /> },
+];
+
+/** One settings page: my account, display & language, phone alerts, and links to the team settings pages. */
 const Settings: React.FC = () => {
-  const { currentUser, logout } = useAuth();
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [soundEnabled, setSoundEnabled] = useState(true);
-  const [browserNotifications, setBrowserNotifications] = useState(false);
-  const [success, setSuccess] = useState('');
-  const [error, setError] = useState('');
+  const t = useT();
+  const navigate = useNavigate();
+  const { currentUser, logout, resetPassword } = useAuth();
+  const { profile } = useMp();
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const email = currentUser?.email || '';
+  const role = profile?.role;
 
-  const handleChangePassword = async () => {
-    if (!currentUser) return;
-
-    if (newPassword.length < 8) {
-      setError('Password must be at least 8 characters');
-      return;
-    }
-
-    if (newPassword !== confirmPassword) {
-      setError('Passwords do not match');
-      return;
-    }
-
+  const run = async (fn: () => Promise<void>, ok: string, fail: string) => {
+    setBusy(true);
+    setMsg(null);
     try {
-      await updatePassword(currentUser, newPassword);
-      setSuccess('Password updated successfully!');
-      setError('');
-      setNewPassword('');
-      setConfirmPassword('');
-    } catch (err: any) {
-      setError('Failed to update password. You may need to login again.');
+      await fn();
+      setMsg({ ok: true, text: ok });
+    } catch {
+      setMsg({ ok: false, text: fail });
+    } finally {
+      setBusy(false);
     }
   };
 
-  const handleResendVerification = async () => {
-    if (!currentUser) return;
+  const sendReset = () => run(() => resetPassword(email), `We emailed a password reset link to ${email}.`, 'Could not send the email. Please try again in a minute.');
+  const sendVerify = () => run(
+    async () => { if (currentUser) await sendEmailVerification(currentUser); },
+    `We emailed a confirmation link to ${email}.`,
+    'Could not send the email. Please try again in a minute.',
+  );
 
+  const signOut = async () => {
+    setBusy(true);
     try {
-      await sendEmailVerification(currentUser);
-      setSuccess('Verification email sent!');
-      setError('');
-    } catch (err: any) {
-      setError('Failed to send verification email');
-    }
-  };
-
-  const handleDeleteAccount = async () => {
-    if (!currentUser) return;
-
-    const confirmed = window.confirm(
-      'Are you sure you want to delete your account? This action cannot be undone.'
-    );
-
-    if (!confirmed) return;
-
-    const doubleConfirm = window.confirm(
-      'This will permanently delete all your data. Are you absolutely sure?'
-    );
-
-    if (!doubleConfirm) return;
-
-    try {
-      await deleteUser(currentUser);
+      // A signed-out phone must stop receiving this user's alerts.
+      if (isNativeApp() && currentUser) await disablePhoneAlerts(currentUser.uid).catch(() => undefined);
       await logout();
-    } catch (err: any) {
-      setError('Failed to delete account. You may need to login again first.');
+      navigate('/login');
+    } catch {
+      setMsg({ ok: false, text: 'Could not sign out. Please try again.' });
+      setBusy(false);
     }
   };
+
+  const links = LINKS.filter((l) => canSee(role, l.min));
 
   return (
     <DashboardLayout>
-      <Box>
-        <Typography variant="h4" gutterBottom color="primary" sx={{ mb: 3 }}>
-          Settings
-        </Typography>
+      <Typography variant="h4" component="h1" color="primary" sx={{ mb: 2, fontSize: { xs: '1.5rem', sm: '2rem' } }}>
+        {t('nav.settings')}
+      </Typography>
+      {msg && <Alert severity={msg.ok ? 'success' : 'error'} sx={{ mb: 2 }} onClose={() => setMsg(null)}>{msg.text}</Alert>}
 
-        {success && <Alert severity="success" sx={{ mb: 3 }}>{success}</Alert>}
-        {error && <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>}
-
-        <Grid container spacing={3}>
-          {/* Account Information */}
-          <Grid item xs={12} md={6}>
-            <Paper sx={{ p: 3 }}>
-              <Typography variant="h6" gutterBottom color="primary" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <EmailIcon /> Account Information
-              </Typography>
-              <Divider sx={{ mb: 2 }} />
-
-              <Box sx={{ mb: 2 }}>
-                <Typography variant="body2" color="text.secondary">
-                  Email Address
-                </Typography>
-                <Typography variant="body1" fontWeight={500}>
-                  {currentUser?.email}
-                </Typography>
-              </Box>
-
-              <Box sx={{ mb: 2 }}>
-                <Typography variant="body2" color="text.secondary">
-                  Email Verified
-                </Typography>
-                <Typography variant="body1" fontWeight={500}>
-                  {currentUser?.emailVerified ? '✅ Yes' : '❌ No'}
-                </Typography>
-                {!currentUser?.emailVerified && (
-                  <Button
-                    size="small"
-                    variant="outlined"
-                    onClick={handleResendVerification}
-                    sx={{ mt: 1 }}
-                  >
-                    Resend Verification Email
+      <Grid container spacing={2}>
+        <Grid size={{ xs: 12, md: 6 }}>
+          <Section icon={<AccountCircle />} title="My account">
+            <Stack spacing={2}>
+              <Box>
+                <Typography variant="body2" color="text.secondary">Email</Typography>
+                <Typography sx={{ fontWeight: 500, wordBreak: 'break-all' }}>{email}</Typography>
+                {currentUser && !currentUser.emailVerified && (
+                  <Button size="small" startIcon={<Email />} onClick={sendVerify} disabled={busy} sx={{ mt: 0.5, px: 0 }}>
+                    Send the confirmation email again
                   </Button>
                 )}
               </Box>
-
-              <Box sx={{ mb: 2 }}>
-                <Typography variant="body2" color="text.secondary">
-                  Account Created
+              {profile && (
+                <Box>
+                  <Typography variant="body2" color="text.secondary">Role</Typography>
+                  <Typography sx={{ fontWeight: 500 }}>{ROLE_LABELS[profile.role] || profile.role}</Typography>
+                </Box>
+              )}
+              {profile && (
+                <Box sx={{ '& > .MuiPaper-root': { p: 0, boxShadow: 'none', maxWidth: 'none', bgcolor: 'transparent' } }}>
+                  <ProfileSetup editing onDone={() => setMsg({ ok: true, text: 'Saved.' })} />
+                </Box>
+              )}
+              <Divider />
+              <Box>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                  Forgot your password or want a new one? We&apos;ll email you a link to choose a new password.
                 </Typography>
-                <Typography variant="body1" fontWeight={500}>
-                  {currentUser?.metadata.creationTime
-                    ? new Date(currentUser.metadata.creationTime).toLocaleDateString()
-                    : 'Unknown'}
-                </Typography>
+                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+                  <Button variant="outlined" startIcon={<LockReset />} onClick={sendReset} disabled={busy || !email}>
+                    Email me a password link
+                  </Button>
+                  <Button variant="outlined" color="inherit" startIcon={<Logout />} onClick={signOut} disabled={busy}>
+                    {t('layout.logout')}
+                  </Button>
+                </Stack>
               </Box>
-            </Paper>
-          </Grid>
-
-          {/* Change Password */}
-          <Grid item xs={12} md={6}>
-            <Paper sx={{ p: 3 }}>
-              <Typography variant="h6" gutterBottom color="primary" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <PasswordIcon /> Change Password
-              </Typography>
-              <Divider sx={{ mb: 2 }} />
-
-              <TextField
-                fullWidth
-                type="password"
-                label="New Password"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                margin="normal"
-                helperText="Minimum 8 characters"
-              />
-              <TextField
-                fullWidth
-                type="password"
-                label="Confirm New Password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                margin="normal"
-              />
-              <Button
-                fullWidth
-                variant="contained"
-                startIcon={<SaveIcon />}
-                onClick={handleChangePassword}
-                sx={{ mt: 2 }}
-                disabled={!newPassword || !confirmPassword}
-              >
-                Update Password
-              </Button>
-            </Paper>
-          </Grid>
-
-          {/* Notification Preferences */}
-          <Grid item xs={12} md={6}>
-            <Paper sx={{ p: 3 }}>
-              <Typography variant="h6" gutterBottom color="primary">
-                Notification Preferences
-              </Typography>
-              <Divider sx={{ mb: 2 }} />
-
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={soundEnabled}
-                    onChange={(e) => setSoundEnabled(e.target.checked)}
-                  />
-                }
-                label="Sound Notifications"
-              />
-              <Typography variant="caption" display="block" color="text.secondary" sx={{ mb: 2, ml: 4 }}>
-                Play sound when new notifications arrive
-              </Typography>
-
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={browserNotifications}
-                    onChange={(e) => setBrowserNotifications(e.target.checked)}
-                  />
-                }
-                label="Browser Notifications"
-              />
-              <Typography variant="caption" display="block" color="text.secondary" sx={{ ml: 4 }}>
-                Show desktop notifications (requires permission)
-              </Typography>
-            </Paper>
-          </Grid>
-
-          {/* Data Management */}
-          <Grid item xs={12} md={6}>
-            <Paper sx={{ p: 3 }}>
-              <Typography variant="h6" gutterBottom color="primary">
-                Data Management
-              </Typography>
-              <Divider sx={{ mb: 2 }} />
-
-              <Typography variant="body2" color="text.secondary" paragraph>
-                Notifications older than 30 days are automatically deleted.
-              </Typography>
-
-              <Button
-                variant="outlined"
-                color="primary"
-                fullWidth
-                sx={{ mb: 2 }}
-                onClick={() => alert('Export feature coming soon!')}
-              >
-                Export All Data
-              </Button>
-
-              <Button
-                variant="outlined"
-                color="warning"
-                fullWidth
-                onClick={() => {
-                  if (confirm('Delete all notifications? This cannot be undone.')) {
-                    alert('Delete all notifications feature coming soon!');
-                  }
-                }}
-              >
-                Delete All Notifications
-              </Button>
-            </Paper>
-          </Grid>
-
-          {/* Danger Zone */}
-          <Grid item xs={12}>
-            <Card sx={{ bgcolor: '#fff5f5', borderColor: 'error.main', border: 1 }}>
-              <CardContent>
-                <Typography variant="h6" gutterBottom color="error" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <DeleteIcon /> Danger Zone
-                </Typography>
-                <Divider sx={{ mb: 2 }} />
-
-                <Typography variant="body2" color="text.secondary" paragraph>
-                  Once you delete your account, there is no going back. This will permanently delete
-                  your profile, all devices, and all notifications.
-                </Typography>
-
-                <Button
-                  variant="contained"
-                  color="error"
-                  startIcon={<DeleteIcon />}
-                  onClick={handleDeleteAccount}
-                >
-                  Delete Account
-                </Button>
-              </CardContent>
-            </Card>
-          </Grid>
+            </Stack>
+          </Section>
         </Grid>
-      </Box>
+
+        <Grid size={{ xs: 12, md: 6 }}>
+          <Stack spacing={2} sx={{ height: '100%' }}>
+            <Section icon={<Palette />} title={t('prefs.title')}>
+              <PreferencesControls />
+            </Section>
+            <Section icon={<NotificationsActive />} title="Phone alerts">
+              {isNativeApp() ? (
+                <PhoneAlertsCard />
+              ) : (
+                <Typography variant="body2" color="text.secondary">
+                  Alerts for new messages and leads come to your phone through the TIGON IOT app. Open the app on your phone
+                  and turn on alerts there.{' '}
+                  <Button component={RouterLink} to="/download" size="small" sx={{ px: 0.5 }}>{t('nav.download', 'Download app')}</Button>
+                </Typography>
+              )}
+            </Section>
+          </Stack>
+        </Grid>
+
+        {links.length > 0 && (
+          <Grid size={12}>
+            <Typography variant="h6" component="h2" sx={{ mt: 1, mb: 1 }}>More settings</Typography>
+            <Grid container spacing={2}>
+              {links.map((l) => (
+                <Grid key={l.to} size={{ xs: 12, sm: 6, lg: 3 }}>
+                  <Card variant="outlined" sx={{ height: '100%' }}>
+                    <CardActionArea component={RouterLink} to={l.to} sx={{ height: '100%' }}>
+                      <CardContent sx={{ display: 'flex', gap: 1.5, alignItems: 'flex-start' }}>
+                        <Box sx={{ color: 'primary.main', display: 'flex', pt: 0.25 }} aria-hidden>{l.icon}</Box>
+                        <Box sx={{ flexGrow: 1 }}>
+                          <Typography sx={{ fontWeight: 600 }}>{l.title}</Typography>
+                          <Typography variant="body2" color="text.secondary">{l.text}</Typography>
+                        </Box>
+                        <ChevronRight color="action" aria-hidden />
+                      </CardContent>
+                    </CardActionArea>
+                  </Card>
+                </Grid>
+              ))}
+            </Grid>
+          </Grid>
+        )}
+      </Grid>
     </DashboardLayout>
   );
 };

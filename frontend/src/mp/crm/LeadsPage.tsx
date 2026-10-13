@@ -19,6 +19,7 @@ import type { LeadSalesFields } from '../sales/salesTypes';
 import { useSalesSettings } from '../sales/salesData';
 import SpeedChip from '../sales/speed/SpeedChip';
 import { needsClaim } from '../sales/speed/speedUtil';
+import { useT } from '../../i18n';
 
 type DueFilter = 'all' | 'due' | 'overdue';
 
@@ -26,6 +27,7 @@ type DueFilter = 'all' | 'due' | 'overdue';
 function LeadCard({ lead, now, owner, onOpen, draggable, marks }: {
   lead: Lead & LeadSalesFields; now: number; owner?: string; onOpen: () => void; draggable?: boolean; marks?: number[];
 }) {
+  const t = useT();
   const fu = followUpState(lead, now);
   return (
     <Paper
@@ -35,20 +37,20 @@ function LeadCard({ lead, now, owner, onOpen, draggable, marks }: {
       onClick={onOpen}
       sx={{ p: 1.25, cursor: 'pointer', borderLeft: `4px solid ${LEAD_STATUS_COLOR[lead.status]}`, '&:hover': { boxShadow: 2 } }}
     >
-      <Typography sx={{ fontWeight: 600 }} noWrap>{lead.name || lead.phone || lead.email || 'Unnamed lead'}</Typography>
+      <Typography sx={{ fontWeight: 600 }} noWrap>{lead.name || lead.phone || lead.email || t('leads.unnamed')}</Typography>
       {lead.cartTitle && <Typography variant="body2" color="text.secondary" noWrap>{lead.cartTitle}</Typography>}
       <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', mt: 0.5 }}>
-        <Chip size="small" variant="outlined" label={CHANNEL_LABEL[lead.channel] || lead.channel} />
+        <Chip size="small" variant="outlined" label={t(`leads.channels.${lead.channel}`, { defaultValue: CHANNEL_LABEL[lead.channel] || lead.channel })} />
         <SpeedChip lead={lead} now={now} marks={marks} showAnswered={false} />
-        {needsClaim(lead) && <Chip size="small" color="warning" variant="outlined" label="Not claimed" />}
-        {fu === 'overdue' && <Chip size="small" color="error" label={`Overdue · ${shortDateTime(lead.followUpAt!)}`} />}
-        {fu === 'today' && <Chip size="small" color="warning" label={`Due today ${new Date(lead.followUpAt!).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`} />}
-        {fu === 'later' && <Chip size="small" variant="outlined" label={`Follow up ${shortDateTime(lead.followUpAt!)}`} />}
+        {needsClaim(lead) && <Chip size="small" color="warning" variant="outlined" label={t('leads.notClaimed')} />}
+        {fu === 'overdue' && <Chip size="small" color="error" label={t('leads.overdueAt', { when: shortDateTime(lead.followUpAt!) })} />}
+        {fu === 'today' && <Chip size="small" color="warning" label={t('leads.dueTodayAt', { time: new Date(lead.followUpAt!).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) })} />}
+        {fu === 'later' && <Chip size="small" variant="outlined" label={t('leads.followUpAt', { when: shortDateTime(lead.followUpAt!) })} />}
         {lead.status === 'sold' && lead.soldPrice ? <Chip size="small" color="success" label={`$${lead.soldPrice.toLocaleString('en-US')}`} /> : null}
         {owner && <Chip size="small" variant="outlined" label={owner} />}
       </Box>
       <Typography variant="caption" color="text.secondary">
-        {lead.lastContactAt ? `Contacted ${timeAgo(lead.lastContactAt)}` : `Added ${timeAgo(lead.createdAt)}`}
+        {lead.lastContactAt ? t('leads.contacted', { ago: timeAgo(lead.lastContactAt) }) : t('leads.added', { ago: timeAgo(lead.createdAt) })}
       </Typography>
     </Paper>
   );
@@ -56,6 +58,7 @@ function LeadCard({ lead, now, owner, onOpen, draggable, marks }: {
 
 /** Lead inbox: New → Talking → Sold / Lost (kanban on desktop, tabs on phones). */
 export default function LeadsPage() {
+  const t = useT();
   const { profile, users, userName } = useMp();
   const manager = isManager(profile);
   const { leads, error } = useLeads(profile);
@@ -116,7 +119,7 @@ export default function LeadsPage() {
       return;
     }
     if (lead.status === 'sold') {
-      setDropError('A sold lead stays sold — open it to edit the details.');
+      setDropError(t('leads.soldStays'));
       return;
     }
     setDropError('');
@@ -144,12 +147,12 @@ export default function LeadsPage() {
       >
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
           <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: LEAD_STATUS_COLOR[s] }} />
-          <Typography sx={{ fontWeight: 700, flexGrow: 1 }}>{LEAD_STATUS_LABEL[s]}</Typography>
+          <Typography sx={{ fontWeight: 700, flexGrow: 1 }}>{t(`leads.status.${s}`, { defaultValue: LEAD_STATUS_LABEL[s] })}</Typography>
           <Chip size="small" label={list.length} />
         </Box>
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
           {list.map((l) => <LeadCard key={l.id} lead={l} now={now} owner={ownerLabel(l)} onOpen={() => setOpen(l)} draggable marks={marks} />)}
-          {!list.length && <Typography variant="body2" color="text.disabled" sx={{ p: 1 }}>Nothing here</Typography>}
+          {!list.length && <Typography variant="body2" color="text.disabled" sx={{ p: 1 }}>{t('leads.nothingHere')}</Typography>}
         </Box>
       </Box>
     );
@@ -158,37 +161,37 @@ export default function LeadsPage() {
   return (
     <MpShell>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1, flexWrap: 'wrap' }}>
-        <Typography variant="h5" sx={{ flexGrow: 1 }}>Leads</Typography>
-        {dueCount > 0 && <Chip color="warning" label={`${dueCount} follow-up${dueCount > 1 ? 's' : ''} due`} onClick={() => setDue('due')} />}
-        <Button variant="contained" startIcon={<Add />} onClick={() => setCreating(true)}>New lead</Button>
+        <Typography variant="h5" sx={{ flexGrow: 1 }}>{t('leads.title')}</Typography>
+        {dueCount > 0 && <Chip color="warning" label={t('leads.followupsDue', { count: dueCount })} onClick={() => setDue('due')} />}
+        <Button variant="contained" startIcon={<Add />} onClick={() => setCreating(true)}>{t('leads.newLead')}</Button>
       </Box>
       <Typography color="text.secondary" sx={{ mb: 2 }}>
-        Everyone who asked about a cart. Reply with one tap, set a follow-up, and mark the sale when it closes.
-        {wide ? ' Drag a card to change its stage.' : ''}
+        {t('leads.intro')}
+        {wide ? ` ${t('leads.dragHint')}` : ''}
       </Typography>
       {(error || dropError) && <Alert severity="error" sx={{ mb: 2 }}>{error || dropError}</Alert>}
 
       <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mb: 1.5 }}>
-        <TextField size="small" placeholder="Search name, phone, cart, notes" value={search} onChange={(e) => setSearch(e.target.value)}
+        <TextField size="small" placeholder={t('leads.search')} value={search} onChange={(e) => setSearch(e.target.value)}
           slotProps={{ input: { startAdornment: <Search fontSize="small" sx={{ mr: 1, color: 'text.secondary' }} /> } }}
           sx={{ flexGrow: 1, minWidth: 220 }} />
         {manager && (
-          <TextField select size="small" label="Owner" value={owner} onChange={(e) => setOwner(e.target.value)} sx={{ minWidth: 180 }}>
-            <MenuItem value="all">Everyone</MenuItem>
+          <TextField select size="small" label={t('leads.owner')} value={owner} onChange={(e) => setOwner(e.target.value)} sx={{ minWidth: 180 }}>
+            <MenuItem value="all">{t('leads.everyone')}</MenuItem>
             {users.map((u) => <MenuItem key={u.uid} value={u.uid}>{u.name || u.email}</MenuItem>)}
           </TextField>
         )}
       </Box>
       <ChipFilter<LeadChannel | 'all'>
-        label="Channel"
+        label={t('leads.channel')}
         value={channel}
-        options={[{ value: 'all', label: 'All' }, ...channelsInUse.map((c) => ({ value: c, label: CHANNEL_LABEL[c] }))]}
+        options={[{ value: 'all', label: t('leads.all') }, ...channelsInUse.map((c) => ({ value: c, label: t(`leads.channels.${c}`, { defaultValue: CHANNEL_LABEL[c] }) }))]}
         onChange={setChannel}
       />
       <ChipFilter<DueFilter>
-        label="Follow-up"
+        label={t('leads.followUp')}
         value={due}
-        options={[{ value: 'all', label: 'Any' }, { value: 'due', label: 'Due today' }, { value: 'overdue', label: 'Overdue' }]}
+        options={[{ value: 'all', label: t('leads.any') }, { value: 'due', label: t('leads.dueToday') }, { value: 'overdue', label: t('leads.overdue') }]}
         onChange={setDue}
       />
 
@@ -200,12 +203,12 @@ export default function LeadsPage() {
         <>
           <Tabs value={tab} onChange={(_, v) => setTab(v)} variant="fullWidth" sx={{ mb: 1 }}>
             {LEAD_STATUSES.map((s) => (
-              <Tab key={s} value={s} label={<Badge color="primary" badgeContent={byStatus(s).length} max={99}><Box sx={{ pr: 1.5 }}>{LEAD_STATUS_LABEL[s]}</Box></Badge>} />
+              <Tab key={s} value={s} label={<Badge color="primary" badgeContent={byStatus(s).length} max={99}><Box sx={{ pr: 1.5 }}>{t(`leads.status.${s}`, { defaultValue: LEAD_STATUS_LABEL[s] })}</Box></Badge>} />
             ))}
           </Tabs>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
             {byStatus(tab).map((l) => <LeadCard key={l.id} lead={l} now={now} owner={ownerLabel(l)} onOpen={() => setOpen(l)} marks={marks} />)}
-            {!byStatus(tab).length && <Typography color="text.secondary" sx={{ py: 3, textAlign: 'center' }}>No {LEAD_STATUS_LABEL[tab].toLowerCase()} leads.</Typography>}
+            {!byStatus(tab).length && <Typography color="text.secondary" sx={{ py: 3, textAlign: 'center' }}>{t('leads.noneInStage', { stage: t(`leads.status.${tab}`, { defaultValue: LEAD_STATUS_LABEL[tab] }) })}</Typography>}
           </Box>
         </>
       )}

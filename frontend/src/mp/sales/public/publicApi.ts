@@ -1,4 +1,6 @@
 // "Sell more" release — client for the public API (/api/public/<area>/<action>, served by mpSalesPublic).
+import i18n from '../../../i18n';
+
 const ORIGIN = 'https://tigoniot.com';
 const base = () => (typeof location !== 'undefined' && (location.origin === ORIGIN || location.hostname.endsWith('.web.app')) ? '' : ORIGIN);
 
@@ -11,10 +13,10 @@ async function call<T>(method: 'GET' | 'POST', path: string, body?: unknown): Pr
       body: body ? JSON.stringify(body) : undefined,
     });
   } catch {
-    throw new Error('We could not reach TIGON right now. Check your connection and try again, or give us a call at 1-844-844-6638.');
+    throw new Error(i18n.t('pub.networkError'));
   }
   const json = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error((json as { error?: string }).error || `Something went wrong (HTTP ${res.status}).`);
+  if (!res.ok) throw new Error((json as { error?: string }).error || i18n.t('pub.httpError', { status: res.status }));
   return json as T;
 }
 

@@ -1,5 +1,6 @@
 // Webhook Flows — admin API (callables): whReplay, whTestWebhook.
 import * as admin from 'firebase-admin';
+import {FieldValue} from 'firebase-admin/firestore';
 import * as logger from 'firebase-functions/logger';
 import {HttpsError, onCall} from 'firebase-functions/v2/https';
 import type {CallableRequest} from 'firebase-functions/v2/https';
@@ -10,7 +11,7 @@ import {FINISHED_STATUSES, processSubmission, runSingleStep} from './engine';
 import {cleanValue, dedupeKeys} from './fields';
 import {bumpStats} from './stats';
 
-const del = () => admin.firestore.FieldValue.delete();
+const del = () => FieldValue.delete();
 
 export interface Caller {uid: string; name: string; role: string}
 
@@ -20,7 +21,7 @@ export async function requireManager(req: CallableRequest, adminOnly = false): P
   const email = String(req.auth.token.email || '').toLowerCase();
   if (!email.endsWith('@tigongolfcarts.com')) throw new HttpsError('permission-denied', 'Only @tigongolfcarts.com accounts can do this.');
   const snap = await db().collection('mp_users').doc(req.auth.uid).get();
-  const role = String(snap.get('role') || '');
+  const role = snap.get('status') === 'pending' || snap.get('status') === 'disabled' ? '' : String(snap.get('role') || '');
   if (adminOnly ? role !== 'admin' : role !== 'admin' && role !== 'manager') {
     throw new HttpsError('permission-denied', adminOnly ? 'Only admins can do this.' : 'Only managers and admins can do this.');
   }

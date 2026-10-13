@@ -1,18 +1,24 @@
-import React, { useMemo, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import React, { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Accordion, AccordionDetails, AccordionSummary, Box, Chip, List, ListItemButton, ListItemText, Typography } from '@mui/material';
 import { ExpandMore } from '@mui/icons-material';
-import MpShell, { ProfileSetup } from '../components/MpShell';
 import ChipFilter from '../components/ChipFilter';
 import { useMp } from '../MpDataContext';
 import { cartTitle } from '../cartLogic';
 import { formatPrice, groupAccounts, timeAgo } from '../cartUtils';
 import type { MpCart } from '../types';
 
+/**
+ * Facebook profiles (accounts) and what is posted on each. Shown as the "Facebook profiles" tab of Users
+ * (the old /mp/profiles page redirects there).
+ */
 const MpProfiles: React.FC = () => {
-  const [params] = useSearchParams();
   const navigate = useNavigate();
-  const { accounts, carts, userName } = useMp();
+  const { accounts, carts, userName, profile, ensureCartsLoaded } = useMp();
+
+  useEffect(() => {
+    if (profile) ensureCartsLoaded();
+  }, [profile, ensureCartsLoaded]);
   const [owner, setOwner] = useState('any');
 
   const byAccount = useMemo(() => {
@@ -32,8 +38,7 @@ const MpProfiles: React.FC = () => {
   const filtered = accounts.filter((a) => owner === 'any' || a.owner === owner);
 
   return (
-    <MpShell>
-      {params.get('me') && <Box sx={{ mb: 3 }}><ProfileSetup editing /></Box>}
+    <>
       {owners.length > 0 && (
         <ChipFilter
           label="Owner"
@@ -77,7 +82,7 @@ const MpProfiles: React.FC = () => {
           })}
         </Box>
       ))}
-    </MpShell>
+    </>
   );
 };
 

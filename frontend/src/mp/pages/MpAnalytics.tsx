@@ -3,7 +3,7 @@ import { collection, documentId, getDocs, orderBy, query, where } from 'firebase
 import { readAll } from '../firestorePaging';
 import {
   Alert, Box, Button, Chip, CircularProgress, Collapse, FormControl, IconButton, InputLabel, MenuItem, Paper, Select,
-  Table, TableBody, TableCell, TableHead, TableRow, Tooltip as MuiTooltip, Typography,
+  Table, TableBody, TableCell, TableHead, TableRow, Tooltip as MuiTooltip, Typography, useTheme,
 } from '@mui/material';
 import { KeyboardArrowDown, KeyboardArrowUp, Refresh } from '@mui/icons-material';
 import {
@@ -23,9 +23,6 @@ import {
 import type { Outcome, RangeKey, Stats } from '../analyticsUtils';
 import type { DeviceDay, DeviceDoc, MpEvent, QueueItem } from '../types';
 
-const RED = '#af1f31';
-const BLUE = '#0e4671';
-const GREY = '#8a8f98';
 
 interface Loaded {
   key: string;
@@ -215,6 +212,11 @@ interface LeaderRow {
 const MpAnalytics: React.FC = () => {
   const { currentUser } = useAuth();
   const { profile, users, userName } = useMp();
+  // Chart colors from the theme (brand red/blue, readable in dark mode too).
+  const theme = useTheme();
+  const RED = theme.palette.primary.main;
+  const BLUE = theme.palette.secondary.main;
+  const GREY = theme.palette.text.disabled;
   const uid = currentUser?.uid || '';
   const manager = profile?.role === 'admin' || profile?.role === 'manager';
 

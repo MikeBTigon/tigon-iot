@@ -219,5 +219,42 @@
     else renderList();
   }
 
+  // ---------------------------------------------------------------------------
+  // Update check: the website publishes the newest version at /downloads/poster-version.json
+  // ---------------------------------------------------------------------------
+  const VERSION_URL = "https://tigoniot.com/downloads/poster-version.json";
+  const DOWNLOAD_PAGE = "https://tigoniot.com/app#extension";
+
+  function newer(a, b) {
+    const pa = String(a || "").split(".").map((n) => parseInt(n, 10) || 0);
+    const pb = String(b || "").split(".").map((n) => parseInt(n, 10) || 0);
+    for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+      if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) > (pb[i] || 0);
+    }
+    return false;
+  }
+
+  async function checkForUpdate() {
+    try {
+      const res = await fetch(VERSION_URL, { cache: "no-store", credentials: "omit" });
+      if (!res.ok) return;
+      const latest = await res.json();
+      const mine = chrome.runtime.getManifest().version;
+      if (!latest || !newer(latest.version, mine)) return;
+      const el = $("update-msg");
+      el.innerHTML = "Update available (" + esc(latest.version) + ") — <a href=\"#\" id=\"update-link\">download the new version</a>, " +
+        "unzip it over the old tigon-poster folder, then click the reload arrow on chrome://extensions.";
+      show(el, true);
+      $("update-link").addEventListener("click", (e) => {
+        e.preventDefault();
+        const url = String(latest.url || "");
+        chrome.tabs.create({ url: /^https:\/\/(tigoniot\.com|tigon-iot\.firebaseapp\.com)\//.test(url) ? url : DOWNLOAD_PAGE });
+      });
+    } catch (_) {
+      // offline — try again next time the popup opens
+    }
+  }
+
+  checkForUpdate();
   init();
 })();

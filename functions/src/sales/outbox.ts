@@ -1,7 +1,11 @@
 // "Sell more" release — the one way every feature sends a text: queueSms() writes mp_sms/{id} (status 'queued').
 // The texting track (texting.ts) delivers it: from the store's texting phone (TIGON IOT app) or Twilio.
 // Opted-out numbers (replied STOP) are never texted; automatic texts wait until quiet hours end.
-import * as admin from 'firebase-admin';
+// TCPA: automatic MARKETING texts (MARKETING_KINDS) go out only with written consent on file — the lead's
+// smsConsent === true or the customer's consentSms === true. Texts the customer asked for (a reply, their booking's
+// reminders, the one missed-call text-back) don't need it.
+// `queueAt` (ms) is present only while a text is 'queued' — the texting phone / housekeeping query it (bounded reads).
+import {FieldValue} from 'firebase-admin/firestore';
 import {C, afterQuiet, db, e164} from './util';
 import {loadSalesSettings} from './settings';
 
@@ -51,6 +55,29 @@ export interface SmsDoc {
   ownerUid?: string;
   /** When the texting phone / Twilio picked it up (stuck-text recovery). */
   takenAt?: number;
+  /** = sendAt while status is 'queued'; deleted once taken/sent/failed/skipped. */
+  queueAt?: number;
+}
+
+/** Automatic marketing texts: sent only when the person agreed to texts. */
+export const MARKETING_KINDS: SmsKind[] = ['auto_lead', 'cadence', 'price_drop', 'similar', 'no_show', 'referral', 'service'];
+export const isMarketingKind = (k: string) => (MARKETING_KINDS as string[]).includes(k);
+
+/** Written consent on file for this lead / customer (smsConsent === true / consentSms === true). */
+export async function hasMarketingConsent(leadId?: string, customerId?: string): Promise<boolean> {
+  try {
+    if (leadId) {
+      const l = await db().collection(C.leads).doc(leadId).get();
+      if (l.get('smsConsent') === true) return true;
+      const cust = customerId || String(l.get('customerId') || '');
+      if (cust && (await db().collection(C.customers).doc(cust).get()).get('consentSms') === true) return true;
+      return false;
+    }
+    if (customerId) return (await db().collection(C.customers).doc(customerId).get()).get('consentSms') === true;
+  } catch {
+    // unknown → no consent
+  }
+  return false;
 }
 
 /** Automatic first-contact texts carry the opt-out notice. */
@@ -80,6 +107,8 @@ export async function queueSms(input: SmsInput): Promise<string | null> {
   if (!to || !raw) return null;
   const body = withOptOutNotice(input.kind, raw);
   if (await isOptedOut(to)) return null;
+  // Automatic (createdBy '') marketing texts need consent; a person pressing Send is not automatic.
+  if (!input.createdBy && isMarketingKind(input.kind) && !(await hasMarketingConsent(input.leadId, input.customerId))) return null;
   const now = Date.now();
   let sendAt = Math.max(input.sendAt || now, now);
   if (input.kind !== 'manual' && input.kind !== 'reply') {
@@ -89,7 +118,7 @@ export async function queueSms(input: SmsInput): Promise<string | null> {
   const ownerUid = await leadOwner(input.leadId);
   const doc: SmsDoc = {
     to, body, kind: input.kind, storeId: input.storeId || '', createdBy: input.createdBy || '',
-    status: 'queued', sendAt, attempts: 0, createdAt: now,
+    status: 'queued', sendAt, queueAt: sendAt, attempts: 0, createdAt: now,
     ...(ownerUid ? {ownerUid} : {}),
     ...(input.leadId ? {leadId: input.leadId} : {}),
     ...(input.customerId ? {customerId: input.customerId} : {}),
@@ -123,4 +152,4 @@ export async function markLeadTexted(leadId: string | undefined, at = Date.now()
   });
 }
 
-export const serverTime = () => admin.firestore.FieldValue.serverTimestamp();
+export const serverTime = () => FieldValue.serverTimestamp();

@@ -2,7 +2,6 @@
 import * as logger from 'firebase-functions/logger';
 import {HttpsError, onCall} from 'firebase-functions/v2/https';
 import * as admin from 'firebase-admin';
-import * as nodemailer from 'nodemailer';
 import type {Transporter} from 'nodemailer';
 import {createHash, randomBytes} from 'crypto';
 import {WH} from '../types';
@@ -125,6 +124,9 @@ function transportFor(integration: WhIntegration, setup: SmtpSetup): Transporter
       transports.delete(k);
     }
   }
+  // nodemailer is loaded on first use (most functions never send email).
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const nodemailer = require('nodemailer') as typeof import('nodemailer');
   const t = nodemailer.createTransport({
     host: setup.host,
     port: setup.port,
@@ -309,7 +311,8 @@ export const whTestEmail = onCall({timeoutSeconds: 60, memory: '256MiB'}, async 
   if (!email.toLowerCase().endsWith('@tigongolfcarts.com')) {
     throw new HttpsError('permission-denied', 'Only @tigongolfcarts.com accounts can send test emails.');
   }
-  const role = (await db().collection('mp_users').doc(req.auth.uid).get()).get('role');
+  const meSnap = await db().collection('mp_users').doc(req.auth.uid).get();
+  const role = meSnap.get('status') === 'pending' || meSnap.get('status') === 'disabled' ? '' : meSnap.get('role');
   if (role !== 'admin' && role !== 'manager') throw new HttpsError('permission-denied', 'Only managers and admins can send test emails.');
 
   const d = (req.data || {}) as Record<string, unknown>;

@@ -1,13 +1,17 @@
-import type { ReactNode } from 'react';
-import LeadsPage from './LeadsPage';
-import CustomersPage from './CustomersPage';
-import CalendarPage from './CalendarPage';
-import InsightsPage from './InsightsPage';
+import { lazy, type ReactNode } from 'react';
+import { SignedInSuspense } from '../../ui/PageSuspense';
 
-/** Pages this area adds under the signed-in app (wrapped in the auth guard by mp/routes.tsx). */
+const LeadsPage = lazy(() => import('./LeadsPage'));
+const CustomersPage = lazy(() => import('./CustomersPage'));
+const CalendarPage = lazy(() => import('./CalendarPage'));
+const InsightsPage = lazy(() => import('./InsightsPage'));
+
+const page = (el: ReactNode) => <SignedInSuspense>{el}</SignedInSuspense>;
+
+/** Pages this area adds under the signed-in app (wrapped in the auth guard by mp/routes.tsx). Loaded on demand. */
 export const ROUTES: Array<{ path: string; element: ReactNode }> = [
-  { path: '/mp/leads', element: <LeadsPage /> },
-  { path: '/mp/customers', element: <CustomersPage /> },
-  { path: '/mp/calendar', element: <CalendarPage /> },
-  { path: '/mp/insights', element: <InsightsPage /> },
+  { path: '/mp/leads', element: page(<LeadsPage />) },
+  { path: '/mp/customers', element: page(<CustomersPage />) },
+  { path: '/mp/calendar', element: page(<CalendarPage />) },
+  { path: '/mp/insights', element: page(<InsightsPage />) },
 ];

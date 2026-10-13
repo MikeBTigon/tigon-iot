@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import {
   Alert, Box, Button, MenuItem, Paper, Tab, Tabs, TextField, Tooltip, Typography,
 } from '@mui/material';
@@ -65,11 +65,12 @@ function useInsightsData(person: string) {
       ? query(collection(db, COLLECTIONS.clicks), where('ts', '>=', since))
       : query(collection(db, COLLECTIONS.clicks), where('userId', '==', who));
     const postsQ: Query = who === 'all'
-      ? query(collection(db, COLLECTIONS.events), where('type', '==', 'post_marked'))
+      // Time-bounded (single-field range); the event type is filtered below.
+      ? query(collection(db, COLLECTIONS.events), where('ts', '>=', since))
       : query(collection(db, COLLECTIONS.events), where('userId', '==', who), where('type', '==', 'post_marked'));
     const fail = (e: Error) => setError(e.message);
     const u1 = onSnapshot(clicksQ, (s) => setClicks(s.docs.map((d) => ({ id: d.id, ...d.data() }) as Click).filter((c) => c.ts >= since)), fail);
-    const u2 = onSnapshot(postsQ, (s) => setPosts(s.docs.map((d) => ({ id: d.id, ...d.data() }) as MpEvent).filter((e) => e.ts >= since)), fail);
+    const u2 = onSnapshot(postsQ, (s) => setPosts(s.docs.map((d) => ({ id: d.id, ...d.data() }) as MpEvent).filter((e) => e.type === 'post_marked' && e.ts >= since)), fail);
     return () => { u1(); u2(); };
   }, [uid, who, since]);
 
@@ -211,7 +212,6 @@ function BestTime({ data }: { data: InsightsData }) {
 // ---------------------------------------------------------------------------
 
 function PriceInsights({ data }: { data: InsightsData }) {
-  const navigate = useNavigate();
   const { carts, profile } = useMp();
   const now = useNow();
   const [choice, setChoice] = useState<CartChoice | null>(null);
@@ -305,12 +305,12 @@ function PriceInsights({ data }: { data: InsightsData }) {
             <Alert severity="info" sx={{ mb: 2 }}>Not enough data for a suggestion (needs 3+ comparable carts or 2+ recorded sales).</Alert>
           )}
           <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
-            Data used: in-stock inventory loaded in the app; sales from leads marked sold{isManager(profile) ? '' : ' (your own leads)'} whose cart title
+            Data used: in-stock inventory loaded in the app; sales from leads marked sold{isManager(profile) ? ' (leads updated in the last 90 days)' : ' (your own leads)'} whose cart title
             contains the make and model. “Days in stock” is a rough proxy — time since the cart's last DMS update or its first recorded post.
           </Typography>
           {comps.slice().sort((a, b) => a.price - b.price).slice(0, 12).map((c) => (
-            <Paper key={c.docId} variant="outlined" onClick={() => navigate(`/mp/cart/${c.docId}`)}
-              sx={{ p: 1, mb: 0.5, display: 'flex', gap: 1, cursor: 'pointer', '&:hover': { boxShadow: 1 } }}>
+            <Paper key={c.docId} variant="outlined" component={RouterLink} to={`/mp/cart/${c.docId}`}
+              sx={{ p: 1, mb: 0.5, display: 'flex', gap: 1, color: 'inherit', textDecoration: 'none', '&:hover': { boxShadow: 1 } }}>
               <Typography sx={{ flexGrow: 1 }} noWrap>{c.year} {cartTitle(c)}</Typography>
               <Typography sx={{ fontWeight: 600 }}>{formatPrice(c.price)}</Typography>
             </Paper>

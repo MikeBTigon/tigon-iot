@@ -8,12 +8,16 @@ import { CheckCircle, Place } from '@mui/icons-material';
 import PublicShell from '../public/PublicShell';
 import { publicGet, publicPost } from '../public/publicApi';
 import { dayLabel } from './closingUtils';
+import { useT } from '../../../i18n';
+import ConsentCheckbox from '../public/ConsentCheckbox';
+import { consentPayload } from '../public/consent';
 
 interface StoreInfo { id: string; name: string; city: string; address: string; phone: string }
 interface Info { enabled: boolean; stores: StoreInfo[]; days: Array<{ date: string; weekday: string; closed: boolean }>; cart: { id: string; title: string; storeId: string } | null; store: StoreInfo | null }
 interface Slot { start: number; label: string }
 
 const BookPublicPage: React.FC = () => {
+  const t = useT();
   const { storeId: pathStore } = useParams();
   const [params] = useSearchParams();
   const lead = params.get('lead') || '';
@@ -30,9 +34,10 @@ const BookPublicPage: React.FC = () => {
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [notes, setNotes] = useState('');
+  const [consent, setConsent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [done, setDone] = useState<{ when: string; store: StoreInfo | null; cartTitle: string; kind: string } | null>(null);
+  const [done, setDone] = useState<{ when: string; store: StoreInfo | null; cartTitle: string; kind: string; texts: boolean } | null>(null);
   const [refresh, setRefresh] = useState(0);
 
   useEffect(() => {
@@ -58,13 +63,13 @@ const BookPublicPage: React.FC = () => {
   const book = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    if (!start) { setError('Please pick a time.'); return; }
+    if (!start) { setError(t('book.pickTimeError')); return; }
     setBusy(true);
     try {
       const r = await publicPost<{ when: string; store: StoreInfo | null; cartTitle: string; kind: string }>('booking/book', {
-        store: storeId, date: day, start, kind, name, phone, email, notes, cart: info?.cart?.id || '', lead, q: quote,
+        store: storeId, date: day, start, kind, name, phone, email, notes, cart: info?.cart?.id || '', lead, q: quote, ...consentPayload(consent),
       });
-      setDone(r);
+      setDone({ ...r, texts: consent });
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -79,18 +84,18 @@ const BookPublicPage: React.FC = () => {
 
   if (done) {
     return (
-      <PublicShell title="You're booked!" phone={done.store?.phone || phoneNum}>
+      <PublicShell title={t('book.booked')} phone={done.store?.phone || phoneNum}>
         <Card>
           <CardContent sx={{ textAlign: 'center', py: 4 }}>
             <CheckCircle color="success" sx={{ fontSize: 48 }} />
             <Typography variant="h5" sx={{ fontWeight: 800, mt: 1 }}>{done.when}</Typography>
-            <Typography sx={{ mt: 0.5 }}>{done.kind === 'visit' ? 'Store visit' : 'Test drive'}{done.cartTitle ? ` — ${done.cartTitle}` : ''}</Typography>
+            <Typography sx={{ mt: 0.5 }}>{done.kind === 'visit' ? t('book.visit') : t('book.testDrive')}{done.cartTitle ? ` — ${done.cartTitle}` : ''}</Typography>
             {done.store && (
               <Typography color="text.secondary" sx={{ mt: 1 }}>
                 TIGON Golf Carts {done.store.city}<br />{done.store.address}
               </Typography>
             )}
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>We'll text you a reminder. Need to change it? Call or text {done.store?.phone || phoneNum}.</Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>{done.texts ? `${t('book.reminder')} ` : ''}{t('book.change', { phone: done.store?.phone || phoneNum })}</Typography>
           </CardContent>
         </Card>
       </PublicShell>
@@ -98,13 +103,13 @@ const BookPublicPage: React.FC = () => {
   }
 
   return (
-    <PublicShell title={kind === 'visit' ? 'Book a visit' : 'Book a test drive'} subtitle={info?.cart ? `For the ${info.cart.title}` : 'Pick a day and time that works for you.'} phone={store ? phoneNum : undefined}>
+    <PublicShell title={kind === 'visit' ? t('book.titleVisit') : t('book.titleTestDrive')} subtitle={info?.cart ? t('book.forCart', { title: info.cart.title }) : t('book.pickDayTime')} phone={store ? phoneNum : undefined}>
       {infoError && <Alert severity="error" sx={{ mb: 2 }}>{infoError}</Alert>}
       {!info && !infoError && <Box sx={{ textAlign: 'center', py: 6 }}><CircularProgress /></Box>}
-      {info && !info.enabled && <Alert severity="info" sx={{ mb: 2 }}>Online booking is not available right now. Please call us at {phoneNum}.</Alert>}
+      {info && !info.enabled && <Alert severity="info" sx={{ mb: 2 }}>{t('book.unavailable', { phone: phoneNum })}</Alert>}
       {info && info.enabled && !storeId && (
         <>
-          <Typography sx={{ fontWeight: 700, mb: 1 }}>Which store?</Typography>
+          <Typography sx={{ fontWeight: 700, mb: 1 }}>{t('book.whichStore')}</Typography>
           <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 1.5 }}>
             {info.stores.map((s) => (
               <Card key={s.id} variant="outlined">
@@ -127,26 +132,26 @@ const BookPublicPage: React.FC = () => {
                   <Typography sx={{ fontWeight: 700 }}>TIGON Golf Carts {store?.city || store?.name}</Typography>
                   <Typography variant="body2" color="text.secondary">{store?.address}</Typography>
                 </Box>
-                {!pathStore && !info.cart?.storeId && <Button size="small" onClick={() => { setPicked(''); setStart(null); }}>Change store</Button>}
+                {!pathStore && !info.cart?.storeId && <Button size="small" onClick={() => { setPicked(''); setStart(null); }}>{t('book.changeStore')}</Button>}
               </Box>
               <ToggleButtonGroup exclusive fullWidth value={kind} onChange={(_e, v) => v && setKind(v)}>
-                <ToggleButton value="test_drive">Test drive</ToggleButton>
-                <ToggleButton value="visit">Store visit</ToggleButton>
+                <ToggleButton value="test_drive">{t('book.testDrive')}</ToggleButton>
+                <ToggleButton value="visit">{t('book.visit')}</ToggleButton>
               </ToggleButtonGroup>
               <Box>
-                <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.75 }}>Day</Typography>
+                <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.75 }}>{t('book.day')}</Typography>
                 <Box sx={{ display: 'flex', gap: 1, overflowX: 'auto', pb: 1 }}>
                   {info.days.map((d) => (
-                    <Chip key={d.date} label={d.closed ? `${dayLabel(d.date)} · closed` : dayLabel(d.date)} disabled={d.closed}
+                    <Chip key={d.date} label={d.closed ? t('book.closed', { day: dayLabel(d.date) }) : dayLabel(d.date)} disabled={d.closed}
                       color={d.date === day ? 'primary' : 'default'} variant={d.date === day ? 'filled' : 'outlined'}
                       onClick={() => { setDate(d.date); setStart(null); }} />
                   ))}
                 </Box>
               </Box>
               <Box>
-                <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.75 }}>Time</Typography>
+                <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.75 }}>{t('book.time')}</Typography>
                 {!slotsReady ? <CircularProgress size={22} /> : slots.error ? <Alert severity="error">{slots.error}</Alert> : !slots.slots.length ? (
-                  <Typography color="text.secondary">No times left this day — please pick another day.</Typography>
+                  <Typography color="text.secondary">{t('book.noTimes')}</Typography>
                 ) : (
                   <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(96px, 1fr))', gap: 1 }}>
                     {slots.slots.map((s) => (
@@ -155,14 +160,15 @@ const BookPublicPage: React.FC = () => {
                   </Box>
                 )}
               </Box>
-              <TextField label="Your name" value={name} onChange={(e) => setName(e.target.value)} required autoComplete="name" slotProps={{ htmlInput: { maxLength: 80 } }} />
-              <TextField label="Mobile phone" value={phone} onChange={(e) => setPhone(e.target.value)} required type="tel" autoComplete="tel"
-                helperText="We'll text you a reminder." slotProps={{ htmlInput: { maxLength: 20 } }} />
-              <TextField label="Email (optional)" value={email} onChange={(e) => setEmail(e.target.value)} type="email" autoComplete="email" slotProps={{ htmlInput: { maxLength: 120 } }} />
-              <TextField label="Anything we should know? (optional)" value={notes} onChange={(e) => setNotes(e.target.value)} multiline minRows={2} slotProps={{ htmlInput: { maxLength: 300 } }} />
+              <TextField label={t('pub.yourName')} value={name} onChange={(e) => setName(e.target.value)} required autoComplete="name" slotProps={{ htmlInput: { maxLength: 80 } }} />
+              <TextField label={t('pub.mobile')} value={phone} onChange={(e) => setPhone(e.target.value)} required type="tel" autoComplete="tel"
+                helperText={t('book.phoneHelp')} slotProps={{ htmlInput: { maxLength: 20 } }} />
+              <TextField label={t('pub.emailOptional')} value={email} onChange={(e) => setEmail(e.target.value)} type="email" autoComplete="email" slotProps={{ htmlInput: { maxLength: 120 } }} />
+              <TextField label={t('book.notes')} value={notes} onChange={(e) => setNotes(e.target.value)} multiline minRows={2} slotProps={{ htmlInput: { maxLength: 300 } }} />
+              <ConsentCheckbox checked={consent} onChange={setConsent} />
               {error && <Alert severity="error">{error}</Alert>}
               <Button type="submit" variant="contained" size="large" disabled={busy || !start} startIcon={busy ? <CircularProgress size={18} color="inherit" /> : undefined}>
-                {start ? `Book ${dayLabel(day)} at ${slots.slots.find((s) => s.start === start)?.label || ''}` : 'Pick a time'}
+                {start ? t('book.bookAt', { day: dayLabel(day), time: slots.slots.find((s) => s.start === start)?.label || '' }) : t('book.pickTime')}
               </Button>
             </Stack>
           </CardContent>

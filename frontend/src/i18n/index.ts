@@ -4,6 +4,11 @@
  *
  * Language choice order: the user's MP profile prefs (applied by <LanguageSync/> once signed in)
  * → localStorage → the browser/phone language → English.
+ *
+ * Translations: es/fr/ht are machine-assisted and written in simple, everyday wording. Have native speakers review
+ * them — especially `consent.sms` (the TCPA texting consent shown on customer forms; its exact shown text is saved
+ * with each consent, so a wording change should also be checked by whoever owns compliance).
+ * Every language file is typed as `Resource` (the shape of en.ts), so a key missing in one file fails the typecheck.
  */
 import i18n from 'i18next';
 import { initReactI18next, useTranslation } from 'react-i18next';

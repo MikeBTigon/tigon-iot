@@ -6,11 +6,13 @@
 import * as logger from 'firebase-functions/logger';
 import {HttpsError, onCall, onRequest} from 'firebase-functions/v2/https';
 import * as admin from 'firebase-admin';
+import {FieldValue} from 'firebase-admin/firestore';
 import {createHash, randomBytes, timingSafeEqual} from 'crypto';
 import {isFacebookMessage} from './fbFilter';
 import {markOnline} from './presence';
 import {echoAfterSave, echoBeforeFilter} from './sales/echoHooks';
 import {pendingSmsFor, recordSmsResults} from './sales/texting';
+import {expireIn, notificationExpireAt} from './sales/util';
 
 const db = () => admin.firestore();
 const sha256 = (s: string) => createHash('sha256').update(s).digest('hex');
@@ -26,6 +28,10 @@ export const mpEchoRegister = onCall(async (req) => {
   if (!snap.exists) throw new HttpsError('not-found', 'This phone is not set up yet');
   if (snap.get('userId') !== req.auth.uid) throw new HttpsError('permission-denied', 'This phone belongs to someone else');
   if (snap.get('status') === 'revoked') throw new HttpsError('failed-precondition', 'This phone was revoked');
+  const member = await db().collection('mp_users').doc(req.auth.uid).get();
+  if (!member.exists || member.get('status') === 'pending' || member.get('status') === 'disabled') {
+    throw new HttpsError('permission-denied', 'Your account is not active in TIGON IOT yet');
+  }
   const secret = randomBytes(24).toString('base64url');
   await ref.set({echoSecretHash: sha256(secret), echoRegisteredAt: Date.now()}, {merge: true});
   return {deviceId, secret, deviceName: String(snap.get('deviceName') || ''), deviceNumber: String(snap.get('deviceNumber') || '')};
@@ -34,7 +40,7 @@ export const mpEchoRegister = onCall(async (req) => {
 const clip = (v: unknown, n: number) => (typeof v === 'string' ? v : v === undefined || v === null ? '' : String(v)).slice(0, n);
 
 /** Native listener → dashboard. Body: {deviceId, secret, items: [{key, pkg, app, title, text, postedAt}]} (max 20). */
-export const mpEcho = onRequest({memory: '256MiB', timeoutSeconds: 30}, async (req, res) => {
+export const mpEcho = onRequest({memory: '256MiB', timeoutSeconds: 30, maxInstances: 20}, async (req, res) => {
   if (req.method !== 'POST') {
     res.status(405).json({ok: false});
     return;
@@ -59,6 +65,11 @@ export const mpEcho = onRequest({memory: '256MiB', timeoutSeconds: 30}, async (r
       res.status(410).json({ok: false, error: 'revoked'});
       return;
     }
+    // Only phones set up through the app (device registered by the server in mpEchoRegister).
+    if (!dev.get('echoRegisteredAt') || dev.get('source') !== 'tigon-iot-app' || !dev.get('userId')) {
+      res.status(401).json({ok: false, error: 'unknown device'});
+      return;
+    }
     // Online check-in (every 5 minutes from the phone's background service, and with every batch of notifications).
     await markOnline(deviceId, String(dev.get('userId')));
     // Texting phone: report texts it sent, and pick up the next ones to send.
@@ -76,7 +87,7 @@ export const mpEcho = onRequest({memory: '256MiB', timeoutSeconds: 30}, async (r
     const count = await db().runTransaction(async (tx) => {
       const r = await tx.get(rateRef);
       const n = r.get('minute') === minute ? Number(r.get('count') || 0) : 0;
-      tx.set(rateRef, {minute, count: n + items.length});
+      tx.set(rateRef, {minute, count: n + items.length, expireAt: expireIn(3600_000)});
       return n + items.length;
     });
     if (count > MAX_PER_MINUTE) {
@@ -86,7 +97,6 @@ export const mpEcho = onRequest({memory: '256MiB', timeoutSeconds: 30}, async (r
     const userId = String(dev.get('userId'));
     const deviceName = String(dev.get('deviceName') || 'Phone');
     const deviceNumber = String(dev.get('deviceNumber') || '');
-    const batch = db().batch();
     let created = 0;
     const saved: Array<{item: Record<string, unknown>; id: string}> = [];
     const devData = dev.data() || {};
@@ -101,27 +111,33 @@ export const mpEcho = onRequest({memory: '256MiB', timeoutSeconds: 30}, async (r
       const postedAt = Number(it.postedAt) || Date.now();
       // Same notification sent twice (retry) → same doc.
       const id = `echo_${sha256(`${deviceId}|${clip(it.key, 300)}|${postedAt}|${title}|${text}`).slice(0, 32)}`;
-      batch.set(db().collection('notifications').doc(id), {
-        targetUserId: userId,
-        sourceDeviceId: deviceId,
-        sourceDeviceName: deviceName,
-        sourceDeviceNumber: deviceNumber,
-        sourceApp: clip(it.app, 80) || clip(it.pkg, 120),
-        sourcePackage: clip(it.pkg, 120),
-        title,
-        text: title && text ? `${title}: ${text}` : title || text,
-        postedAt,
-        isHandled: false,
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        source: 'tigon-iot-echo',
-      });
+      // create(): a retried batch never resets isHandled or re-runs the lead hooks for the same notification.
+      try {
+        await db().collection('notifications').doc(id).create({
+          targetUserId: userId,
+          sourceDeviceId: deviceId,
+          sourceDeviceName: deviceName,
+          sourceDeviceNumber: deviceNumber,
+          sourceApp: clip(it.app, 80) || clip(it.pkg, 120),
+          sourcePackage: clip(it.pkg, 120),
+          title,
+          text: title && text ? `${title}: ${text}` : title || text,
+          postedAt,
+          isHandled: false,
+          createdAt: FieldValue.serverTimestamp(),
+          expireAt: notificationExpireAt(),
+          source: 'tigon-iot-echo',
+        });
+      } catch (e) {
+        if ((e as {code?: number}).code === 6) continue; // ALREADY_EXISTS: delivered before
+        throw e;
+      }
       saved.push({item: it, id});
       created++;
     }
     if (created) {
-      batch.set(ref, {lastSeen: Date.now(), lastEchoAt: Date.now()}, {merge: true});
-      await batch.commit();
-      // Facebook buyer messages → leads.
+      await ref.set({lastSeen: Date.now(), lastEchoAt: Date.now()}, {merge: true});
+      // Facebook buyer messages → leads (only for notifications created just now).
       for (const x of saved) await echoAfterSave(devData, deviceId, x.item, x.id);
     }
     const sms = b.canSms === true ? await pendingSmsFor(deviceId) : [];

@@ -1,5 +1,6 @@
 // Webhook Flows — daily counters: wh_stats/d_YYYYMMDD (America/New_York day).
 import * as admin from 'firebase-admin';
+import {FieldValue} from 'firebase-admin/firestore';
 import * as logger from 'firebase-functions/logger';
 import {WH} from './types';
 
@@ -46,7 +47,7 @@ export interface StatBump {
 
 /** Increment today's counters. Never throws (stats must not break ingestion). */
 export async function bumpStats(b: StatBump, at = Date.now()) {
-  const inc = admin.firestore.FieldValue.increment;
+  const inc = FieldValue.increment;
   const day = nyDay(at);
   const data: Record<string, unknown> = {day, updatedAt: Date.now()};
   for (const k of ['total', 'spam', 'duplicate', 'failedSteps'] as const) if (b[k]) data[k] = inc(b[k] as number);

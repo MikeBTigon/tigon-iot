@@ -8,7 +8,15 @@ import { useEffect, useState } from 'react';
 export const APK_URL = 'https://tigon-iot.firebaseapp.com/downloads/tigon-iot.apk';
 export const PUBLIC_APP_PAGE = 'https://tigoniot.com/app';
 
-export interface AppBuild { versionCode: number; versionName: string; builtAt: string; url: string }
+export interface AppBuild {
+  versionCode: number;
+  versionName: string;
+  builtAt: string;
+  url: string;
+  /** Installed apps below this version were signed with the old key and must be uninstalled once. */
+  minVersionCode?: number;
+  requiresReinstall?: boolean;
+}
 
 /** Latest Android build published by the deploy (/downloads/version.json). null = not published yet. */
 export function useLatestAppBuild(): AppBuild | null | undefined {

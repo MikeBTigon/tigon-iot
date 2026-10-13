@@ -69,6 +69,9 @@ const MpAssets: React.FC = () => {
         const ref = doc(collection(db, COLLECTIONS.assets));
         const path = `mp_assets/${ref.id}-${safeFileName(file.name)}`;
         const obj = storageRef(storage, path);
+        if (!/^image\/|^application\/pdf$/.test(file.type) && !/\.(ttf|otf|woff2?|eot)$/i.test(file.name)) {
+          throw new Error(`"${file.name}" can't be added: the brand library takes pictures, fonts and PDFs only.`);
+        }
         await uploadBytes(obj, file, { contentType: file.type || 'application/octet-stream' });
         const asset: Omit<BrandAsset, 'id'> = {
           name: file.name.replace(/\.[^.]+$/, ''),
@@ -150,7 +153,7 @@ const MpAssets: React.FC = () => {
           <Button variant="contained" startIcon={<UploadFile />} onClick={() => fileInput.current?.click()} disabled={!!uploading}>
             Upload files
           </Button>
-          <input ref={fileInput} type="file" multiple hidden onChange={(e) => upload(e.target.files)} />
+          <input ref={fileInput} type="file" multiple hidden accept="image/*,application/pdf,.ttf,.otf,.woff,.woff2" onChange={(e) => upload(e.target.files)} />
         </Box>
       )}
       {uploading && <Alert severity="info" icon={<CircularProgress size={18} />} sx={{ mb: 2 }}>{uploading}</Alert>}

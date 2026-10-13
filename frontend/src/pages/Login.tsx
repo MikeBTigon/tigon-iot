@@ -16,8 +16,11 @@ import {
 import { Visibility, VisibilityOff } from '@mui/icons-material';
 import { useAuth } from '../context/AuthContext';
 import { authErrorMessage, cleanEmail } from '../context/authErrors';
+import { useT } from '../i18n';
+import LanguageMenu from '../i18n/LanguageMenu';
 
 const Login: React.FC = () => {
+  const t = useT();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -34,7 +37,7 @@ const Login: React.FC = () => {
     const em = cleanEmail(email);
     setEmail(em);
     if (!em.endsWith('@tigongolfcarts.com')) {
-      setError('Please use your @tigongolfcarts.com email address');
+      setError(t('auth.useCompanyEmail'));
       return;
     }
 
@@ -43,7 +46,7 @@ const Login: React.FC = () => {
       setInfo('');
       setLoading(true);
       await login(em, password);
-      navigate('/dashboard');
+      navigate('/');
     } catch (err) {
       setError(authErrorMessage(err));
     } finally {
@@ -55,13 +58,13 @@ const Login: React.FC = () => {
     const em = cleanEmail(email);
     setEmail(em);
     if (!em.endsWith('@tigongolfcarts.com')) {
-      setError('Type your @tigongolfcarts.com email above first, then tap "Forgot password?".');
+      setError(t('auth.forgotNeedsEmail'));
       return;
     }
     try {
       setError('');
       await resetPassword(em);
-      setInfo(`We emailed a link to ${em} to set a new password. Open it (check spam too), set the password, then log in here.`);
+      setInfo(t('auth.resetSent', { email: em }));
     } catch (err) {
       setError(authErrorMessage(err));
     }
@@ -77,12 +80,13 @@ const Login: React.FC = () => {
           alignItems: 'center',
         }}
       >
-        <Paper elevation={3} sx={{ p: 4, width: '100%' }}>
+        <Paper elevation={3} sx={{ p: 4, width: '100%', position: 'relative' }}>
+          <Box sx={{ position: 'absolute', top: 8, right: 8 }}><LanguageMenu /></Box>
           <Typography component="h1" variant="h4" align="center" gutterBottom color="primary">
             TIGON IOT
           </Typography>
           <Typography variant="body2" align="center" color="text.secondary" sx={{ mb: 3 }}>
-            Notification Relay System
+            {t('auth.loginSubtitle')}
           </Typography>
 
           {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
@@ -94,13 +98,13 @@ const Login: React.FC = () => {
               required
               fullWidth
               id="email"
-              label="Email Address"
+              label={t('auth.email')}
               name="email"
               autoComplete="email"
               autoFocus
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              helperText="Use your @tigongolfcarts.com email"
+              helperText={t('auth.emailHelpLogin')}
               inputProps={{ autoCapitalize: 'none', autoCorrect: 'off', spellCheck: false, inputMode: 'email' }}
             />
             <TextField
@@ -108,7 +112,7 @@ const Login: React.FC = () => {
               required
               fullWidth
               name="password"
-              label="Password"
+              label={t('auth.password')}
               type={showPassword ? 'text' : 'password'}
               id="password"
               autoComplete="current-password"
@@ -119,6 +123,7 @@ const Login: React.FC = () => {
                   <InputAdornment position="end">
                     <IconButton
                       onClick={() => setShowPassword(!showPassword)}
+                      aria-label={showPassword ? t('auth.hidePassword') : t('auth.showPassword')}
                       edge="end"
                     >
                       {showPassword ? <VisibilityOff /> : <Visibility />}
@@ -134,16 +139,16 @@ const Login: React.FC = () => {
               sx={{ mt: 3, mb: 2 }}
               disabled={loading}
             >
-              {loading ? 'Logging in...' : 'Login'}
+              {loading ? t('auth.loggingIn') : t('auth.login')}
             </Button>
             <Box sx={{ textAlign: 'center', mb: 1 }}>
-              <Button size="small" onClick={forgot} disabled={loading}>Forgot password?</Button>
-              {!isNativeApp() && <Button size="small" href="/app">Get the phone app</Button>}
+              <Button size="small" onClick={forgot} disabled={loading}>{t('auth.forgot')}</Button>
+              {!isNativeApp() && <Button size="small" href="/app">{t('auth.getApp')}</Button>}
             </Box>
             <Box sx={{ textAlign: 'center' }}>
               <Link to="/register" style={{ textDecoration: 'none' }}>
                 <Typography variant="body2" color="primary">
-                  Don't have an account? Register
+                  {t('auth.noAccount')}
                 </Typography>
               </Link>
             </Box>

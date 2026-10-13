@@ -101,6 +101,8 @@ export function cartDocFields(form: ListingForm, docId: string, photoUrls: strin
 export function newCartFields(uid: string) {
   return {
     source: 'manual' as const,
+    // In stock (the app loads only active carts; the server keeps this up to date).
+    active: true,
     createdBy: uid,
     createdAt: Date.now(),
     dmsId: '',

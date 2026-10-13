@@ -23,6 +23,8 @@ const STATUSES: Array<{ value: string; label: string }> = [
   { value: 'duplicate', label: 'Duplicate' },
 ];
 const PAGE_SIZES = [25, 50, 100, 250];
+const DEFAULT_DAYS = 30;
+const DAY_MS = 86_400_000;
 
 interface Filters { q: string; status: string; domain: string; hook: string; from: string; to: string }
 type SortKey = 'name' | 'email' | 'phone' | 'website' | 'form' | 'status' | 'received';
@@ -60,16 +62,21 @@ const WhSubmissions: React.FC<{ path?: string }> = ({ path = SUBMISSIONS_PATH })
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
-  // Load every submission in the applied date range (all of them when no dates are set).
+  // Without a From date the list starts with the last 30 days; "Load older" goes further back (0 = everything).
+  const [windowDays, setWindowDays] = useState(DEFAULT_DAYS);
+  const [openedAt] = useState(() => Date.now());
+  const fromMs = applied.from ? fromMsOf(applied.from) : windowDays ? openedAt - windowDays * DAY_MS : undefined;
+
+  // Load every submission in the date range.
   useEffect(() => {
     let live = true;
     setRows(undefined);
     setLoadError('');
-    loadSubmissions(fromMsOf(applied.from), toMsOf(applied.to))
+    loadSubmissions(fromMs, toMsOf(applied.to))
       .then((r) => { if (live) setRows(r); })
       .catch((e) => { if (live) { setRows([]); setLoadError(errText(e)); } });
     return () => { live = false; };
-  }, [applied.from, applied.to, reload]);
+  }, [fromMs, applied.to, reload]);
 
   const domainName = useMemo(() => new Map((domains || []).map((d) => [d.id, d.name])), [domains]);
   const hookName = useMemo(() => new Map((hooks || []).map((w) => [w.id, w.formName])), [hooks]);
@@ -248,9 +255,16 @@ const WhSubmissions: React.FC<{ path?: string }> = ({ path = SUBMISSIONS_PATH })
 
       <Paper sx={{ p: 1, mb: 2, display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
         <Typography variant="body2" sx={{ px: 1 }}>
-          {rows ? <><b>{filtered.length}</b> {applied.status === 'spam' ? 'blocked' : applied.status === 'duplicate' ? 'duplicate' : ''} submission(s)</> : 'Loading every submission…'}
+          {rows ? <><b>{filtered.length}</b> {applied.status === 'spam' ? 'blocked' : applied.status === 'duplicate' ? 'duplicate' : ''} submission(s)</> : 'Loading submissions…'}
           {selRows.length > 0 && <> · <b>{selRows.length} selected</b></>}
+          {!applied.from && windowDays > 0 && <> · last {windowDays} days</>}
         </Typography>
+        {!applied.from && windowDays > 0 && rows && (
+          <>
+            <Button size="small" onClick={() => setWindowDays((d) => d + DEFAULT_DAYS)}>Load older</Button>
+            <Button size="small" onClick={() => setWindowDays(0)}>Load all</Button>
+          </>
+        )}
         {pageAll && selRows.length < filtered.length && (
           <Button size="small" onClick={selectAllFiltered}>Select all {filtered.length}</Button>
         )}
@@ -296,7 +310,15 @@ const WhSubmissions: React.FC<{ path?: string }> = ({ path = SUBMISSIONS_PATH })
                   <TableCell padding="checkbox" onClick={(e) => e.stopPropagation()}>
                     <Checkbox checked={selected.has(s.id)} onChange={() => toggle(s.id)} inputProps={{ 'aria-label': `Select ${leadName(s)}` }} />
                   </TableCell>
-                  <TableCell sx={{ fontWeight: 600 }}>{leadName(s)}{s.hasDead && <ReportProblem color="error" fontSize="inherit" sx={{ ml: 0.5, verticalAlign: 'middle' }} />}</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>
+                    {leadName(s)}{s.hasDead && <ReportProblem color="error" fontSize="inherit" sx={{ ml: 0.5, verticalAlign: 'middle' }} aria-label="A step failed" />}
+                    {s.mpLeadId && (
+                      <Button size="small" variant="outlined" component={RouterLink} to={`/mp/leads?lead=${encodeURIComponent(s.mpLeadId)}`}
+                        onClick={(e: React.MouseEvent) => e.stopPropagation()} sx={{ ml: 1, py: 0, minWidth: 0, whiteSpace: 'nowrap' }}>
+                        Open lead
+                      </Button>
+                    )}
+                  </TableCell>
                   <TableCell>{s.email || ''}</TableCell>
                   <TableCell sx={{ whiteSpace: 'nowrap' }}>{s.phone1 || ''}</TableCell>
                   <TableCell>{domainName.get(s.domainId) || ''}</TableCell>
@@ -308,7 +330,7 @@ const WhSubmissions: React.FC<{ path?: string }> = ({ path = SUBMISSIONS_PATH })
                   <TableCell sx={{ whiteSpace: 'nowrap' }}>{fmtTime(s.receivedAt)}</TableCell>
                 </TableRow>
               ))}
-              {!pageRows.length && <TableRow><TableCell colSpan={8}>{rows.length ? 'No submissions match these filters.' : 'No submissions in this date range.'}</TableCell></TableRow>}
+              {!pageRows.length && <TableRow><TableCell colSpan={8}>{rows.length ? 'No submissions match these filters.' : !applied.from && windowDays ? `No submissions in the last ${windowDays} days — try Load older.` : 'No submissions in this date range.'}</TableCell></TableRow>}
             </TableBody>
           </Table>
           <TablePagination

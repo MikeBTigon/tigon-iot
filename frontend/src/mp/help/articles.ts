@@ -4,6 +4,7 @@
  * Link to an article with `/mp/help?a=<id>` or show it inline with <HelpTip article="<id>" />.
  */
 import type { Language } from '../growthTypes';
+import { AREA_ARTICLES } from './areaArticles';
 
 export type HelpArticleId =
   | 'post-3-taps'
@@ -13,7 +14,34 @@ export type HelpArticleId =
   | 'leads'
   | 'snap-to-list'
   | 'troubleshooting'
-  | 'offline';
+  | 'offline'
+  // One per main area (areaArticles.ts)
+  | 'today'
+  | 'texts'
+  | 'appointments'
+  | 'quotes'
+  | 'trade-ins'
+  | 'prequal'
+  | 'aged'
+  | 'referrals'
+  | 'funnel'
+  | 'reviews'
+  | 'financing'
+  | 'find-cart'
+  | 'customers'
+  | 'website-forms'
+  | 'google-sheets'
+  | 'phones-texting'
+  | 'users-approvals'
+  | 'settings'
+  | 'inbox'
+  | 'credit-apps'
+  | 'customer-history'
+  | 'live-board';
+
+/** Help center groups (labels: `helpArea.<id>` in the i18n files), in display order. */
+export type HelpArea = 'start' | 'sell' | 'post' | 'sellMore' | 'customers' | 'websites' | 'admin';
+export const HELP_AREAS: HelpArea[] = ['start', 'sell', 'post', 'sellMore', 'customers', 'websites', 'admin'];
 
 export interface ArticleText {
   title: string;
@@ -25,6 +53,8 @@ export interface ArticleText {
 
 export interface HelpArticle {
   id: HelpArticleId;
+  /** Help center group. */
+  area: HelpArea;
   /** Page the article is about (shown as an "Open" button). */
   path?: string;
   /** Extra search words (English; the translated text is searched too). */
@@ -32,9 +62,10 @@ export interface HelpArticle {
   text: Record<Language, ArticleText>;
 }
 
-export const HELP_ARTICLES: HelpArticle[] = [
+const CORE_ARTICLES: HelpArticle[] = [
   {
     id: 'post-3-taps',
+    area: 'post',
     path: '/mp',
     keywords: 'post marketplace facebook prepare publish copy photos',
     text: {
@@ -86,6 +117,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
   },
   {
     id: 'pair-phone',
+    area: 'start',
     path: '/devices',
     keywords: 'pair phone qr code app sign in iphone android install',
     text: {
@@ -133,6 +165,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
   },
   {
     id: 'auto-post',
+    area: 'post',
     path: '/mp/queue',
     keywords: 'auto post queue schedule push assign send later',
     text: {
@@ -184,6 +217,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
   },
   {
     id: 'share-kit',
+    area: 'post',
     path: '/mp/storefront',
     keywords: 'share kit storefront link qr whatsapp instagram sms tracked',
     text: {
@@ -231,6 +265,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
   },
   {
     id: 'leads',
+    area: 'customers',
     path: '/mp/leads',
     keywords: 'leads follow up crm buyer customer reminder sold lost',
     text: {
@@ -282,6 +317,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
   },
   {
     id: 'snap-to-list',
+    area: 'sell',
     path: '/mp/new',
     keywords: 'snap to list new listing photos camera create manual cart',
     text: {
@@ -329,6 +365,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
   },
   {
     id: 'troubleshooting',
+    area: 'start',
     keywords: 'troubleshooting problem push notification not arriving photos not saving pairing sign in error blocked',
     text: {
       en: {
@@ -387,6 +424,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
   },
   {
     id: 'offline',
+    area: 'start',
     keywords: 'offline no internet sync connection signal',
     text: {
       en: {
@@ -432,6 +470,9 @@ export const HELP_ARTICLES: HelpArticle[] = [
     },
   },
 ];
+
+/** Every article: the core how-tos first, then one per main area. */
+export const HELP_ARTICLES: HelpArticle[] = [...CORE_ARTICLES, ...AREA_ARTICLES];
 
 /** Article text in a language (English fallback). */
 export const articleText = (a: HelpArticle, lang: Language): ArticleText => a.text[lang] || a.text.en;

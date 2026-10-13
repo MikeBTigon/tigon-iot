@@ -1,6 +1,9 @@
-# Builds the TIGON IOT phone apps (Capacitor shell around the web app in frontend/).
-# - Android: the signed APK (the same app the website offers at /downloads/tigon-iot.apk after a deploy).
-# - iOS: a compile check for the simulator (App Store builds need an Apple Developer account).
+# Compile checks for the TIGON IOT phone apps (Capacitor shell around the web app in frontend/).
+# - Android: runs when native files change (pull requests, branches). Builds a DEBUG app (testing only;
+#   it can't update the real app). Run it by hand with "release" ticked to get the signed release APK as a
+#   download (needs the ANDROID_KEYSTORE_* secrets). The public APK is built by firebase-deploy.yml.
+# - iOS: a compile check for the simulator, only when frontend/ios changed, nightly, or by hand
+#   (App Store builds need an Apple Developer account).
 #
 # Optional repository secrets:
 #   GOOGLE_SERVICES_JSON          contents of google-services.json (Android push alerts)
@@ -8,14 +11,82 @@
 name: Build phone apps
 
 on:
-  push:
+  pull_request:
     paths:
-      - 'frontend/**'
+      - 'frontend/android/**'
+      - 'frontend/ios/**'
+      - 'frontend/capacitor.config.ts'
+      - 'frontend/package.json'
+      - 'frontend/package-lock.json'
+      - 'scripts/build-android.sh'
       - '.github/workflows/mobile-build.yml'
+  push:
+    branches-ignore: [main]
+    paths:
+      - 'frontend/android/**'
+      - 'frontend/ios/**'
+      - 'frontend/capacitor.config.ts'
+      - 'frontend/package.json'
+      - 'frontend/package-lock.json'
+      - 'scripts/build-android.sh'
+      - '.github/workflows/mobile-build.yml'
+  schedule:
+    - cron: '17 7 * * *'   # nightly iOS compile check (07:17 UTC)
   workflow_dispatch:
+    inputs:
+      release:
+        description: Build the signed release APK (instead of a debug build)
+        type: boolean
+        default: false
+      ios:
+        description: Also run the iOS compile check
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
+  changes:
+    runs-on: ubuntu-24.04
+    outputs:
+      android: ${{ steps.diff.outputs.android }}
+      ios: ${{ steps.diff.outputs.ios }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: What changed?
+        id: diff
+        env:
+          BASE_PR: ${{ github.event.pull_request.base.sha }}
+          BEFORE: ${{ github.event.before }}
+          RUN_IOS: ${{ inputs.ios }}
+        run: |
+          case "$GITHUB_EVENT_NAME" in
+            schedule) echo "android=false" >> "$GITHUB_OUTPUT"; echo "ios=true" >> "$GITHUB_OUTPUT"; exit 0 ;;
+            workflow_dispatch) echo "android=true" >> "$GITHUB_OUTPUT"; echo "ios=${RUN_IOS:-false}" >> "$GITHUB_OUTPUT"; exit 0 ;;
+          esac
+          BASE="${BASE_PR:-$BEFORE}"
+          android=$(scripts/android-changed.sh "$BASE" HEAD)
+          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            ios=true
+          elif git diff --name-only "$BASE" HEAD | grep -qE '^(frontend/ios/|frontend/capacitor\.config\.ts$)'; then
+            ios=true
+          else
+            ios=false
+          fi
+          echo "android=$android" >> "$GITHUB_OUTPUT"
+          echo "ios=$ios" >> "$GITHUB_OUTPUT"
+          echo "android=$android ios=$ios"
+
   android:
+    needs: changes
+    if: needs.changes.outputs.android == 'true'
     runs-on: ubuntu-24.04
     defaults:
       run:
@@ -26,6 +97,8 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
 
       - uses: actions/setup-java@v5
         with:
@@ -37,10 +110,30 @@ jobs:
           npm ci
           npm run build
 
-      - name: Build signed APK
+      - name: Build debug APK (testing only)
+        if: inputs.release != true
         env:
           GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
         run: |
+          npx cap sync android
+          if [ -n "$GOOGLE_SERVICES_JSON" ]; then printf '%s' "$GOOGLE_SERVICES_JSON" > android/app/google-services.json; fi
+          (cd android && ./gradlew assembleDebug --no-daemon)
+          mkdir -p android/app/build/outputs/tigon
+          cp android/app/build/outputs/apk/debug/app-debug.apk android/app/build/outputs/tigon/tigon-iot-debug.apk
+
+      # Fails (on purpose) without the signing-key secrets: a release APK is never unsigned or debug-signed.
+      - name: Build signed release APK
+        if: inputs.release == true
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ] || [ -z "$ANDROID_KEYSTORE_PASSWORD" ]; then
+            echo "::error::The Android app can't be signed: add the repository secrets ANDROID_KEYSTORE_BASE64 and ANDROID_KEYSTORE_PASSWORD (docs/RUNBOOK.md 'Android signing key')."
+            exit 1
+          fi
           if [ -z "$GOOGLE_SERVICES_JSON" ]; then
             echo "::warning::GOOGLE_SERVICES_JSON secret not set - the app builds, but push alerts won't work."
           fi
@@ -48,12 +141,16 @@ jobs:
 
       - uses: actions/upload-artifact@v6
         with:
-          name: tigon-iot-android-apk
+          name: ${{ inputs.release == true && 'tigon-iot-android-release' || 'tigon-iot-android-debug' }}
           path: |
-            frontend/android/app/build/outputs/tigon/tigon-iot.apk
+            frontend/android/app/build/outputs/tigon/*.apk
             frontend/android/app/build/outputs/tigon/version.json
+          if-no-files-found: error
+          retention-days: 14
 
   ios:
+    needs: changes
+    if: needs.changes.outputs.ios == 'true'
     runs-on: macos-latest
     defaults:
       run:
@@ -64,6 +161,8 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
 
       - name: Build web app
         run: |
@@ -87,4 +186,4 @@ jobs:
             -configuration Debug -sdk iphonesimulator \
             -destination 'generic/platform=iOS Simulator' \
             CODE_SIGNING_ALLOWED=NO build | tail -40
-          exit ${PIPESTATUS[0]}
+          exit "${PIPESTATUS[0]}"

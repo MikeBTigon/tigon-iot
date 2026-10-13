@@ -34,7 +34,7 @@ public class EchoPlugin extends Plugin {
         SharedPreferences.Editor e = EchoStore.prefs(getContext()).edit();
         if (call.hasOption("deviceId")) e.putString("deviceId", call.getString("deviceId", ""));
         if (call.hasOption("secret")) e.putString("secret", call.getString("secret", ""));
-        if (call.hasOption("endpoint")) e.putString("endpoint", call.getString("endpoint", EchoStore.DEFAULT_ENDPOINT));
+        if (call.hasOption("endpoint")) e.putString("endpoint", EchoStore.safeEndpoint(call.getString("endpoint", EchoStore.DEFAULT_ENDPOINT)));
         if (call.hasOption("enabled")) e.putBoolean("enabled", Boolean.TRUE.equals(call.getBoolean("enabled", true)));
         if (call.hasOption("onlyFacebook")) e.putBoolean("onlyFacebook", Boolean.TRUE.equals(call.getBoolean("onlyFacebook", false)));
         e.apply();

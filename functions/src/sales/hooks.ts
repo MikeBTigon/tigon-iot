@@ -15,12 +15,28 @@ import {onLeadUpdatedTexting, onNewLeadTexting, textingTick} from './texting';
 import {appointmentTick} from './closing';
 import {inventoryDaily} from './inventory';
 import {marketingDaily, onLeadUpdatedMarketing, onNewLeadMarketing} from './marketing';
+import {raiseSystemAlert} from '../alerts';
 
-async function safe(name: string, fn: () => Promise<unknown>) {
+const LABEL: Record<string, string> = {
+  assignNewLead: 'New-lead assignment', onNewLeadTexting: 'New-lead auto-text', onNewLeadMarketing: 'Referral credit',
+  onLeadUpdatedTexting: 'Lead-change texting', onLeadUpdatedMarketing: 'Referral rewards', speedTick: 'Speed-to-lead alerts',
+  textingTick: 'Texting queue', appointmentTick: 'Appointment reminders', dailyCallList: 'Daily call list',
+  inventoryDaily: 'Aged-inventory summary', marketingDaily: 'Google reviews refresh',
+};
+
+/** Runs one track's handler; a failure is logged and raised as a system alert (once a day per handler). */
+async function safe(name: string, fn: () => Promise<unknown>): Promise<boolean> {
   try {
     await fn();
+    return true;
   } catch (e) {
     logger.error(`sales: ${name} failed`, e);
+    const what = LABEL[name] || name;
+    await raiseSystemAlert({
+      key: `sales_${name}`, title: `${what} failed`, severity: 'error',
+      text: `${what} failed: ${e instanceof Error ? e.message : String(e)}`.slice(0, 600),
+    });
+    return false;
   }
 }
 
@@ -31,11 +47,23 @@ export const mpSalesLeadCreated = onDocumentCreated(`${C.leads}/{id}`, async (ev
   const s = await loadSalesSettings();
   let lead = snap.data() as Json;
   await safe('assignNewLead', async () => {
-    const patch = await assignNewLead(id, lead, s);
-    if (patch && Object.keys(patch).length) {
-      await snap.ref.set({...patch, updatedAt: Date.now()}, {merge: true});
-      lead = {...lead, ...patch};
+    // Retries (same event) or a second delivery must not assign twice.
+    const fresh = await snap.ref.get();
+    if (!fresh.exists) return;
+    const cur = fresh.data() as Json;
+    if (cur.assignedAt || cur.assignEventId === event.id) {
+      lead = {...lead, ...cur};
+      return;
     }
+    const patch = await assignNewLead(id, cur, s);
+    const written = await db().runTransaction(async (tx) => {
+      const now = await tx.get(snap.ref);
+      if (!now.exists || now.get('assignedAt') || now.get('assignEventId') === event.id) return null;
+      const p = {...(patch || {}), assignEventId: event.id, updatedAt: Date.now()};
+      tx.set(snap.ref, p, {merge: true});
+      return p;
+    });
+    if (written) lead = {...lead, ...written};
   });
   await safe('onNewLeadTexting', () => onNewLeadTexting(id, lead, s));
   await safe('onNewLeadMarketing', () => onNewLeadMarketing(id, lead, s));
@@ -59,18 +87,27 @@ export const mpSalesTick = onSchedule({schedule: 'every 5 minutes', timeZone: TZ
   await safe('appointmentTick', () => appointmentTick(now, s));
 });
 
-/** Runs `fn` at most once per New York day, at or after `hour`. */
-async function oncePerDay(key: string, hour: number, now: number, fn: () => Promise<unknown>) {
+/** A daily job holds this lease while running (the hourly function's timeout is 9 minutes). */
+const DAILY_LEASE_MS = 10 * 60_000;
+
+/**
+ * Runs `fn` at most once per New York day, at or after `hour`. A short lease stops overlapping runs; the "done today"
+ * marker is written only after `fn` succeeded, so a failed run is tried again the next hour (and raises an alert).
+ */
+export async function oncePerDay(key: string, hour: number, now: number, fn: () => Promise<unknown>) {
   if (nyParts(now).hour < hour) return;
   const today = nyDateKey(now);
   const ref = db().collection(C.meta).doc('sales_daily');
-  const ran = await db().runTransaction(async (tx) => {
+  const go = await db().runTransaction(async (tx) => {
     const s = await tx.get(ref);
     if (s.get(key) === today) return false;
-    tx.set(ref, {[key]: today, [`${key}At`]: now}, {merge: true});
+    if (Number(s.get(`${key}Lease`) || 0) > now) return false;
+    tx.set(ref, {[`${key}Lease`]: now + DAILY_LEASE_MS}, {merge: true});
     return true;
   });
-  if (ran) await safe(key, fn);
+  if (!go) return;
+  const ok = await safe(key, fn);
+  await ref.set(ok ? {[key]: today, [`${key}At`]: now, [`${key}Lease`]: 0} : {[`${key}Lease`]: 0, [`${key}FailedAt`]: Date.now()}, {merge: true});
 }
 
 export const mpSalesHourly = onSchedule({schedule: 'every 60 minutes', timeZone: TZ, timeoutSeconds: 540, memory: '512MiB'}, async () => {

@@ -14,6 +14,7 @@ import {
   setDoc,
   startAfter,
   updateDoc,
+  where,
   writeBatch,
   type Query,
   type QuerySnapshot,
@@ -24,6 +25,7 @@ import { db, functions } from '../config/firebase';
 import { useAuth } from '../context/AuthContext';
 import { COLLECTIONS, FETCH_BATCH, SEED_ACCOUNTS } from './constants';
 import { cartFromDoc } from './cartUtils';
+import { memberStatusOf } from '../auth/useMemberStatus';
 import type { MpAccount, MpCart, MpCartDoc, MpProfile, MpRole, MpSyncStatus } from './types';
 
 const BROKEN_KEY = 'mp.brokenPhotos';
@@ -34,7 +36,10 @@ interface MpData {
   isAdmin: boolean;
   /** Keys this user's posted state is stored under (uid + claimed legacy id). */
   userKeys: string[];
+  /** Everyone with a profile, including people waiting for approval or turned off. */
   users: MpProfile[];
+  /** Approved, active people only (use for assignment pickers). */
+  activeUsers: MpProfile[];
   userName: (key: string) => string;
   accounts: MpAccount[];
   carts: MpCart[];
@@ -117,7 +122,8 @@ export const MpDataProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     };
   }, [uid]);
 
-  const isMember = !!profile;
+  // Only approved people start the team listeners (pending/disabled people see the approval page).
+  const isMember = !!profile && memberStatusOf(profile) === 'active';
   const isAdmin = profile?.role === 'admin';
 
   // Accounts (live)
@@ -169,11 +175,15 @@ export const MpDataProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setCartsError('');
     setCartMap(new Map());
     let cursor: QueryDocumentSnapshot | null = null;
+    // Only in-stock carts (`active` is kept by the server). Until the server has marked any cart, read them all.
+    let onlyActive = true;
+    let seen = 0;
     try {
       for (;;) {
+        const base = onlyActive ? [where('active', '==', true), orderBy(documentId())] : [orderBy(documentId())];
         const q: Query = cursor
-          ? query(collection(db, COLLECTIONS.carts), orderBy(documentId()), startAfter(cursor), limit(FETCH_BATCH))
-          : query(collection(db, COLLECTIONS.carts), orderBy(documentId()), limit(FETCH_BATCH));
+          ? query(collection(db, COLLECTIONS.carts), ...base, startAfter(cursor), limit(FETCH_BATCH))
+          : query(collection(db, COLLECTIONS.carts), ...base, limit(FETCH_BATCH));
         const snap: QuerySnapshot = await getDocs(q);
         if (run !== loadRun.current) return;
         setCartMap((prev) => {
@@ -184,6 +194,11 @@ export const MpDataProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           }
           return next;
         });
+        seen += snap.docs.length;
+        if (onlyActive && !cursor && seen === 0) {
+          onlyActive = false;
+          continue;
+        }
         if (snap.docs.length < FETCH_BATCH) break;
         cursor = snap.docs[snap.docs.length - 1];
       }
@@ -313,6 +328,8 @@ export const MpDataProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           name: data.name,
           legacyId: data.legacyId || '',
           role: data.role || 'sales',
+          // New sign-ups wait for an admin's approval (the rules require it), except the bootstrap admin.
+          status: data.role === 'admin' ? 'active' : 'pending',
           createdAt: Date.now(),
         });
       }
@@ -371,6 +388,7 @@ export const MpDataProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     () => accounts.slice().sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.name.localeCompare(b.name)),
     [accounts],
   );
+  const activeUsers = useMemo(() => users.filter((u) => memberStatusOf(u) === 'active'), [users]);
   const userKeys = useMemo(() => [uid, profile?.legacyId].filter(Boolean) as string[], [uid, profile?.legacyId]);
 
   const value: MpData = {
@@ -378,6 +396,7 @@ export const MpDataProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     isAdmin,
     userKeys,
     users,
+    activeUsers,
     userName,
     accounts: sortedAccounts,
     carts,

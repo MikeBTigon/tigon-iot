@@ -1,20 +1,25 @@
 import React, { useMemo, useState } from 'react';
+import { doc, updateDoc } from 'firebase/firestore';
 import {
-  Alert, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, IconButton, InputLabel,
+  Alert, Badge, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, IconButton, InputLabel,
   MenuItem, Paper, Select, TextField, Typography,
 } from '@mui/material';
-import { Add, Delete, DragIndicator, Edit } from '@mui/icons-material';
+import { Add, Delete, DragIndicator, Edit, HowToReg } from '@mui/icons-material';
+import { db } from '../../config/firebase';
+import { memberStatusOf, type MemberStatus } from '../../auth/useMemberStatus';
 import MpShell from '../components/MpShell';
 import { useMp } from '../MpDataContext';
-import { ACCOUNT_GROUPS, LEGACY_USERS } from '../constants';
+import { ACCOUNT_GROUPS, COLLECTIONS, LEGACY_USERS } from '../constants';
 import { importLegacyData } from '../legacyImport';
 import { writeAudit } from '../audit';
 import AuditLogPanel from '../components/AuditLogPanel';
 import { ROLE_LABELS } from '../constants';
 import { timeAgo } from '../cartUtils';
-import type { MpAccount, MpRole } from '../types';
+import type { MpAccount, MpProfile, MpRole } from '../types';
 
 type Draft = Omit<MpAccount, 'id'> & { id?: string };
+/** mp_users doc as read here (status / createdAt aren't on the shared MpProfile type). */
+type Member = MpProfile & { status?: MemberStatus; createdAt?: number };
 
 const MpAccounts: React.FC = () => {
   const { accounts, saveAccount, deleteAccount, users, setUserRole, userName, carts, deleteCarts, reloadCarts, seedAccounts, profile, syncStatus, syncNow } = useMp();
@@ -29,6 +34,29 @@ const MpAccounts: React.FC = () => {
     const names = [...new Set([...ACCOUNT_GROUPS, ...accounts.map((a) => a.group || 'Other')])];
     return names.map((g) => [g, accounts.filter((a) => (a.group || 'Other') === g)] as const);
   }, [accounts]);
+
+  const team = users as Member[];
+  const pending = useMemo(
+    () => team.filter((u) => memberStatusOf(u) === 'pending').sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)),
+    [team],
+  );
+  const members = useMemo(() => team.filter((u) => memberStatusOf(u) !== 'pending'), [team]);
+
+  /** Approve / reject / turn off / turn back on (admins only — see firestore.rules mp_users). */
+  const changeMemberStatus = (u: Member, next: MemberStatus) => {
+    const who = u.name || u.email;
+    const verb = next === 'active'
+      ? (memberStatusOf(u) === 'pending' ? 'approved' : 'turned back on')
+      : (memberStatusOf(u) === 'pending' ? 'rejected' : 'turned off');
+    if (next === 'disabled' && !window.confirm(memberStatusOf(u) === 'pending'
+      ? `Reject ${who}? They won't be able to use TIGON IOT.`
+      : `Turn off ${who}? They lose access right away. You can turn them back on later.`)) return;
+    const action = next === 'active' ? (memberStatusOf(u) === 'pending' ? 'user.approve' : 'user.enable') : (memberStatusOf(u) === 'pending' ? 'user.reject' : 'user.disable');
+    run('Saving…', async () => {
+      await updateDoc(doc(db, COLLECTIONS.users, u.uid), { status: next, statusBy: profile?.uid || '', statusAt: Date.now() });
+      return `${who} ${verb}.`;
+    }, action);
+  };
 
   const ownerOptions = useMemo(() => {
     const opts = users.map((u) => ({ value: u.uid, label: u.name || u.email }));
@@ -111,26 +139,66 @@ const MpAccounts: React.FC = () => {
         ))}
       </Box>
 
+      <Box id="approvals" sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1 }}>
+        <Badge badgeContent={pending.length} color="error" overlap="circular">
+          <HowToReg color={pending.length ? 'primary' : 'disabled'} aria-hidden />
+        </Badge>
+        <Typography variant="h5">Waiting for approval</Typography>
+      </Box>
+      <Paper sx={{ p: 2, mb: 4 }}>
+        {pending.length === 0 ? (
+          <Typography color="text.secondary">Nobody is waiting. New people who sign up show up here for you to approve.</Typography>
+        ) : (
+          <>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+              These people signed up and can't use the app until you approve them. Only approve people you know work at TIGON.
+            </Typography>
+            {pending.map((u) => (
+              <Box key={u.uid} sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 0.75, flexWrap: 'wrap' }}>
+                <Box sx={{ flexGrow: 1, minWidth: 180 }}>
+                  <Typography sx={{ fontWeight: 600 }}>{u.name || u.email}</Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {u.email}{u.createdAt ? ` · signed up ${timeAgo(u.createdAt)}` : ''}
+                  </Typography>
+                </Box>
+                <Button size="small" variant="contained" disabled={busy} onClick={() => changeMemberStatus(u, 'active')}>Approve</Button>
+                <Button size="small" color="error" disabled={busy} onClick={() => changeMemberStatus(u, 'disabled')}>Reject</Button>
+              </Box>
+            ))}
+          </>
+        )}
+      </Paper>
+
       <Typography variant="h5" gutterBottom>Team</Typography>
       <Paper sx={{ p: 2, mb: 4 }}>
-        {users.map((u) => (
-          <Box key={u.uid} sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 0.75, flexWrap: 'wrap' }}>
-            <Box sx={{ flexGrow: 1 }}>
-              <Typography sx={{ fontWeight: 600 }}>{u.name}</Typography>
-              <Typography variant="caption" color="text.secondary">{u.email}{u.legacyId ? ` · legacy: ${u.legacyId}` : ''}</Typography>
+        {members.map((u) => {
+          const off = memberStatusOf(u) === 'disabled';
+          const self = u.uid === profile?.uid;
+          return (
+            <Box key={u.uid} sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 0.75, flexWrap: 'wrap', opacity: off ? 0.7 : 1 }}>
+              <Box sx={{ flexGrow: 1, minWidth: 180 }}>
+                <Typography sx={{ fontWeight: 600 }}>
+                  {u.name}
+                  {off && <Chip size="small" label="Turned off" sx={{ ml: 1 }} />}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">{u.email}{u.legacyId ? ` · legacy: ${u.legacyId}` : ''}</Typography>
+              </Box>
+              <Select
+                size="small"
+                value={u.role}
+                disabled={self || off}
+                onChange={(e) => run('Updating role…', () => setUserRole(u.uid, e.target.value as MpRole).then(() => `${u.name} is now ${ROLE_LABELS[e.target.value] || e.target.value}.`), 'user.role')}
+              >
+                <MenuItem value="admin">Admin</MenuItem>
+                <MenuItem value="manager">Manager</MenuItem>
+                <MenuItem value="sales">Member</MenuItem>
+              </Select>
+              {!self && (off
+                ? <Button size="small" disabled={busy} onClick={() => changeMemberStatus(u, 'active')}>Turn back on</Button>
+                : <Button size="small" color="error" disabled={busy} onClick={() => changeMemberStatus(u, 'disabled')}>Turn off</Button>)}
             </Box>
-            <Select
-              size="small"
-              value={u.role}
-              disabled={u.uid === profile?.uid}
-              onChange={(e) => run('Updating role…', () => setUserRole(u.uid, e.target.value as MpRole).then(() => `${u.name} is now ${ROLE_LABELS[e.target.value] || e.target.value}.`), 'user.role')}
-            >
-              <MenuItem value="admin">Admin</MenuItem>
-              <MenuItem value="manager">Manager</MenuItem>
-              <MenuItem value="sales">Member</MenuItem>
-            </Select>
-          </Box>
-        ))}
+          );
+        })}
       </Paper>
 
       <Typography variant="h5" gutterBottom>Maintenance</Typography>

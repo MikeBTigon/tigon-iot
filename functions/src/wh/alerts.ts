@@ -1,9 +1,10 @@
 // Webhook Flows — hourly alerts: websites with no leads, and step-failure spikes.
 // Alerts land in mp_alerts and as IoT notifications (→ phone push). State: wh_settings/alert_state.
-import * as admin from 'firebase-admin';
+import {FieldValue} from 'firebase-admin/firestore';
 import * as logger from 'firebase-functions/logger';
 import {onSchedule} from 'firebase-functions/v2/scheduler';
 import {WH} from './types';
+import {notificationExpireAt} from '../sales/util';
 import type {WhDomain, WhWebhook} from './types';
 import {resolveSettings} from './shared';
 import {db, loadFlow, loadGlobal} from './config';
@@ -20,7 +21,7 @@ export async function raiseWhAlert(alert: Record<string, unknown> & {kind: strin
   let uids = (notifyUids || []).filter(Boolean);
   if (!uids.length) {
     const managers = await db().collection('mp_users').where('role', 'in', ['admin', 'manager']).get();
-    uids = managers.docs.map((d) => d.id);
+    uids = managers.docs.filter((d) => d.get('status') !== 'pending' && d.get('status') !== 'disabled').map((d) => d.id);
   }
   const batch = db().batch();
   for (const uid of Array.from(new Set(uids)).slice(0, 400)) {
@@ -29,7 +30,8 @@ export async function raiseWhAlert(alert: Record<string, unknown> & {kind: strin
       sourceDeviceName: 'Webhook Flows',
       text: alert.text,
       isHandled: false,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdAt: FieldValue.serverTimestamp(),
+      expireAt: notificationExpireAt(),
       source: 'wh_alert',
       alertId: ref.id,
     });

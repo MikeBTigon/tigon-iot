@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  Alert, Box, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, InputAdornment, TextField, Typography,
+  Alert, Box, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, InputAdornment, TextField, Typography, useMediaQuery, useTheme,
 } from '@mui/material';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../config/firebase';
@@ -16,8 +16,10 @@ import type { Customer, Lead } from '../growthTypes';
  * optionally saves the buyer as a customer (with opt-in) and offers a review request.
  */
 export default function MarkSoldDialog({ lead, onClose }: { lead: Lead | null; onClose: () => void }) {
+  const theme = useTheme();
+  const phone = useMediaQuery(theme.breakpoints.down('sm'));
   return (
-    <Dialog open={!!lead} onClose={onClose} fullWidth maxWidth="sm">
+    <Dialog open={!!lead} onClose={onClose} fullWidth maxWidth="sm" fullScreen={phone}>
       {lead && <SoldBody key={lead.id} lead={lead} onClose={onClose} />}
     </Dialog>
   );

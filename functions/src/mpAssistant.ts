@@ -4,8 +4,11 @@ import * as logger from 'firebase-functions/logger';
 import {HttpsError, onCall} from 'firebase-functions/v2/https';
 import {onSchedule} from 'firebase-functions/v2/scheduler';
 import * as admin from 'firebase-admin';
+import {FieldValue} from 'firebase-admin/firestore';
 import {createHash} from 'crypto';
-import {handleCartSold, nextPriceHistory, priceDropOf, stockedAtOf} from './sales/inventory';
+import {cartActive, dmsDeleteFlag, handleCartSold, nextPriceHistory, priceDropOf, stockedAtOf} from './sales/inventory';
+import {raiseSystemAlert} from './alerts';
+import {isInactiveStatus} from './membership';
 import {loadSalesSettings} from './sales/settings';
 import {cartSummary} from './sales/util';
 
@@ -13,6 +16,12 @@ const DMS_API_BASE = 'https://api.tigondms.com/wp-website';
 const DEFAULT_IMAGE_BASE = 'https://s3.amazonaws.com/prod.docs.s3/default-cart-web-images/';
 const PAGE_SIZE = 100;
 const MAX_PAGES = 200;
+/** Each DMS request gives up after this. */
+const REQUEST_TIMEOUT_MS = 30_000;
+/** The whole sync stops (ok: false) after this, well inside the 540 s function timeout. */
+const SYNC_DEADLINE_MS = 480_000;
+/** Another run holding the lease for less than this → skip (scheduled + "Sync now" never overlap). */
+const LEASE_MS = 9 * 60_000;
 
 const CARTS = 'mp_carts';
 const USERS = 'mp_users';
@@ -71,13 +80,20 @@ function extractCarts(json: unknown, depth = 0): Json[] {
   return best;
 }
 
-async function fetchAllCarts(): Promise<Json[]> {
+class SyncDeadline extends Error {}
+const checkDeadline = (deadline: number, what: string) => {
+  if (Date.now() > deadline) throw new SyncDeadline(`DMS sync stopped after ${Math.round(SYNC_DEADLINE_MS / 1000)} s (${what}) — the DMS is too slow; nothing was removed.`);
+};
+
+async function fetchAllCarts(deadline: number): Promise<Json[]> {
   const byId = new Map<string, Json>();
   for (let page = 0; page < MAX_PAGES; page++) {
+    checkDeadline(deadline, `reading page ${page + 1}`);
     const res = await fetch(`${DMS_API_BASE}/get-carts`, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({pageNumber: page, pageSize: PAGE_SIZE, isAllCarts: true}),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
     if (!res.ok) throw new Error(`DMS get-carts page ${page} failed: HTTP ${res.status}`);
     const carts = extractCarts(await res.json());
@@ -98,7 +114,7 @@ async function resolveDefaultImages(c: Json, cache: Map<string, boolean>): Promi
   const exists = async (file: string) => {
     if (!cache.has(file)) {
       try {
-        const r = await fetch(DEFAULT_IMAGE_BASE + file, {method: 'HEAD'});
+        const r = await fetch(DEFAULT_IMAGE_BASE + file, {method: 'HEAD', signal: AbortSignal.timeout(10_000)});
         cache.set(file, r.ok);
       } catch {
         cache.set(file, false);
@@ -127,27 +143,62 @@ export interface SyncResult {
   removedSold: number;
   skippedDelete: number;
   warning?: string;
+  /** Another sync was already running. */
+  skipped?: string;
+}
+
+/** One-time: app-made / imported carts without `active` get it (read in full, since the payload decides). */
+async function backfillActive(db: admin.firestore.Firestore, docs: admin.firestore.QueryDocumentSnapshot[]) {
+  for (let i = 0; i < docs.length; i += 100) {
+    const full = await db.getAll(...docs.slice(i, i + 100).map((d) => d.ref));
+    const b = db.batch();
+    let n = 0;
+    for (const s of full) {
+      if (!s.exists) continue;
+      b.update(s.ref, {active: cartActive(s.data() || {})});
+      n++;
+    }
+    if (n) await b.commit();
+  }
+}
+
+/** Takes the sync lease (mp_meta/sync.leaseUntil). False when another run holds it. */
+async function takeLease(ref: admin.firestore.DocumentReference, now: number, trigger: string): Promise<boolean> {
+  return admin.firestore().runTransaction(async (tx) => {
+    const s = await tx.get(ref);
+    if (Number(s.get('leaseUntil') || 0) > now) return false;
+    tx.set(ref, {leaseUntil: now + LEASE_MS, leaseBy: trigger}, {merge: true});
+    return true;
+  });
 }
 
 export async function syncInventory(trigger: string): Promise<SyncResult> {
   const db = admin.firestore();
   const started = Date.now();
   const statusRef = db.doc(SYNC_STATUS);
+  if (!(await takeLease(statusRef, started, trigger))) {
+    logger.info('mpSync skipped: another sync is running', {trigger});
+    return {fetched: 0, inStock: 0, written: 0, unchanged: 0, removedSold: 0, skippedDelete: 0, skipped: 'Another sync is already running — try again in a few minutes.'};
+  }
+  const deadline = started + SYNC_DEADLINE_MS;
   try {
-    const all = await fetchAllCarts();
+    const all = await fetchAllCarts(deadline);
     const inStock: Json[] = [];
+    // Carts the DMS explicitly flags for deletion: dropped from the app, but NOT treated as sold (no texts/notices).
+    const deleteFlagged = new Set<string>();
     let skippedDelete = 0;
     for (const c of all) {
       if (c.isInStock === false || str(c.status).toLowerCase() === 'sold') continue;
-      if (/delete/i.test(JSON.stringify(c))) {
+      if (dmsDeleteFlag(c)) {
         skippedDelete++;
+        if (cartId(c)) deleteFlagged.add(cartId(c));
         continue;
       }
       inStock.push(c);
     }
 
     const existing = await db.collection(CARTS)
-      .select('payloadHash', 'serial', 'dmsId', 'source', 'price', 'priceHistory', 'firstSeenAt', 'stockedAt').get();
+      .select('payloadHash', 'serial', 'dmsId', 'source', 'price', 'priceHistory', 'firstSeenAt', 'stockedAt', 'soldLocally', 'active').get();
     const sales = await loadSalesSettings(true);
     const existingById = new Map(existing.docs.map((d) => [d.id, d]));
 
@@ -162,7 +213,9 @@ export async function syncInventory(trigger: string): Promise<SyncResult> {
 
     let written = 0;
     let unchanged = 0;
+    const priceChanges: Array<{id: string; data: Json}> = [];
     for (const c of inStock) {
+      checkDeadline(deadline, 'saving carts');
       const id = cartId(c);
       const doc = {...c};
       if (!isUsed(c) && !hasPhotos(c)) {
@@ -176,8 +229,10 @@ export async function syncInventory(trigger: string): Promise<SyncResult> {
       const firstSeenAt = Number(prev?.get('firstSeenAt')) || prev?.createTime?.toMillis() || started;
       if (prev?.get('payloadHash') === payloadHash) {
         unchanged++;
-        if (!prev.get('firstSeenAt') || !prev.get('stockedAt')) {
-          writer.set(prev.ref, {firstSeenAt, stockedAt: stockedAtOf(c, firstSeenAt, started).at}, {merge: true});
+        const activeNow = prev.get('soldLocally') !== true;
+        if (!prev.get('firstSeenAt') || !prev.get('stockedAt') || prev.get('active') !== activeNow) {
+          // (also the one-time backfill of `active` on carts written before it existed)
+          writer.set(prev.ref, {firstSeenAt, stockedAt: stockedAtOf(c, firstSeenAt, started).at, active: activeNow}, {merge: true});
           if (++ops >= 450) await flush();
         }
         continue;
@@ -190,11 +245,11 @@ export async function syncInventory(trigger: string): Promise<SyncResult> {
       const drop = prev && prev.get('price') !== undefined ? priceDropOf(prev.get('price'), price, sales.priceDrop.minDropPct) : null;
       if (drop) {
         priceFields.lastPriceDropAt = started;
-        writer.create(db.collection('mp_price_changes').doc(`${id.replace(/[^A-Za-z0-9_-]/g, '_')}_${started}`), {
+        // One doc per cart + new price: a second sync run (or a retry) can't announce the same drop twice.
+        priceChanges.push({id: `${id.replace(/[^A-Za-z0-9_-]/g, '_')}_${Math.round(drop.newPrice * 100)}`, data: {
           cartId: id, cartTitle: cartSummary({payload}).title, oldPrice: drop.oldPrice, newPrice: drop.newPrice, dropPct: drop.pct,
           at: started, locationId: locationOf(c), leadsTexted: 0, accountsToEdit: [],
-        });
-        ops++;
+        }});
       }
       const stocked = stockedAtOf(c, firstSeenAt, started);
       writer.set(db.collection(CARTS).doc(id), {
@@ -209,12 +264,22 @@ export async function syncInventory(trigger: string): Promise<SyncResult> {
         firstSeenAt,
         stockedAt: stocked.at,
         stockedAtSource: stocked.source,
+        // In stock in the DMS; sold in the app → not active.
+        active: prev?.get('soldLocally') !== true,
         ...priceFields,
       }, {merge: true});
       written++;
       if (++ops >= 450) await flush();
     }
     await flush();
+    await backfillActive(db, existing.docs.filter((d) => /^(manual|import:)/.test(str(d.get('source'))) && typeof d.get('active') !== 'boolean'));
+    for (const pc of priceChanges) {
+      try {
+        await db.collection('mp_price_changes').doc(pc.id).create(pc.data);
+      } catch (e) {
+        if ((e as {code?: number}).code !== 6) logger.warn('mpSync: price change not saved', pc.id, e); // 6 = already announced
+      }
+    }
 
     // Anything no longer in stock in DMS is sold → remove. Guard against a bad/partial API response.
     const ids = new Set(inStock.map(cartId));
@@ -233,17 +298,27 @@ export async function syncInventory(trigger: string): Promise<SyncResult> {
       warning = `Skipped removing ${stale.length} carts: DMS returned ${inStock.length} in-stock carts, which looks incomplete.`;
     } else {
       // Sold-cart clean-up (idea 13): tell posters and text interested leads before the cart is gone.
+      let soldErrors = 0;
+      let soldError = '';
       for (let i = 0; i < stale.length; i += 100) {
+        checkDeadline(deadline, 'sold-cart clean-up');
         const full = await db.getAll(...stale.slice(i, i + 100).map((d) => d.ref));
         for (const snap of full) {
-          // Carts marked sold in the app were already handled by mpCartSold.
+          // Carts marked sold in the app were already handled by mpCartSold; delete-flagged carts didn't sell.
           if (!snap.exists || snap.get('soldLocally') === true) continue;
+          if (deleteFlagged.has(snap.id) || deleteFlagged.has(str(snap.get('dmsId')))) continue;
           try {
             await handleCartSold(snap.id, snap.data() || {}, sales, 'dms');
           } catch (e) {
+            soldErrors++;
+            soldError = e instanceof Error ? e.message : String(e);
             logger.warn('mpSync: sold clean-up failed', snap.id, e);
           }
         }
+      }
+      if (soldErrors) {
+        await raiseSystemAlert({key: 'dms_sold_cleanup', title: 'Sold-cart clean-up failed',
+          text: `Sold-cart clean-up failed for ${soldErrors} cart(s) during the DMS sync: ${soldError}`.slice(0, 600)});
       }
       for (const d of stale) {
         writer.delete(d.ref);
@@ -258,14 +333,15 @@ export async function syncInventory(trigger: string): Promise<SyncResult> {
       ...(warning ? {warning} : {}),
     };
     await statusRef.set({
-      ok: true, trigger, startedAt: started, finishedAt: Date.now(), ...result, error: admin.firestore.FieldValue.delete(),
+      ok: true, trigger, startedAt: started, finishedAt: Date.now(), ...result, error: FieldValue.delete(),
+      leaseUntil: 0,
     }, {merge: true});
     logger.info('mpSync done', {trigger, ...result});
     return result;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     logger.error('mpSync failed', err);
-    await statusRef.set({ok: false, trigger, startedAt: started, finishedAt: Date.now(), error: message}, {merge: true});
+    await statusRef.set({ok: false, trigger, startedAt: started, finishedAt: Date.now(), error: message, leaseUntil: 0}, {merge: true});
     throw err;
   }
 }
@@ -274,7 +350,8 @@ export async function syncInventory(trigger: string): Promise<SyncResult> {
 export const mpSyncInventory = onSchedule(
   {schedule: 'every 60 minutes', timeZone: 'America/New_York', timeoutSeconds: 540, memory: '512MiB'},
   async () => {
-    await syncInventory('schedule');
+    // A failure is recorded in mp_meta/sync (ok: false) and alerted by mpMonitor / mpHealth.
+    await syncInventory('schedule').catch(() => undefined);
   },
 );
 
@@ -282,7 +359,7 @@ export const mpSyncInventory = onSchedule(
 export const mpSyncNow = onCall({timeoutSeconds: 540, memory: '512MiB'}, async (req) => {
   if (!req.auth) throw new HttpsError('unauthenticated', 'Sign in first');
   const profile = await admin.firestore().collection(USERS).doc(req.auth.uid).get();
-  if (!profile.exists || profile.get('role') !== 'admin') {
+  if (!profile.exists || profile.get('role') !== 'admin' || isInactiveStatus(profile.get('status'))) {
     throw new HttpsError('permission-denied', 'MP Assistant admin role required');
   }
   try {

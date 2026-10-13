@@ -4,7 +4,6 @@
       "source": "functions",
       "codebase": "default",
       "runtime": "nodejs22",
-      "region": "us-east4",
       "ignore": [
         "node_modules",
         ".git",
@@ -75,6 +74,13 @@
         }
       },
       {
+        "source": "/api/credit/**",
+        "function": {
+          "functionId": "mpCreditApi",
+          "region": "us-central1"
+        }
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }
@@ -91,6 +97,15 @@
       },
       {
         "source": "/index.html",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache"
+          }
+        ]
+      },
+      {
+        "source": "/build-info.json",
         "headers": [
           {
             "key": "Cache-Control",

@@ -1,7 +1,7 @@
 // Track 5 — Marketing & managers (ideas 16, 17, 18): Google reviews + new-arrival posts, referral program, sales funnel.
 // The funnel is computed in the browser (frontend/src/mp/sales/marketing/marketingCalc.ts); the server keeps the Google
 // review snapshots (mp_reviews) and the referral codes and rewards (mp_referrals).
-import * as admin from 'firebase-admin';
+import {FieldValue} from 'firebase-admin/firestore';
 import * as logger from 'firebase-functions/logger';
 import {HttpsError, onCall} from 'firebase-functions/v2/https';
 import {loadSalesSettings} from './settings';
@@ -12,6 +12,8 @@ import {
 } from './util';
 import type {Json, Person} from './util';
 import {PublicError} from './publicTypes';
+import {consentRecord, phoneDailyCap} from './publicGuard';
+import {isInactiveStatus} from '../membership';
 import type {PublicHandler} from './publicTypes';
 
 // ===========================================================================
@@ -111,7 +113,7 @@ export async function refreshStoreReviews(storeId: string, placeId: string, s: S
     storeId, placeId, name: place.name, rating: place.rating, count: place.count, googleMapsUri: place.mapsUri,
     latest: place.reviews.map((r) => clean({author: r.author, rating: r.rating, text: r.text, time: r.time, uri: r.uri})),
     history, countWeekAgo: countDaysAgo(history, now, 7), countMonthAgo: countDaysAgo(history, now, 30),
-    seenIds, lastSeenTime, updatedAt: now, error: admin.firestore.FieldValue.delete(),
+    seenIds, lastSeenTime, updatedAt: now, error: FieldValue.delete(),
   }), {merge: true});
 
   const city = storeCity(storeId) || storeId;
@@ -160,7 +162,7 @@ export async function marketingDaily(now: number, s: SalesSettings): Promise<voi
 export const mpReviewsRefresh = onCall({timeoutSeconds: 120}, async (req) => {
   if (!req.auth) throw new HttpsError('unauthenticated', 'Sign in first');
   const me = (await db().collection(C.users).doc(req.auth.uid).get()).data() || {};
-  if (!isManagerRole(String(me.role || ''))) throw new HttpsError('permission-denied', 'Only managers can refresh reviews');
+  if (!isManagerRole(String(me.role || '')) || isInactiveStatus(me.status)) throw new HttpsError('permission-denied', 'Only managers can refresh reviews');
   const s = await loadSalesSettings(true);
   if (!Object.values(s.reviews.placeIds || {}).some((p) => String(p || '').trim())) {
     return {stores: 0, errors: [], message: 'No Place IDs yet — add them in Sell more settings → Reviews & referrals.'};
@@ -174,10 +176,10 @@ export const mpReviewsRefresh = onCall({timeoutSeconds: 120}, async (req) => {
 // 17. Referral program
 // ===========================================================================
 
-/** "maria" + 4 random characters. */
+/** "maria" + 8 random characters (cryptographically random, so codes can't be guessed). */
 export function referralCodeFor(name: unknown): string {
   const first = String(name || '').trim().split(/\s+/)[0].toLowerCase().normalize('NFD').replace(/[^a-z]/g, '').slice(0, 12) || 'friend';
-  return `${first}${code(4)}`;
+  return `${first}${code(8)}`;
 }
 
 export const referralLink = (c: string) => `${PUBLIC_ORIGIN}/r/${c}`;
@@ -234,7 +236,7 @@ export async function creditReferralLead(leadId: string, referralCode: string, n
     if (ref.leadId && ref.leadId === leadId) return false; // can't refer yourself
     const note = `Referred by ${ref.name || 'a customer'}`;
     const notes = String(lead.notes || '');
-    tx.update(refRef, {leads: admin.firestore.FieldValue.increment(1), lastUsedAt: now});
+    tx.update(refRef, {leads: FieldValue.increment(1), lastUsedAt: now});
     tx.update(leadRef, {
       referralCountedAt: now, referralCode: c,
       notes: notes.includes(note) ? notes : (notes ? `${notes}\n${note}` : note),
@@ -337,14 +339,17 @@ const submitReferral: PublicHandler = async (req) => {
   if (!name) throw new PublicError(400, 'Please enter your name.');
   if (!phone) throw new PublicError(400, 'Please enter a 10-digit phone number.');
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new PublicError(400, 'That email doesn\'t look right.');
-  if (b.consent !== true) throw new PublicError(400, 'Please tick the box so we can contact you.');
+  // Consent is optional ("Consent is not required to buy"): without it we call, never text.
+  const consented = b.consent === true;
   const s = await loadSalesSettings();
   const refSnap = c ? await db().collection(C.referrals).doc(c).get() : null;
   if (!refSnap?.exists || !s.referral.enabled) throw new PublicError(404, 'This referral link is not active.');
   const ref = refSnap.data() || {};
   const storeId = storeOf(b.storeId) && b.storeId !== 'T0' ? String(b.storeId) : String(ref.storeId || '');
+  await phoneDailyCap('referral', phone);
   const people = await loadPeople();
   const now = Date.now();
+  const consent = consented ? consentRecord(b, 'referral form', req.ip, now) : {};
 
   // Owner: the salesperson who sold to the referrer, else the store's manager.
   let ownerUid = '';
@@ -356,16 +361,18 @@ const submitReferral: PublicHandler = async (req) => {
   if (!ownerUid) ownerUid = managersFor(people, storeId)[0]?.uid || '';
 
   const note = [interest && `Looking for: ${interest}`, `Referred by ${ref.name || 'a customer'}`].filter(Boolean).join('\n');
-  // Same phone with an open lead → add to it instead of making a duplicate.
+  // Same phone with an open lead → add a note to it instead of making a duplicate (sold/lost leads are never reopened:
+  // a new lead is made). Only the note, the referral code (when it has none) and the consent (same phone) are saved.
   const existing = (await db().collection(C.leads).where('phone', 'in', phoneVariants(phone)).get()).docs
     .filter((d) => d.get('status') === 'new' || d.get('status') === 'talking')
+    .filter((d) => e164(d.get('phone')) === phone)
     .sort((x, y) => Number(y.get('createdAt') || 0) - Number(x.get('createdAt') || 0))[0];
   if (existing) {
     const notes = String(existing.get('notes') || '');
-    await existing.ref.set(clean({
-      notes: notes ? `${notes}\n${note}` : note, referralCode: existing.get('referralCode') || c,
-      email: existing.get('email') || email || undefined, smsConsent: true, updatedAt: now,
-    }), {merge: true});
+    await existing.ref.update(clean({
+      notes: `${notes ? `${notes}\n` : ''}${note}`.slice(-4000), referralCode: existing.get('referralCode') ? undefined : c,
+      ...consent, updatedAt: now,
+    }));
     if (!existing.get('referralCode')) await creditReferralLead(existing.id, c, now);
     const o = String(existing.get('ownerUid') || ownerUid);
     if (o) await notify(o, 'Referrals', `${name} came back through ${ref.name || 'a customer'}'s referral link. Call or text them: ${prettyPhone(phone)}`, {source: 'mp_referrals', leadId: existing.id});
@@ -373,7 +380,7 @@ const submitReferral: PublicHandler = async (req) => {
   }
   await db().collection(C.leads).add(clean({
     name, phone, email, channel: 'website', source: 'referral', status: 'new', ownerUid, locationId: storeId || undefined,
-    referralCode: c, notes: interest ? `Looking for: ${interest}` : '', smsConsent: true, createdAt: now, updatedAt: now,
+    referralCode: c, notes: interest ? `Looking for: ${interest}` : '', ...consent, createdAt: now, updatedAt: now,
   }));
   return {body: {ok: true}};
 };

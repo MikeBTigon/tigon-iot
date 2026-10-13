@@ -1,6 +1,7 @@
 // Webhook Flows — Google Sheets: the step buffers one row (wh_sheet_buffer/{runId}); flushSheetBuffer appends in batches.
 import * as logger from 'firebase-functions/logger';
 import * as admin from 'firebase-admin';
+import {FieldValue} from 'firebase-admin/firestore';
 import {GoogleAuth} from 'google-auth-library';
 import {createHash} from 'crypto';
 import {LEAD_FIELDS, TRACKING_FIELDS, WH} from '../types';
@@ -8,6 +9,7 @@ import {fieldLabel} from '../shared';
 import type {StepContext, StepResult} from '../engineTypes';
 import {healSheetsApi} from '../google';
 import {ctxMergeData, errMsg, fail, formatNy, isTestSubmission, leadUrl, skip, toList} from './util';
+import {raiseSystemAlert} from '../../alerts';
 
 export const SHEETS_SERVICE_ACCOUNT = '470095494000-compute@developer.gserviceaccount.com';
 export const DEFAULT_COLUMNS: string[] = [
@@ -69,14 +71,20 @@ export async function sheetsStep(ctx: StepContext): Promise<StepResult> {
   const row = columns.map((col) => safeCell(col in special ? special[col] : data[col] ?? ''));
   // One row per lead per sheet: the website flow and the Master Flow often point at the same sheet.
   const onceId = `${sub.id}_${createHash('sha1').update(`${spreadsheetId}|${tab.trim().toLowerCase()}`).digest('hex').slice(0, 16)}`;
+  // Marker + buffered row in ONE batch: either both are saved or neither (a crash can't leave a marker without a row).
   try {
-    await db().collection(SHEET_ROWS).doc(onceId).create({submissionId: sub.id, spreadsheetId, tab, runId: ctx.runId, at: Date.now()});
-  } catch {
-    return {status: 'skipped', response: {reason: 'This lead is already in that sheet', spreadsheetId, tab}};
+    const batch = db().batch();
+    batch.create(db().collection(SHEET_ROWS).doc(onceId), {submissionId: sub.id, spreadsheetId, tab, runId: ctx.runId, at: Date.now()});
+    batch.set(db().collection(WH.sheetBuffer).doc(ctx.runId), {
+      spreadsheetId, tab, columns, row, createdAt: Date.now(), submissionId: sub.id, attempts: 0, dead: false,
+    });
+    await batch.commit();
+  } catch (e) {
+    if ((e as {code?: number}).code === 6 || /already exists/i.test(errMsg(e))) {
+      return {status: 'skipped', response: {reason: 'This lead is already in that sheet', spreadsheetId, tab}};
+    }
+    throw e;
   }
-  await db().collection(WH.sheetBuffer).doc(ctx.runId).set({
-    spreadsheetId, tab, columns, row, createdAt: Date.now(), submissionId: sub.id, attempts: 0, dead: false,
-  });
   return {status: 'success', response: {buffered: true, spreadsheetId, tab}};
 }
 
@@ -322,11 +330,15 @@ export async function flushSheetBuffer(): Promise<{rows: number; errors: number}
   let rows = 0;
   let errors = 0;
   let lastError = '';
+  let nothing = false;
+  let newlyDead = 0;
   try {
     const snap = await db().collection(WH.sheetBuffer).where('dead', '==', false).limit(BATCH_LIMIT).get();
-    // Rows that gave up are tried again every hour, forever — once the sheet works again they go through on their own.
-    const deadSnap = await db().collection(WH.sheetBuffer).where('dead', '==', true).limit(500).get();
-    const retryDead = deadSnap.docs.filter((d) => now - Number(d.get('lastAttemptAt') || 0) > DEAD_RETRY_MS);
+    // Rows that gave up are tried again every hour (retryAt), forever — once the sheet works again they go through.
+    await migrateRetryAt(statusRef, now);
+    const retryDead = (await db().collection(WH.sheetBuffer).where('retryAt', '<=', now).limit(500).get()).docs
+      .filter((d) => d.get('dead') === true);
+    nothing = !snap.size && !retryDead.length;
     const docs = [...snap.docs, ...retryDead].sort((a, b) => Number(a.get('createdAt') || 0) - Number(b.get('createdAt') || 0));
     const groups = new Map<string, FirebaseFirestore.QueryDocumentSnapshot[]>();
     for (const d of docs) {
@@ -363,8 +375,14 @@ export async function flushSheetBuffer(): Promise<{rows: number; errors: number}
             const attempts = Number(d.get('attempts') || 0) + 1;
             const wasDead = d.get('dead') === true;
             const dead = wasDead || attempts >= MAX_ATTEMPTS;
-            if (dead && !wasDead) logger.error('wh sheets row gave up', {id: d.id, spreadsheetId, tab, error: errMsg(e)});
-            b.update(d.ref, {attempts, dead, error: errMsg(e), lastAttemptAt: Date.now(), ...(dead && !wasDead ? {deadAt: Date.now()} : {})});
+            if (dead && !wasDead) {
+              newlyDead++;
+              logger.error('wh sheets row gave up', {id: d.id, spreadsheetId, tab, error: errMsg(e)});
+            }
+            b.update(d.ref, {
+              attempts, dead, error: errMsg(e), lastAttemptAt: Date.now(),
+              ...(dead ? {retryAt: Date.now() + DEAD_RETRY_MS} : {}), ...(dead && !wasDead ? {deadAt: Date.now()} : {}),
+            });
           }
           await b.commit();
         }
@@ -376,7 +394,8 @@ export async function flushSheetBuffer(): Promise<{rows: number; errors: number}
     logger.error('wh sheets flush crashed', {error: lastError});
   } finally {
     const col = db().collection(WH.sheetBuffer);
-    const [pending, dead] = await Promise.all([
+    // Nothing waiting and nothing retried → nothing changed: skip the two count() queries (this runs every minute).
+    const [pending, dead] = nothing ? [0, null] : await Promise.all([
       col.where('dead', '==', false).count().get().then((r) => r.data().count).catch(() => null),
       col.where('dead', '==', true).count().get().then((r) => r.data().count).catch(() => null),
     ]);
@@ -384,10 +403,28 @@ export async function flushSheetBuffer(): Promise<{rows: number; errors: number}
       lastFlushAt: Date.now(), lastFlushRows: rows, flushLeaseUntil: 0,
       ...(pending !== null ? {pendingRows: pending} : {}), ...(dead !== null ? {deadRows: dead} : {}),
       // A clean flush that wrote rows clears the old error (System Triage / Needs attention).
-      ...(lastError ? {lastError, lastErrorAt: Date.now()} : rows > 0 ? {lastError: admin.firestore.FieldValue.delete(), lastErrorAt: admin.firestore.FieldValue.delete()} : {}),
+      ...(lastError ? {lastError, lastErrorAt: Date.now()} : rows > 0 ? {lastError: FieldValue.delete(), lastErrorAt: FieldValue.delete()} : {}),
     }, {merge: true});
   }
+  if (newlyDead) {
+    await raiseSystemAlert({key: 'sheets_dead_rows', title: 'Google Sheets rows failing', severity: 'error',
+      text: `${newlyDead} website lead row(s) could not be added to Google Sheets after ${MAX_ATTEMPTS} tries: ${lastError}`.slice(0, 600) +
+        ' They are retried every hour. Check Webhook Flows → Needs attention.'});
+  }
   return {rows, errors};
+}
+
+/** One-off: dead rows saved before retryAt existed get one (so the retry query finds them). */
+async function migrateRetryAt(statusRef: FirebaseFirestore.DocumentReference, now: number) {
+  if ((await statusRef.get()).get('retryAtMigratedAt')) return;
+  const dead = await db().collection(WH.sheetBuffer).where('dead', '==', true).limit(500).get();
+  const missing = dead.docs.filter((d) => typeof d.get('retryAt') !== 'number');
+  for (let i = 0; i < missing.length; i += 450) {
+    const b = db().batch();
+    missing.slice(i, i + 450).forEach((d) => b.update(d.ref, {retryAt: Number(d.get('lastAttemptAt') || 0) + DEAD_RETRY_MS}));
+    await b.commit();
+  }
+  if (dead.size < 500) await statusRef.set({retryAtMigratedAt: now}, {merge: true});
 }
 
 /** Buffered values were already escaped by the step; keep them as strings. */

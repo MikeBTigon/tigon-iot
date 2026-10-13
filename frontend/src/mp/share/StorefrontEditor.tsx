@@ -31,6 +31,8 @@ const toSlug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replac
 /** Mini-storefront editor: your public page at /s/{slug}. */
 const StorefrontEditor: React.FC = () => {
   const { profile, carts, isAdmin } = useMp();
+  // Only managers can make a storefront public (members save drafts and ask a manager).
+  const canPublish = profile?.role === 'admin' || profile?.role === 'manager';
   const [existing, setExisting] = useState<Storefront | null | undefined>(undefined);
   const [form, setForm] = useState<Form | null>(null);
   const [saving, setSaving] = useState(false);
@@ -53,14 +55,14 @@ const StorefrontEditor: React.FC = () => {
           pinnedCartIds: [],
           showNew: true,
           showUsed: true,
-          published: true,
+          published: canPublish,
         });
       })
       .catch((e) => live && setError(e.message));
     return () => {
       live = false;
     };
-  }, [profile]);
+  }, [profile, canPublish]);
 
   const cartById = useMemo(() => new Map(carts.map((c) => [c.docId, c])), [carts]);
   if (!profile || existing === undefined || !form) {
@@ -96,7 +98,7 @@ const StorefrontEditor: React.FC = () => {
         pinnedCartIds: form.pinnedCartIds,
         showNew: form.showNew,
         showUsed: form.showUsed,
-        published: form.published,
+        published: canPublish ? form.published : false,
         createdAt: existing?.createdAt || now,
         updatedAt: now,
       };
@@ -184,7 +186,8 @@ const StorefrontEditor: React.FC = () => {
             }}
             renderInput={(p) => <TextField {...p} label="Pinned carts (shown first)" placeholder="Search carts" />}
           />
-          <FormControlLabel control={<Switch checked={form.published} onChange={(e) => set('published', e.target.checked)} />} label="Published (visible to the public)" />
+          <FormControlLabel control={<Switch checked={canPublish ? form.published : false} disabled={!canPublish} onChange={(e) => set('published', e.target.checked)} />} label="Published (visible to the public)" />
+          {!canPublish && <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>A manager makes storefronts public. Save it as a draft and ask your manager to publish it.</Typography>}
           <Box>
             <Button variant="contained" startIcon={saving ? <CircularProgress size={18} color="inherit" /> : <Save />} disabled={saving || !!slugError || !form.title.trim()} onClick={save}>
               {existing ? 'Save' : 'Create storefront'}

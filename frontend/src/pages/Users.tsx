@@ -1,8 +1,8 @@
 import React, { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Alert, Box, Button, Checkbox, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, FormGroup,
-  IconButton, InputAdornment, Paper, Stack, Table, TableBody, TableCell, TableHead, TableRow, TableSortLabel, TextField, Tooltip, Typography,
+  IconButton, InputAdornment, Paper, Stack, Tab, Tabs, Table, TableBody, TableCell, TableHead, TableRow, TableSortLabel, TextField, Tooltip, Typography,
 } from '@mui/material';
 import { Edit, Email, Search, Settings as SettingsIcon, WarningAmber } from '@mui/icons-material';
 import DashboardLayout from '../components/Layout/DashboardLayout';
@@ -13,8 +13,10 @@ import EditUserDialog from '../devices/EditUserDialog';
 import { isOnline, lastSeenMs, seenLabel } from '../devices/deviceStatus';
 import { fmtHours, hoursOn, hoursOver, periods, weekday } from '../devices/presence';
 import type { PresenceSettings } from '../devices/presence';
-import { appPhones, savePresenceSettings, sendPresenceReport, useAllDevices, useOnline, usePostings, usePresenceSettings } from '../devices/usePresence';
+import { appPhones, savePresenceSettings, sendPresenceReport, useOnline, usePostings, usePresenceSettings } from '../devices/usePresence';
 import { postsOver } from '../devices/postings';
+import MpProfiles from '../mp/pages/MpProfiles';
+import { useSharedDevices } from '../devices/sharedDevices';
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 type SortKey = 'name' | 'location' | 'phones' | 'today' | 'week' | 'month' | 'year' | 'low' | 'postsWeek' | 'postsMonth';
@@ -24,9 +26,13 @@ const Users: React.FC = () => {
   const navigate = useNavigate();
   const { profile, users } = useMp();
   const isManager = profile?.role === 'admin' || profile?.role === 'manager';
+  const [params, setParams] = useSearchParams();
+  // People (managers) or Facebook profiles (everyone; the old /mp/profiles page).
+  const tab: 'people' | 'profiles' = !isManager || params.get('tab') === 'profiles' ? 'profiles' : 'people';
+  const setTab = (v: 'people' | 'profiles') => setParams(v === 'profiles' ? { tab: 'profiles' } : {}, { replace: true });
   const per = useMemo(() => periods(), []);
   const cfg = usePresenceSettings();
-  const devices = useAllDevices();
+  const devices = useSharedDevices(isManager ? 'all' : null).rows;
   const online = useOnline(per.year[0]);
   const posts = usePostings();
   const [q, setQ] = useState('');
@@ -116,15 +122,29 @@ const Users: React.FC = () => {
     }
   };
 
-  if (!isManager) {
-    return <DashboardLayout><Alert severity="info">The Users page is for managers and admins.</Alert></DashboardLayout>;
+  const tabs = (
+    <Tabs value={tab} onChange={(_e, v: 'people' | 'profiles') => setTab(v)} sx={{ mb: 2, borderBottom: 1, borderColor: 'divider' }}>
+      {isManager && <Tab value="people" label="People" />}
+      <Tab value="profiles" label="Facebook profiles" />
+    </Tabs>
+  );
+
+  if (tab === 'profiles') {
+    return (
+      <DashboardLayout>
+        <Typography variant="h5" component="h1" color="primary" sx={{ fontWeight: 600 }}>{isManager ? 'Users' : 'Facebook profiles'}</Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>Each Facebook profile the team posts on, and the carts posted there.</Typography>
+        {tabs}
+        <MpProfiles />
+      </DashboardLayout>
+    );
   }
 
   return (
     <DashboardLayout>
       <Box sx={{ display: 'flex', alignItems: { sm: 'center' }, flexDirection: { xs: 'column', sm: 'row' }, gap: 1, mb: 2 }}>
         <Box sx={{ flexGrow: 1 }}>
-          <Typography variant="h5" color="primary" sx={{ fontWeight: 600 }}>Users</Typography>
+          <Typography variant="h5" component="h1" color="primary" sx={{ fontWeight: 600 }}>Users</Typography>
           <Typography variant="body2" color="text.secondary">
             Everyone who has signed in to TIGON IOT, their phones and how long each phone is online (goal: {cfg.minHours} h a day).
           </Typography>
@@ -135,11 +155,12 @@ const Users: React.FC = () => {
           <Button variant="outlined" startIcon={busy === 'all' ? <CircularProgress size={16} /> : <Email />} disabled={!!busy}
             onClick={() => send('all', 'allUsers')}>Email every user's report</Button>
           <Tooltip title="Minimum hours and report address">
-            <IconButton onClick={() => { setDraft(cfg); setSettingsOpen(true); }} aria-label="Settings"><SettingsIcon /></IconButton>
+            <IconButton onClick={() => { setDraft(cfg); setSettingsOpen(true); }} aria-label="Online-time goal and report settings"><SettingsIcon /></IconButton>
           </Tooltip>
         </Stack>
       </Box>
 
+      {tabs}
       {msg && <Alert severity={msg.ok ? 'success' : 'error'} sx={{ mb: 2 }} onClose={() => setMsg(null)}>{msg.text}</Alert>}
       {online.error && <Alert severity="warning" sx={{ mb: 2 }}>Could not load online hours: {online.error}</Alert>}
       <Alert severity="info" sx={{ mb: 2 }}>
@@ -172,7 +193,8 @@ const Users: React.FC = () => {
             </TableHead>
             <TableBody>
               {shown.map((r) => (
-                <TableRow key={r.u.uid} hover sx={{ cursor: 'pointer' }} onClick={() => navigate(`/users/${r.u.uid}`)}>
+                <TableRow key={r.u.uid} hover sx={{ cursor: 'pointer' }} tabIndex={0} aria-label={`Open ${r.u.name}`} onClick={() => navigate(`/users/${r.u.uid}`)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && e.target === e.currentTarget) navigate(`/users/${r.u.uid}`); }}>
                   <TableCell>
                     <Typography variant="body2" sx={{ fontWeight: 600 }}>{r.u.name}</Typography>
                     <Typography variant="caption" color="text.secondary">{r.u.email} · {r.u.role}</Typography>

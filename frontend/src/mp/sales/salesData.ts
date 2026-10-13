@@ -1,10 +1,10 @@
 // "Sell more" release — shared client data helpers: settings, sending a text, public links, template filling.
 import { useEffect, useState } from 'react';
-import { addDoc, collection, doc, onSnapshot, setDoc } from 'firebase/firestore';
-import { db } from '../../config/firebase';
+import { doc, onSnapshot, setDoc } from 'firebase/firestore';
+import { httpsCallable } from 'firebase/functions';
+import { db, functions } from '../../config/firebase';
 import { DEALERSHIP_BY_ID } from '../constants';
 import { DEFAULT_SALES_SETTINGS } from './salesDefaults';
-import { SALES_COLLECTIONS } from './salesTypes';
 import type { SalesSettings, SmsKind } from './salesTypes';
 
 type Json = Record<string, unknown>;
@@ -65,14 +65,17 @@ export async function sendText(input: { to: string; body: string; createdBy: str
   if (!to) throw new Error('Enter a 10-digit US phone number.');
   const body = input.body.trim();
   if (!body) throw new Error('Type a message.');
-  const now = Date.now();
-  const ref = await addDoc(collection(db, SALES_COLLECTIONS.sms), {
-    to, body: body.slice(0, 1200), kind: input.kind || 'manual', storeId: input.storeId || '', createdBy: input.createdBy,
-    status: 'queued', sendAt: now, attempts: 0, createdAt: now,
-    ...(input.leadId ? { leadId: input.leadId } : {}),
-    ...(input.customerId ? { customerId: input.customerId } : {}),
-  });
-  return ref.id;
+  // The server checks the lead is yours (or you're a manager), STOP opt-outs and the hourly limit, then queues it.
+  try {
+    const res = await httpsCallable<Record<string, unknown>, { id: string }>(functions, 'mpSendText')({
+      to, body: body.slice(0, 1200), kind: input.kind || 'manual', storeId: input.storeId || '',
+      ...(input.leadId ? { leadId: input.leadId } : {}),
+      ...(input.customerId ? { customerId: input.customerId } : {}),
+    });
+    return res.data.id;
+  } catch (e) {
+    throw new Error(e instanceof Error ? e.message.replace(/^FirebaseError:\s*/, '') : String(e));
+  }
 }
 
 export const firstName = (name: unknown) => String(name || '').trim().split(/\s+/)[0] || 'there';
