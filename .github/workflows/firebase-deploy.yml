@@ -134,6 +134,11 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
+          # Reuse downloaded Gradle/Maven parts between deploys (fewer downloads from Maven Central).
+          cache: gradle
+          cache-dependency-path: |
+            frontend/android/**/*.gradle*
+            frontend/android/gradle/wrapper/gradle-wrapper.properties
 
       # Published at https://tigoniot.com/downloads/tigon-iot.apk (+ version.json, used by the app's update check).
       # Fails (on purpose) when the signing-key secrets are missing: a public APK is never unsigned or debug-signed.
