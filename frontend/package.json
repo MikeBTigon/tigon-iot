@@ -30,7 +30,7 @@
     "@mui/icons-material": "^7.3.6",
     "@mui/material": "^9.5.0",
     "date-fns": "^4.1.0",
-    "firebase": "^12.7.0",
+    "firebase": "^13.0.0",
     "i18next": "^26.4.2",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.8",
