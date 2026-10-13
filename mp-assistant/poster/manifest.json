@@ -2,8 +2,8 @@
   "manifest_version": 3,
   "name": "Tigon Poster (IoT)",
   "short_name": "Tigon Poster",
-  "version": "2.2.0",
-  "description": "Fills the Facebook Marketplace vehicle form and uploads the photos from TIGON IOT (Copy to Marketplace). Never auto-posts.",
+  "version": "2.3.0",
+  "description": "Fills the Facebook Marketplace vehicle form and lenders' credit applications from TIGON IOT. Never posts or submits.",
   "permissions": [
     "storage"
   ],
@@ -38,6 +38,23 @@
         "fb-autofill.js"
       ],
       "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://prequalify.sheffieldfinancial.com/*",
+        "https://blirentals.com/*",
+        "https://www.blirentals.com/*",
+        "https://applynow-cica-prd.dllgroup.com/*",
+        "https://octane.co/*",
+        "https://*.octane.co/*",
+        "https://form.jotform.com/*",
+        "https://dealerdirect.apptraker.com/*"
+      ],
+      "js": [
+        "lender-autofill.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": true
     },
     {
       "matches": [

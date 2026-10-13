@@ -1,7 +1,8 @@
 // Track 5 — Google reviews per store + new-arrival post generator for Google Business Profile (/mp/reviews, managers).
 import React, { useMemo, useState } from 'react';
 import {
-  Alert, Box, Button, Card, CardContent, Chip, Grid, Link, MenuItem, Paper, Rating, Stack, Tab, Tabs, TextField, Typography,
+  Alert, Box, Button, Card, CardContent, Chip, Grid, IconButton, Link, MenuItem, Paper, Rating, Stack, Tab, Table, TableBody,
+  TableCell, TableContainer, TableHead, TableRow, Tabs, TextField, Tooltip, Typography,
 } from '@mui/material';
 import { ContentCopy, Download, OpenInNew, Refresh, RateReview, Star } from '@mui/icons-material';
 import { Link as RouterLink } from 'react-router-dom';
@@ -62,13 +63,66 @@ const StoreCard: React.FC<{ r: StoreReviewsDoc }> = ({ r }) => {
         </Stack>
         <Box sx={{ display: 'flex', gap: 1, mt: 1.5, flexWrap: 'wrap' }}>
           {replyUrl && <Button size="small" variant="contained" startIcon={<RateReview />} href={replyUrl} target="_blank" rel="noopener">Reply on Google</Button>}
-          {store?.review && <Button size="small" startIcon={<ContentCopy />} onClick={async () => notify(await copyText(store.review) ? 'Review link copied' : 'Could not copy', 'info')}>Copy review link</Button>}
+          {store?.review && <Button size="small" startIcon={<ContentCopy />} onClick={() => copyLink(store.review, 'Review link')}>Copy review link</Button>}
         </Box>
         {r.updatedAt ? <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>Checked {timeAgo(r.updatedAt)}</Typography> : null}
       </CardContent>
     </Card>
   );
 };
+
+const copyLink = async (url: string, what: string) => notify(await copyText(url) ? `${what} copied` : 'Could not copy', 'info');
+
+/** One link cell: the clickable link plus a copy button ('' = not set up). */
+const LinkCell: React.FC<{ url: string; what: string; empty: string }> = ({ url, what, empty }) => (
+  <TableCell sx={{ maxWidth: 340 }}>
+    {url ? (
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+        <Link href={url} target="_blank" rel="noopener" variant="body2" sx={{ wordBreak: 'break-all' }}>{url.replace(/^https?:\/\/(www\.)?/, '')}</Link>
+        <Tooltip title={`Copy ${what.toLowerCase()}`}>
+          <IconButton size="small" aria-label={`Copy ${what.toLowerCase()}`} onClick={() => copyLink(url, what)}><ContentCopy fontSize="inherit" /></IconButton>
+        </Tooltip>
+      </Box>
+    ) : <Typography variant="body2" color="text.secondary">{empty}</Typography>}
+  </TableCell>
+);
+
+/** Every store's Google Maps (CID) link and Google review link. Source: DEALERSHIPS in mp/constants.ts. */
+const StoreLinks: React.FC = () => (
+  <Paper variant="outlined" sx={{ mb: 2 }}>
+    <Box sx={{ px: 2, pt: 1.5 }}>
+      <Typography sx={{ fontWeight: 700 }}>Google links for every store</Typography>
+      <Typography variant="body2" color="text.secondary">
+        Google Maps opens the store's listing (reply to reviews there). Send the review link to happy buyers — it opens Google's "write a review" box.
+      </Typography>
+    </Box>
+    <TableContainer>
+      <Table size="small">
+        <TableHead>
+          <TableRow>
+            <TableCell>Store</TableCell>
+            <TableCell>Phone</TableCell>
+            <TableCell>Google Maps (CID)</TableCell>
+            <TableCell>Google review link</TableCell>
+          </TableRow>
+        </TableHead>
+        <TableBody>
+          {DEALERSHIPS.map((d) => (
+            <TableRow key={d.id} hover>
+              <TableCell sx={{ fontWeight: 600, whiteSpace: 'nowrap' }}>
+                {d.id === 'T0' ? 'TIGON (National)' : d.name}
+                {d.address && d.id !== 'T0' && <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontWeight: 400, whiteSpace: 'normal' }}>{d.address}</Typography>}
+              </TableCell>
+              <TableCell sx={{ whiteSpace: 'nowrap' }}><Link href={`tel:${d.phone.replace(/[^\d]/g, '')}`}>{d.phone}</Link></TableCell>
+              <LinkCell url={d.maps} what="Google Maps link" empty="—" />
+              <LinkCell url={d.review} what="Review link" empty="No review link yet" />
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </TableContainer>
+  </Paper>
+);
 
 const ReviewsTab: React.FC<{ manager: boolean }> = ({ manager }) => {
   const { settings, loaded } = useSalesSettings();
@@ -95,6 +149,7 @@ const ReviewsTab: React.FC<{ manager: boolean }> = ({ manager }) => {
       <Box sx={{ display: 'flex', gap: 1, mb: 2, flexWrap: 'wrap' }}>
         {manager && <Button variant="outlined" startIcon={<Refresh />} disabled={busy || !configured.length} onClick={refresh}>{busy ? 'Checking…' : 'Refresh now'}</Button>}
       </Box>
+      <StoreLinks />
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
       {!settings.reviews.enabled && loaded && <Alert severity="info" sx={{ mb: 2 }}>Google reviews are turned off in Sell more settings → Reviews &amp; referrals.</Alert>}
       {(noKey || (loaded && !configured.length)) && (

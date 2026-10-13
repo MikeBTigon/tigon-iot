@@ -1,7 +1,11 @@
 // Growth release — "Share everywhere" functions.
-//   mpLink          GET /l/:code                 tracked short-link redirect (Hosting rewrite)
-//   mpStorefrontApi GET /api/storefront/:slug[/:cartId]  public storefront JSON (Hosting rewrite)
-// Both run in us-central1 to match the rewrites in firebase.json.
+//   mpLink           GET /l/:code                 tracked short-link redirect (Hosting rewrite)
+//   mpStorefrontApi  GET /api/storefront/:slug[/:cartId]  public storefront JSON (Hosting rewrite)
+//   mpStorefrontPage GET /s/**                    the storefront SPA with per-page/per-cart share tags injected
+//                                                 (og:title/description/image, canonical) so Facebook, iMessage
+//                                                 and Google see them — a plain single-page app serves none.
+//   mpSitemap        GET /sitemap.xml             storefront + every in-stock cart (SEO-friendly URLs)
+// All run in us-central1 to match the rewrites in firebase.json.
 import * as logger from 'firebase-functions/logger';
 import {onRequest} from 'firebase-functions/v2/https';
 import * as admin from 'firebase-admin';
@@ -23,6 +27,10 @@ const str = (v: unknown): string => (v === null || v === undefined ? '' : String
 const bool = (v: unknown): boolean => v === true || v === 'true' || v === 'Yes' || v === 'yes';
 const obj = (v: unknown): Json => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Json) : {});
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', '\'': '&#39;'}[c]!));
+
+/** SEO-friendly URL slug, e.g. "2024-evolution-d5-ranger-4-black". Keeps the cart id for lookup; this is the readable tail. */
+const slugify = (s: string) => s.toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80);
+const cartSeoSlug = (c: PublicCart) => slugify([c.year, c.make, c.model, c.color, c.isUsed ? 'used' : ''].filter(Boolean).join(' ')) || 'golf-cart';
 
 /** Link-preview fetchers and crawlers: redirected, but not counted as clicks. */
 const BOT_RE = /bot|crawl|spider|slurp|facebookexternalhit|facebookcatalog|preview|whatsapp\/|telegram|discord|embedly|skype|curl|wget|python-requests|headless/i;
@@ -412,5 +420,132 @@ export const mpStorefrontApi = onRequest({region: REGION, maxInstances: 20}, asy
     logger.error('mpStorefrontApi failed', slug, e);
     res.set('Cache-Control', 'no-store');
     res.status(500).json({error: 'Something went wrong'});
+  }
+});
+
+// ---------------------------------------------------------------------------
+// mpStorefrontPage — the storefront SPA with share tags injected (so crawlers see them)
+// ---------------------------------------------------------------------------
+
+// The built index.html (the single-page app shell), fetched from Hosting once and kept a few minutes. The app
+// still boots and renders for people; we only add the <head> tags that a crawler reads without running JavaScript.
+let shellCache: {at: number; html: string} | null = null;
+const SHELL_TTL = 5 * 60_000;
+async function appShell(): Promise<string> {
+  if (shellCache && Date.now() - shellCache.at < SHELL_TTL) return shellCache.html;
+  const res = await fetch(`${PUBLIC_ORIGIN}/index.html`, {headers: {'user-agent': 'tigon-og'}});
+  if (!res.ok) throw new Error(`shell ${res.status}`);
+  const html = await res.text();
+  shellCache = {at: Date.now(), html};
+  return html;
+}
+
+interface PageMeta {title: string; description: string; image: string; url: string; type: 'website' | 'product'}
+
+/** Replaces the shell's <title> and adds Open Graph / Twitter / description / canonical tags. */
+function injectMeta(shell: string, m: PageMeta): string {
+  const t = esc(m.title);
+  const d = esc(m.description.replace(/\s+/g, ' ').trim().slice(0, 300));
+  const tags = [
+    `<meta name="description" content="${d}">`,
+    `<link rel="canonical" href="${esc(m.url)}">`,
+    `<meta property="og:site_name" content="TIGON Golf Carts">`,
+    `<meta property="og:type" content="${m.type}">`,
+    `<meta property="og:title" content="${t}">`,
+    `<meta property="og:description" content="${d}">`,
+    `<meta property="og:url" content="${esc(m.url)}">`,
+    m.image ? `<meta property="og:image" content="${esc(m.image)}">` : '',
+    `<meta name="twitter:card" content="${m.image ? 'summary_large_image' : 'summary'}">`,
+    `<meta name="twitter:title" content="${t}">`,
+    `<meta name="twitter:description" content="${d}">`,
+    m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : '',
+  ].filter(Boolean).join('');
+  const withTitle = /<title>[\s\S]*?<\/title>/i.test(shell)
+    ? shell.replace(/<title>[\s\S]*?<\/title>/i, `<title>${t}</title>`)
+    : shell.replace(/<head(\s[^>]*)?>/i, (h) => `${h}<title>${t}</title>`);
+  // Drop any <meta property="og:..."> already in the shell, then add ours before </head>.
+  return withTitle.replace(/<meta\s+(?:property|name)="(?:og:[^"]*|twitter:[^"]*|description)"[^>]*>/gi, '')
+    .replace(/<\/head>/i, `${tags}</head>`);
+}
+
+const DEFAULT_DESC = 'New & pre-owned golf carts from TIGON Golf Carts — financing, trade-ins and delivery available.';
+
+/** GET /s/:slug and /s/:slug/:cartId[/:seo] — the storefront app with the right share tags for the page. */
+export const mpStorefrontPage = onRequest({region: REGION, maxInstances: 20}, async (req, res) => {
+  const parts = req.path.split('/').filter(Boolean); // ['s', slug, cartId?, seo?]
+  const slug = str(parts[1]).toLowerCase();
+  const cartId = str(parts[2]);
+  const host = str(req.get('x-forwarded-host')) || str(req.hostname) || 'tigoniot.com';
+  const canonical = `https://${host}${req.path}`.replace(/\/+$/, '');
+  const fallback: PageMeta = {title: 'TIGON Golf Carts', description: DEFAULT_DESC, image: '', url: canonical, type: 'website'};
+
+  try {
+    if (!/^[a-z0-9-]{3,40}$/.test(slug)) {
+      res.set('Cache-Control', 'public, max-age=60');
+      res.status(200).type('html').send(injectMeta(await appShell(), fallback));
+      return;
+    }
+    const sf = await loadStorefront(slug);
+    let meta = fallback;
+    if (sf && cartId && /^[A-Za-z0-9_-]{1,128}$/.test(cartId)) {
+      const snap = await admin.firestore().collection(CARTS).doc(cartId).get();
+      const c = snap.exists ? publicCart(snap.id, snap.data() || {}) : null;
+      if (c) {
+        meta = {
+          title: `${c.year ? c.year + ' ' : ''}${c.title}${c.price ? ` — $${c.price.toLocaleString('en-US')}` : ''}`,
+          description: c.description, image: c.photos[0] || '',
+          url: `https://${host}/s/${slug}/${encodeURIComponent(c.id)}/${cartSeoSlug(c)}`, type: 'product',
+        };
+      }
+    } else if (sf) {
+      const carts = storefrontCarts(sf, await allPublicCarts());
+      meta = {
+        title: sf.title || 'TIGON Golf Carts',
+        description: sf.tagline || DEFAULT_DESC,
+        image: carts.find((c) => c.photos[0] && !c.stockPhotos)?.photos[0] || carts.find((c) => c.photos[0])?.photos[0] || '',
+        url: `https://${host}/s/${slug}`, type: 'website',
+      };
+    }
+    res.set('Cache-Control', 'public, max-age=120, s-maxage=300');
+    res.status(200).type('html').send(injectMeta(await appShell(), meta));
+  } catch (e) {
+    logger.error('mpStorefrontPage failed', req.path, e);
+    // Last resort: still give crawlers the tags; the inline script sends people on to the app.
+    res.set('Cache-Control', 'no-store');
+    res.status(200).type('html').send(
+      `<!doctype html><html lang="en"><head><meta charset="utf-8">` +
+      `<title>${esc(fallback.title)}</title><meta name="description" content="${esc(DEFAULT_DESC)}">` +
+      `<meta property="og:title" content="${esc(fallback.title)}"><meta property="og:description" content="${esc(DEFAULT_DESC)}">` +
+      `<meta property="og:url" content="${esc(canonical)}"><meta name="viewport" content="width=device-width,initial-scale=1">` +
+      `</head><body><p>Loading TIGON Golf Carts… <a href="${esc(canonical)}">Tap here if it doesn't open.</a></p>` +
+      `<script>setTimeout(function(){location.reload();},1200);</script></body></html>`,
+    );
+  }
+});
+
+// ---------------------------------------------------------------------------
+// mpSitemap — /sitemap.xml: the storefront and every in-stock cart (SEO-friendly URLs)
+// ---------------------------------------------------------------------------
+
+export const mpSitemap = onRequest({region: REGION, maxInstances: 5}, async (req, res) => {
+  const host = str(req.get('x-forwarded-host')) || str(req.hostname) || 'tigoniot.com';
+  const origin = `https://${host}`;
+  try {
+    const sf = (await loadStorefront('tigon')) || DEFAULT_STOREFRONT;
+    const carts = storefrontCarts(sf, await allPublicCarts());
+    const url = (loc: string, img?: string) =>
+      `<url><loc>${esc(loc)}</loc><changefreq>daily</changefreq>${img ? `<image:image><image:loc>${esc(img)}</image:loc></image:image>` : ''}</url>`;
+    const urls = [url(`${origin}/s/tigon`)]
+      .concat(carts.map((c) => url(`${origin}/s/tigon/${encodeURIComponent(c.id)}/${cartSeoSlug(c)}`, c.photos[0])));
+    res.set('Cache-Control', 'public, max-age=3600, s-maxage=3600');
+    res.status(200).type('application/xml').send(
+      `<?xml version="1.0" encoding="UTF-8"?>` +
+      `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">` +
+      `${urls.join('')}</urlset>`,
+    );
+  } catch (e) {
+    logger.error('mpSitemap failed', e);
+    res.set('Cache-Control', 'no-store');
+    res.status(200).type('application/xml').send(`<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>${origin}/s/tigon</loc></url></urlset>`);
   }
 });

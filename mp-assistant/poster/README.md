@@ -23,6 +23,17 @@ S3 links, not only `s3.amazonaws.com/prod.docs.s3`.
 4. Price, Description (and Title if present) fill reliably. Vehicle type/Year/Make/Model dropdowns are
    attempted; the panel says which ones to check or pick by hand. Add photos, review, click Post.
 
+## Lender credit applications (2.3.0+)
+TIGON IOT → **Credit applications** → open an application → a lender card → **Apply & fill in**. The lender's form
+opens in its own window and `lender-autofill.js` fills the customer's details (name, phone, email, address, housing,
+job, income, down payment) by matching each field's label. It only fills empty fields, outlines them in green, skips
+SSN / date of birth / co-applicant / reference sections and **never clicks Submit or Next**. Multi-step forms fill
+as each step appears; **Alt+Shift+F** or **Fill again** in the TIGON box fills again. The customer's details are
+kept 30 minutes for that one lender only; **Done — forget customer** deletes them right away.
+Lender sites: Sheffield, Heartland (blirentals.com), DLL, Roadrunner (octane.co), Univest (Jotform), Dealer Direct
+(apptraker.com) — the list is `content_scripts` in `manifest.json` and `LENDER_LINKS` in
+`frontend/src/mp/insights/credit/lenderLinks.ts`; add a lender in both places.
+
 **Copy form structure** copies a JSON dump of the form fields for debugging when Facebook changes its layout.
 
 `cart-logic.js` is generated from `frontend/src/mp/cartLogic.ts` — don't edit it here.

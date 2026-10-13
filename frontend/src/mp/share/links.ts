@@ -57,8 +57,13 @@ export function clearStorefrontSlugCache() {
 }
 
 /** Storefront cart URL with UTM parameters. */
+/** SEO-friendly URL tail for a cart (matches functions/src/mpShare.ts cartSeoSlug). */
+export const cartSeoSlug = (c: { year?: string | number; make?: string; model?: string; color?: string; isUsed?: boolean } | null | undefined) =>
+  (c ? [c.year, c.make, c.model, c.color, c.isUsed ? 'used' : ''].filter(Boolean).join(' ') : '')
+    .toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80) || 'golf-cart';
+
 export function trackedTarget(slug: string, cartDocId: string, p: {
-  platform: SharePlatform; campaign: string; uid: string; deviceId: string; variant?: string;
+  platform: SharePlatform; campaign: string; uid: string; deviceId: string; variant?: string; seo?: string;
 }): string {
   const q = new URLSearchParams({
     utm_source: p.platform,
@@ -67,7 +72,8 @@ export function trackedTarget(slug: string, cartDocId: string, p: {
     utm_content: `${p.uid}_${p.deviceId}`,
   });
   if (p.variant) q.set('utm_term', p.variant);
-  return `${PUBLIC_ORIGIN}/s/${slug}${cartDocId ? `/${encodeURIComponent(cartDocId)}` : ''}?${q.toString()}`;
+  const tail = cartDocId ? `/${encodeURIComponent(cartDocId)}${p.seo ? `/${p.seo}` : ''}` : '';
+  return `${PUBLIC_ORIGIN}/s/${slug}${tail}?${q.toString()}`;
 }
 
 export interface CreateLinkOptions {
@@ -92,7 +98,7 @@ export async function createShortLink(opts: CreateLinkOptions): Promise<string> 
   const data: Record<string, unknown> = {
     cartId,
     cartTitle: opts.cart ? `${opts.cart.year ? opts.cart.year + ' ' : ''}${cartTitle(opts.cart)}` : `Storefront /s/${slug}`,
-    target: trackedTarget(slug, cartId, { platform: opts.platform, campaign: opts.campaign, uid, deviceId, variant: opts.variant }),
+    target: trackedTarget(slug, cartId, { platform: opts.platform, campaign: opts.campaign, uid, deviceId, variant: opts.variant, seo: opts.cart ? cartSeoSlug({ year: opts.cart.year, make: opts.cart.make, model: opts.cart.model, color: opts.cart.color, isUsed: opts.cart.isUsed }) : undefined }),
     platform: opts.platform,
     campaign: opts.campaign,
     userId: uid,

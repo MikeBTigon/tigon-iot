@@ -24,4 +24,6 @@ export const ROUTES: Array<{ path: string; element: ReactNode }> = [
 export const PUBLIC_ROUTES: Array<{ path: string; element: ReactNode }> = [
   { path: '/s/:slug', element: publicPage(<StorefrontPage />) },
   { path: '/s/:slug/:cartId', element: publicPage(<StorefrontCartPage />) },
+  // SEO-friendly cart URL: the trailing slug is for readability/search; the cartId is what the page looks up.
+  { path: '/s/:slug/:cartId/:seo', element: publicPage(<StorefrontCartPage />) },
 ];
