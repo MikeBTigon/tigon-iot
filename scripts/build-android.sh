@@ -60,7 +60,13 @@ npx cap sync android
 if [ -n "${GOOGLE_SERVICES_JSON:-}" ]; then
   printf '%s' "$GOOGLE_SERVICES_JSON" > android/app/google-services.json
 fi
-(cd android && ./gradlew assembleRelease --no-daemon)
+# Maven Central / Google Maven sometimes fail to serve a file for a minute ("Could not find ..."): retry twice.
+for attempt in 1 2 3; do
+  if (cd android && ./gradlew assembleRelease --no-daemon); then break; fi
+  if [ "$attempt" -eq 3 ]; then exit 1; fi
+  echo "::warning::Android build failed (attempt $attempt of 3) - retrying in $((attempt * 45)) s." >&2
+  sleep $((attempt * 45))
+done
 OUT="${1:-android/app/build/outputs/apk/release/tigon-iot.apk}"
 mkdir -p "$(dirname "$OUT")"
 cp android/app/build/outputs/apk/release/app-release.apk "$OUT"
