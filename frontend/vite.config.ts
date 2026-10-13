@@ -4,6 +4,21 @@ import { VitePWA } from 'vite-plugin-pwa'
 
 // https://vite.dev/config/
 export default defineConfig({
+  build: {
+    rollupOptions: {
+      output: {
+        // Big libraries in their own files: they change rarely, so phones keep them cached between updates.
+        manualChunks: (id) => {
+          if (!id.includes('node_modules')) return;
+          if (id.includes('firebase') || id.includes('@firebase')) return 'firebase';
+          if (id.includes('@mui/icons-material')) return 'mui-icons';
+          if (id.includes('@mui') || id.includes('@emotion')) return 'mui';
+          if (id.includes('recharts') || id.includes('d3-')) return 'recharts';
+          if (id.includes('react-router') || /[\\/]react(-dom)?[\\/]/.test(id)) return 'react';
+        },
+      },
+    },
+  },
   plugins: [
     react(),
     // Offline app shell for the website (the service worker is registered in main.tsx, web only —

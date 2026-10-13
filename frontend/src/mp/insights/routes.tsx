@@ -1,6 +1,7 @@
 // Insights (Harden & polish release) — pages. Signed-in pages go in ROUTES (wrapped by the app's auth guard),
 // the customer credit application in PUBLIC_ROUTES. Pages load on demand.
-import { lazy, Suspense, type ReactNode } from 'react';
+import { lazy, type ReactNode } from 'react';
+import { SignedInSuspense, PublicSuspense } from '../../ui/PageSuspense';
 
 const CustomerPage = lazy(() => import('./CustomerPage'));
 const LiveBoard = lazy(() => import('./LiveBoard'));
@@ -8,7 +9,8 @@ const InboxPage = lazy(() => import('./InboxPage'));
 const CreditAppsPage = lazy(() => import('./credit/CreditAppsPage'));
 const CreditPublicPage = lazy(() => import('./credit/CreditPublicPage'));
 
-const page = (el: ReactNode) => <Suspense fallback={null}>{el}</Suspense>;
+const page = (el: ReactNode) => <SignedInSuspense>{el}</SignedInSuspense>;
+const pub = (el: ReactNode) => <PublicSuspense>{el}</PublicSuspense>;
 
 export const ROUTES: Array<{ path: string; element: ReactNode }> = [
   { path: '/mp/customer', element: page(<CustomerPage />) },
@@ -21,5 +23,5 @@ export const ROUTES: Array<{ path: string; element: ReactNode }> = [
 
 /** Customer pages (no sign-in). */
 export const PUBLIC_ROUTES: Array<{ path: string; element: ReactNode }> = [
-  { path: '/apply', element: page(<CreditPublicPage />) },
+  { path: '/apply', element: pub(<CreditPublicPage />) },
 ];

@@ -935,4 +935,201 @@ export const AREA_ARTICLES: HelpArticle[] = [
       },
     },
   },
+  // ---------------------------------------------------------------- Insights pages
+  {
+    id: 'inbox',
+    area: 'customers',
+    path: '/mp/inbox',
+    keywords: 'texts inbox conversations reply two-way sms messages unread',
+    text: {
+      en: {
+        title: 'Texts inbox',
+        summary: 'Two-way texting: every conversation with a customer in one place, like the messages app on your phone.',
+        steps: [
+          'Open Texts inbox. Conversations from the last 30 days are listed, newest first. You see your own leads; managers see everyone’s.',
+          'Tap a conversation to read it, then type a reply and send. It goes out from the store’s texting phone within a minute.',
+          'If a customer replied STOP, you can’t text them — call instead.',
+          'Only text customers who agreed to it.',
+        ],
+      },
+      es: {
+        title: 'Bandeja de mensajes',
+        summary: 'Mensajes de ida y vuelta: cada conversación con un cliente en un solo lugar, como la app de mensajes de tu teléfono.',
+        steps: [
+          'Abre la Bandeja de mensajes. Aparecen las conversaciones de los últimos 30 días, de la más nueva a la más vieja. Ves tus prospectos; los gerentes ven todos.',
+          'Toca una conversación para leerla, escribe tu respuesta y envíala. Sale del teléfono de mensajes de la tienda en menos de un minuto.',
+          'Si un cliente respondió STOP, no puedes escribirle: llámalo.',
+          'Escribe solo a clientes que lo aceptaron.',
+        ],
+      },
+      fr: {
+        title: 'Boîte SMS',
+        summary: 'SMS dans les deux sens : chaque conversation avec un client au même endroit, comme l’app Messages de votre téléphone.',
+        steps: [
+          'Ouvrez la Boîte SMS. Les conversations des 30 derniers jours sont listées, les plus récentes en premier. Vous voyez vos prospects ; les responsables voient tout.',
+          'Touchez une conversation pour la lire, tapez une réponse et envoyez. Elle part du téléphone SMS du magasin en moins d’une minute.',
+          'Si un client a répondu STOP, vous ne pouvez plus lui écrire : appelez-le.',
+          'N’écrivez qu’aux clients qui ont accepté.',
+        ],
+      },
+      ht: {
+        title: 'Bwat tèks',
+        summary: 'Tèks nan de sans: chak konvèsasyon ak yon kliyan nan yon sèl kote, tankou app mesaj telefòn ou.',
+        steps: [
+          'Louvri Bwat tèks la. Konvèsasyon 30 dènye jou yo parèt, sa ki pi nouvo an premye. Ou wè kliyan pa ou; manadjè yo wè tout.',
+          'Peze yon konvèsasyon pou li l, ekri repons ou epi voye l. Li pati sou telefòn tèks magazen an nan mwens pase yon minit.',
+          'Si yon kliyan reponn STOP, ou pa ka voye tèks ba li — rele l pito.',
+          'Voye tèks sèlman bay kliyan ki dakò.',
+        ],
+      },
+    },
+  },
+  {
+    id: 'credit-apps',
+    area: 'sellMore',
+    path: '/mp/credit-app',
+    keywords: 'credit application apply lender pdf send to lender financing form',
+    text: {
+      en: {
+        title: 'Credit applications',
+        summary: 'Customers fill in a credit application online (the /apply link) or with you in the store. You send it to a lender as a PDF.',
+        steps: [
+          'Text the customer the application link from their lead, or tap Fill in with customer and do it together. It never asks for a Social Security number or date of birth.',
+          'The customer reads the form and ticks the box at the bottom themselves to confirm and authorize.',
+          'Open an application to see a printable summary or download the PDF.',
+          'Tap Send to lender to email the PDF to a lender from the list.',
+          'Admins keep the lender list (name and email) on this page.',
+        ],
+      },
+      es: {
+        title: 'Solicitudes de crédito',
+        summary: 'Los clientes llenan una solicitud de crédito en línea (el enlace /apply) o contigo en la tienda. Tú la envías a un prestamista en PDF.',
+        steps: [
+          'Envía al cliente el enlace de la solicitud desde su prospecto, o toca Llenar con el cliente y háganlo juntos. Nunca pide número de Seguro Social ni fecha de nacimiento.',
+          'El cliente lee el formulario y marca él mismo la casilla final para confirmar y autorizar.',
+          'Abre una solicitud para ver un resumen para imprimir o descargar el PDF.',
+          'Toca Enviar al prestamista para mandar el PDF por correo a un prestamista de la lista.',
+          'Los administradores mantienen la lista de prestamistas (nombre y correo) en esta página.',
+        ],
+      },
+      fr: {
+        title: 'Demandes de crédit',
+        summary: 'Les clients remplissent une demande de crédit en ligne (le lien /apply) ou avec vous en magasin. Vous l’envoyez à un prêteur en PDF.',
+        steps: [
+          'Envoyez au client le lien de la demande depuis son prospect, ou touchez Remplir avec le client et faites-le ensemble. Elle ne demande jamais de numéro de sécurité sociale ni de date de naissance.',
+          'Le client lit le formulaire et coche lui-même la case du bas pour confirmer et autoriser.',
+          'Ouvrez une demande pour voir un résumé imprimable ou télécharger le PDF.',
+          'Touchez Envoyer au prêteur pour envoyer le PDF par e-mail à un prêteur de la liste.',
+          'Les admins gèrent la liste des prêteurs (nom et e-mail) sur cette page.',
+        ],
+      },
+      ht: {
+        title: 'Demann kredi',
+        summary: 'Kliyan yo ranpli yon demann kredi sou entènèt (lyen /apply la) oswa avè ou nan magazen an. Ou voye l bay yon prètè an PDF.',
+        steps: [
+          'Voye lyen demann lan bay kliyan an nan paj kliyan an, oswa peze Ranpli l ak kliyan an epi fè l ansanm. Li pa janm mande nimewo Sekirite Sosyal ni dat nesans.',
+          'Kliyan an li fòm lan epi li tcheke bwat anba a li menm pou konfime epi otorize.',
+          'Louvri yon demann pou wè yon rezime pou enprime oswa telechaje PDF la.',
+          'Peze Voye bay prètè pou voye PDF la pa imèl bay yon prètè nan lis la.',
+          'Admin yo kenbe lis prètè yo (non ak imèl) sou paj sa a.',
+        ],
+      },
+    },
+  },
+  {
+    id: 'customer-history',
+    area: 'customers',
+    path: '/mp/customer',
+    keywords: 'customer history timeline phone number everything about customer',
+    text: {
+      en: {
+        title: 'Customer history',
+        summary: 'Type a phone number to see everything about that customer on one timeline.',
+        steps: [
+          'Open Customer history and type the phone number in any format.',
+          'The timeline shows their leads, texts, quotes, appointments, trade-ins, applications and purchases, newest first.',
+          'Tap an item to open it.',
+          'You can also open it from a lead or a conversation in the Texts inbox.',
+        ],
+      },
+      es: {
+        title: 'Historial del cliente',
+        summary: 'Escribe un número de teléfono para ver todo sobre ese cliente en una sola línea de tiempo.',
+        steps: [
+          'Abre Historial del cliente y escribe el teléfono en cualquier formato.',
+          'La línea de tiempo muestra sus prospectos, mensajes, cotizaciones, citas, intercambios, solicitudes y compras, de lo más nuevo a lo más viejo.',
+          'Toca un elemento para abrirlo.',
+          'También puedes abrirlo desde un prospecto o una conversación de la Bandeja de mensajes.',
+        ],
+      },
+      fr: {
+        title: 'Historique client',
+        summary: 'Tapez un numéro de téléphone pour voir tout ce qui concerne ce client sur une seule frise.',
+        steps: [
+          'Ouvrez Historique client et tapez le numéro, peu importe le format.',
+          'La frise montre ses prospects, SMS, devis, rendez-vous, reprises, demandes et achats, du plus récent au plus ancien.',
+          'Touchez un élément pour l’ouvrir.',
+          'Vous pouvez aussi l’ouvrir depuis un prospect ou une conversation de la Boîte SMS.',
+        ],
+      },
+      ht: {
+        title: 'Istwa kliyan',
+        summary: 'Tape yon nimewo telefòn pou wè tout bagay sou kliyan sa a sou yon sèl liy tan.',
+        steps: [
+          'Louvri Istwa kliyan epi tape nimewo telefòn lan nenpòt jan.',
+          'Liy tan an montre kliyan potansyèl, tèks, kotasyon, randevou, echanj, demann ak acha li yo, sa ki pi nouvo an premye.',
+          'Peze yon eleman pou louvri l.',
+          'Ou ka louvri l tou nan yon kliyan potansyèl oswa yon konvèsasyon nan Bwat tèks la.',
+        ],
+      },
+    },
+  },
+  {
+    id: 'live-board',
+    area: 'admin',
+    path: '/mp/live',
+    keywords: 'live board tv screen managers online new leads waiting weekly report fullscreen',
+    text: {
+      en: {
+        title: 'Live board',
+        summary: 'For managers: a big-screen board for the store TV that updates by itself.',
+        steps: [
+          'Open Live board on a computer connected to the TV and tap Fullscreen.',
+          'It shows new leads waiting (with live timers), who is online, each store’s texting phone, today’s appointments, sales and quotes opened today.',
+          'There is nothing to refresh — it updates on its own.',
+          'The weekly report is emailed every Monday at 7 AM. Admins can send it now from the board.',
+        ],
+      },
+      es: {
+        title: 'Tablero en vivo',
+        summary: 'Para gerentes: un tablero de pantalla grande para la TV de la tienda que se actualiza solo.',
+        steps: [
+          'Abre Tablero en vivo en una computadora conectada a la TV y toca Pantalla completa.',
+          'Muestra los prospectos nuevos en espera (con contadores en vivo), quién está en línea, el teléfono de mensajes de cada tienda, las citas, las ventas y las cotizaciones abiertas de hoy.',
+          'No hay que actualizar nada: se actualiza solo.',
+          'El informe semanal se envía por correo cada lunes a las 7 AM. Los administradores pueden enviarlo ya desde el tablero.',
+        ],
+      },
+      fr: {
+        title: 'Tableau en direct',
+        summary: 'Pour les responsables : un tableau grand écran pour la TV du magasin, qui se met à jour tout seul.',
+        steps: [
+          'Ouvrez Tableau en direct sur un ordinateur relié à la TV et touchez Plein écran.',
+          'Il montre les nouveaux prospects en attente (avec minuteurs), qui est en ligne, le téléphone SMS de chaque magasin, les rendez-vous, les ventes et les devis ouverts du jour.',
+          'Rien à actualiser : il se met à jour tout seul.',
+          'Le rapport hebdomadaire est envoyé chaque lundi à 7 h. Les admins peuvent l’envoyer tout de suite depuis le tableau.',
+        ],
+      },
+      ht: {
+        title: 'Tablo an dirèk',
+        summary: 'Pou manadjè: yon tablo pou gwo ekran televizyon magazen an, ki mete tèt li ajou poukont li.',
+        steps: [
+          'Louvri Tablo an dirèk sou yon òdinatè ki konekte ak televizyon an epi peze Plen ekran.',
+          'Li montre nouvo kliyan k ap tann (ak kontè an dirèk), ki moun ki sou liy, telefòn tèks chak magazen, randevou, vant ak kotasyon yo louvri jodi a.',
+          'Ou pa bezwen rafrechi anyen — li mete tèt li ajou.',
+          'Rapò chak semèn nan voye pa imèl chak lendi a 7è maten. Admin yo ka voye l kounye a sou tablo a.',
+        ],
+      },
+    },
+  },
 ];

@@ -6,7 +6,6 @@
 import * as admin from 'firebase-admin';
 import * as logger from 'firebase-functions/logger';
 import {expireIn, notificationExpireAt, nyDateKey} from './sales/util';
-import {sendMail} from './wh/steps/email';
 import {isInactiveStatus} from './membership';
 import type {WhSettings} from './wh/types';
 
@@ -82,6 +81,9 @@ export async function raiseSystemAlert(a: SystemAlert): Promise<string | null> {
 /** Email to iot@tigongolfcarts.com (skipped quietly when no email server is set up). */
 export async function emailAlert(title: string, text: string): Promise<boolean> {
   try {
+    // Loaded on use: the email module imports the Webhook Flows steps (avoids an import cycle with sheets.ts).
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const {sendMail} = require('./wh/steps/email') as typeof import('./wh/steps/email');
     const settings = ((await db().collection('wh_settings').doc('global').get()).data() || {}) as WhSettings;
     const esc = text.replace(/[&<>"]/g, (c) => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c] as string));
     await sendMail(settings, {

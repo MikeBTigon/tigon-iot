@@ -5,7 +5,7 @@ import {HttpsError, onCall} from 'firebase-functions/v2/https';
 import {onSchedule} from 'firebase-functions/v2/scheduler';
 import * as admin from 'firebase-admin';
 import {createHash} from 'crypto';
-import {dmsDeleteFlag, handleCartSold, nextPriceHistory, priceDropOf, stockedAtOf} from './sales/inventory';
+import {cartActive, dmsDeleteFlag, handleCartSold, nextPriceHistory, priceDropOf, stockedAtOf} from './sales/inventory';
 import {raiseSystemAlert} from './alerts';
 import {isInactiveStatus} from './membership';
 import {loadSalesSettings} from './sales/settings';
@@ -146,6 +146,21 @@ export interface SyncResult {
   skipped?: string;
 }
 
+/** One-time: app-made / imported carts without `active` get it (read in full, since the payload decides). */
+async function backfillActive(db: admin.firestore.Firestore, docs: admin.firestore.QueryDocumentSnapshot[]) {
+  for (let i = 0; i < docs.length; i += 100) {
+    const full = await db.getAll(...docs.slice(i, i + 100).map((d) => d.ref));
+    const b = db.batch();
+    let n = 0;
+    for (const s of full) {
+      if (!s.exists) continue;
+      b.update(s.ref, {active: cartActive(s.data() || {})});
+      n++;
+    }
+    if (n) await b.commit();
+  }
+}
+
 /** Takes the sync lease (mp_meta/sync.leaseUntil). False when another run holds it. */
 async function takeLease(ref: admin.firestore.DocumentReference, now: number, trigger: string): Promise<boolean> {
   return admin.firestore().runTransaction(async (tx) => {
@@ -182,7 +197,7 @@ export async function syncInventory(trigger: string): Promise<SyncResult> {
     }
 
     const existing = await db.collection(CARTS)
-      .select('payloadHash', 'serial', 'dmsId', 'source', 'price', 'priceHistory', 'firstSeenAt', 'stockedAt').get();
+      .select('payloadHash', 'serial', 'dmsId', 'source', 'price', 'priceHistory', 'firstSeenAt', 'stockedAt', 'soldLocally', 'active').get();
     const sales = await loadSalesSettings(true);
     const existingById = new Map(existing.docs.map((d) => [d.id, d]));
 
@@ -213,8 +228,10 @@ export async function syncInventory(trigger: string): Promise<SyncResult> {
       const firstSeenAt = Number(prev?.get('firstSeenAt')) || prev?.createTime?.toMillis() || started;
       if (prev?.get('payloadHash') === payloadHash) {
         unchanged++;
-        if (!prev.get('firstSeenAt') || !prev.get('stockedAt')) {
-          writer.set(prev.ref, {firstSeenAt, stockedAt: stockedAtOf(c, firstSeenAt, started).at}, {merge: true});
+        const activeNow = prev.get('soldLocally') !== true;
+        if (!prev.get('firstSeenAt') || !prev.get('stockedAt') || prev.get('active') !== activeNow) {
+          // (also the one-time backfill of `active` on carts written before it existed)
+          writer.set(prev.ref, {firstSeenAt, stockedAt: stockedAtOf(c, firstSeenAt, started).at, active: activeNow}, {merge: true});
           if (++ops >= 450) await flush();
         }
         continue;
@@ -246,12 +263,15 @@ export async function syncInventory(trigger: string): Promise<SyncResult> {
         firstSeenAt,
         stockedAt: stocked.at,
         stockedAtSource: stocked.source,
+        // In stock in the DMS; sold in the app → not active.
+        active: prev?.get('soldLocally') !== true,
         ...priceFields,
       }, {merge: true});
       written++;
       if (++ops >= 450) await flush();
     }
     await flush();
+    await backfillActive(db, existing.docs.filter((d) => /^(manual|import:)/.test(str(d.get('source'))) && typeof d.get('active') !== 'boolean'));
     for (const pc of priceChanges) {
       try {
         await db.collection('mp_price_changes').doc(pc.id).create(pc.data);

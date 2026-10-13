@@ -50,10 +50,10 @@ export const PAGE_HELP: Array<{ path: string; article: HelpArticleId }> = [
   { path: '/mp/customers', article: 'customers' },
   { path: '/mp/insights', article: 'funnel' },
   // New pages from the insights track (mp/insights/routes.tsx)
-  { path: '/mp/customer', article: 'customers' },
-  { path: '/mp/live', article: 'today' },
-  { path: '/mp/inbox', article: 'texts' },
-  { path: '/mp/credit-app', article: 'prequal' },
+  { path: '/mp/customer', article: 'customer-history' },
+  { path: '/mp/live', article: 'live-board' },
+  { path: '/mp/inbox', article: 'inbox' },
+  { path: '/mp/credit-app', article: 'credit-apps' },
 
   // Team & admin
   { path: '/mp/analytics', article: 'funnel' },

@@ -97,6 +97,21 @@ export function dmsDeleteFlag(c: unknown): boolean {
   return false;
 }
 
+/**
+ * mp_carts.active — the app loads only `where('active', '==', true)`: in stock (payload isInStock !== false) and not
+ * sold in the app (soldLocally). Written by the DMS sync, imports and mpCartSold.
+ */
+export function cartActive(data: Json): boolean {
+  if (data.soldLocally === true) return false;
+  try {
+    const p = typeof data.payload === 'string' ? JSON.parse(data.payload) : data.payload || {};
+    const src = p && typeof p === 'object' && p.cart && typeof p.cart === 'object' ? p.cart : p;
+    return !(src && src.isInStock === false);
+  } catch {
+    return true;
+  }
+}
+
 /** dmsDeleteFlag on an mp_carts doc (payload is a JSON string). */
 export function cartDocDeleteFlag(data: Json): boolean {
   try {
@@ -339,6 +354,11 @@ export const mpCartSold = onDocumentUpdated(`${C.carts}/{id}`, async (event) => 
   const before = event.data?.before.data() as Json | undefined;
   const after = event.data?.after.data() as Json | undefined;
   if (!before || !after) return;
+  // Keep `active` in step with soldLocally / stock (only writes when it differs, so this never loops).
+  const active = cartActive(after);
+  if (after.active !== active) {
+    await event.data!.after.ref.update({active}).catch((e) => logger.warn('mpCartSold: active', event.params.id, e));
+  }
   if (before.soldLocally === true || after.soldLocally !== true) return;
   try {
     await handleCartSold(event.params.id, after, await loadSalesSettings(), 'app');

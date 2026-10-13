@@ -33,7 +33,11 @@ export type HelpArticleId =
   | 'google-sheets'
   | 'phones-texting'
   | 'users-approvals'
-  | 'settings';
+  | 'settings'
+  | 'inbox'
+  | 'credit-apps'
+  | 'customer-history'
+  | 'live-board';
 
 /** Help center groups (labels: `helpArea.<id>` in the i18n files), in display order. */
 export type HelpArea = 'start' | 'sell' | 'post' | 'sellMore' | 'customers' | 'websites' | 'admin';

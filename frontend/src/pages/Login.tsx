@@ -46,7 +46,7 @@ const Login: React.FC = () => {
       setInfo('');
       setLoading(true);
       await login(em, password);
-      navigate('/dashboard');
+      navigate('/');
     } catch (err) {
       setError(authErrorMessage(err));
     } finally {

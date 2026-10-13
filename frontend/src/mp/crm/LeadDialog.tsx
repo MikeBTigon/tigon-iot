@@ -19,6 +19,7 @@ import {
 import type { Lead, LeadChannel, LeadStatus } from '../growthTypes';
 import LeadSalesPanel from '../sales/LeadSalesPanel';
 import type { MpCart } from '../types';
+import CustomerTimeline from '../insights/CustomerTimeline';
 import { useT } from '../../i18n';
 
 export interface LeadDialogProps {
@@ -183,6 +184,7 @@ function LeadBody({ onClose, lead, initial, notificationId, onSaved }: LeadDialo
             label={t('leadDialog.markHandled')} />
         )}
         {lead && <LeadSalesPanel lead={lead} />}
+        {lead?.phone && <Box sx={{ mt: 2 }}><CustomerTimeline phone={lead.phone} compact /></Box>}
         {error && <Alert severity="error" sx={{ mt: 1 }}>{error}</Alert>}
       </DialogContent>
       <DialogActions sx={{ flexWrap: 'wrap', gap: 1 }}>

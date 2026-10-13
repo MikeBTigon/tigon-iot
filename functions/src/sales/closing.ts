@@ -9,7 +9,7 @@ import type {SalesSettings, WeekDay} from './settings';
 import {loadSalesSettings} from './settings';
 import {PublicError} from './publicTypes';
 import type {PublicHandler} from './publicTypes';
-import {queueSms} from './outbox';
+import {hasMarketingConsent, queueSms} from './outbox';
 import {consentRecord, phoneDailyCap} from './publicGuard';
 import {
   C, DAY_MS, HOUR_MS, MIN_MS, PUBLIC_ORIGIN, cartSummary, clean, db, e164, fill, firstName, leadTemplateData, loadPeople,
@@ -392,10 +392,14 @@ const quoteHandlers: Record<string, PublicHandler> = {
       `${preferred ? ` Best time: ${preferred}.` : ''}${note ? ` "${note}"` : ''} Call them back.`;
     let leadId = docIdOf(q.leadId);
     const line = `Tapped "I'm interested" on quote ${code}${preferred ? ` (best time: ${preferred})` : ''}${note ? ` — ${note}` : ''}`;
+    const consent = req.body.consent === true ? consentRecord(req.body, 'quote page', req.ip, now) : undefined;
     if (leadId) {
       const lead = await db().collection(C.leads).doc(leadId).get();
       if (lead.exists) {
-        await lead.ref.update({quoteInterestedAt: now, notes: appendNote(lead.get('notes'), line), updatedAt: now});
+        // Consent is saved only when the quote's phone is this lead's phone.
+        const samePhone = !!e164(q.customerPhone) && e164(lead.get('phone')) === e164(q.customerPhone);
+        await lead.ref.update({quoteInterestedAt: now, notes: appendNote(lead.get('notes'), line), updatedAt: now,
+          ...(consent && samePhone ? consent : {})});
       } else {
         leadId = '';
       }
@@ -405,6 +409,7 @@ const quoteHandlers: Record<string, PublicHandler> = {
         name: str(q.customerName, 80) || 'Quote customer', phone: e164(q.customerPhone), source: 'quote', storeId: storeIdOf(q.storeId),
         ownerHint: sp, cartId: docIdOf(q.cartId) || undefined, cartTitle: str(q.cartTitle, 120), note: line,
         patch: {quoteCode: code, quoteSentAt: num(q.createdAt) || undefined, quoteOpenedAt: num(q.openedAt) || now, quoteInterestedAt: now},
+        consent,
         notifyText: text,
       });
       leadId = r.leadId;
@@ -599,6 +604,8 @@ const bookingHandlers: Record<string, PublicHandler> = {
     }
     const step = Math.min(Math.max(Math.round(Number(s.booking.slotMinutes) || 30), 10), 240);
     const cap = Math.max(1, Math.round(Number(s.booking.perSlot) || 1));
+    // Reminder texts go out only when the customer ticked "OK to text me".
+    const consent = b.consent === true ? consentRecord(b, 'booking form', req.ip, now) : undefined;
     const apptRef = db().collection(C.appointments).doc();
     const lockRef = db().collection(C.meta).doc(`book_${storeId}_${start}`);
     const apptId = await db().runTransaction(async (tx) => {
@@ -612,7 +619,7 @@ const bookingHandlers: Record<string, PublicHandler> = {
       tx.set(apptRef, clean({
         storeId, name, phone, email: email || undefined, kind, cartId: cartId || undefined, cartTitle: cartTitle || undefined,
         startAt: start, endAt: start + step * MIN_MS, dateKey: date, status: 'booked', source: 'public', notes: notes || undefined,
-        createdAt: now, updatedAt: now,
+        createdAt: now, updatedAt: now, ...(consent || {}),
       }));
       return apptRef.id;
     });
@@ -624,7 +631,7 @@ const bookingHandlers: Record<string, PublicHandler> = {
         name, phone, email, source: 'booking', storeId, leadId: leadHint || undefined, ownerHint: ownerHint || undefined,
         cartId: cartId || undefined, cartTitle, note: `Booked a ${KIND_LABEL[kind]} for ${when} at ${city}${cartTitle ? ` (${cartTitle})` : ''}${notes ? ` — ${notes}` : ''}`,
         patch: {appointmentId: apptRef.id, appointmentAt: start},
-        consent: b.consent === true ? consentRecord(b, 'booking form', req.ip) : undefined,
+        consent,
         notifyText: `New ${KIND_LABEL[kind]} booked: ${name}, ${when} at ${city}${cartTitle ? ` — ${cartTitle}` : ''}. Phone ${prettyPhone(phone)}.`,
         alsoNotify: managersFor(people, storeId).filter((p) => p.location === storeId).map((p) => p.uid),
       });
@@ -667,6 +674,15 @@ export async function appointmentTick(now: number, s: SalesSettings): Promise<vo
   const textData = async (a: Json, extra: Json) =>
     leadTemplateData({name: a.name, locationId: a.storeId, cartTitle: a.cartTitle}, await nameOf(String(a.ownerUid || '')), extra);
 
+  // Reminder texts only with consent: ticked on the booking form (appointment smsConsent) or on file for the lead.
+  const consentCache = new Map<string, boolean>();
+  const mayText = async (a: Json) => {
+    if (a.smsConsent === true) return true;
+    const leadId = String(a.leadId || '');
+    if (!leadId) return false;
+    if (!consentCache.has(leadId)) consentCache.set(leadId, await hasMarketingConsent(leadId));
+    return consentCache.get(leadId)!;
+  };
   for (const d of booked.docs) {
     const a = d.data();
     const startAt = Number(a.startAt) || 0;
@@ -680,7 +696,7 @@ export async function appointmentTick(now: number, s: SalesSettings): Promise<vo
         const at = dayBeforeAt({startAt, createdAt});
         if (at === null || now >= startAt - 3 * HOUR_MS) patch.remindedDayBefore = true; // too late / booked recently: skip
         else if (now >= at) {
-          await queueSms({
+          if (await mayText(a)) await queueSms({
             to: a.phone, kind: 'appointment', storeId: a.storeId, leadId: a.leadId, appointmentId: d.id, dedupeKey: `appt_day_${d.id}`,
             body: fill(s.booking.reminderTemplate, await textData(a, {when: nyWhen(startAt), link: bookUrl(a.storeId)})),
           });
@@ -689,7 +705,7 @@ export async function appointmentTick(now: number, s: SalesSettings): Promise<vo
       }
       // 2 hours before (not for bookings made in the last 2 hours before the visit).
       if (!a.remindedSoon && now >= startAt - 2 * HOUR_MS) {
-        if (now < startAt && createdAt < startAt - 2 * HOUR_MS) {
+        if (now < startAt && createdAt < startAt - 2 * HOUR_MS && await mayText(a)) {
           await queueSms({
             to: a.phone, kind: 'appointment', storeId: a.storeId, leadId: a.leadId, appointmentId: d.id, dedupeKey: `appt_soon_${d.id}`,
             body: fill(s.booking.reminderTemplate, await textData(a, {when: `today at ${nyClock(startAt)}`, link: bookUrl(a.storeId)})),

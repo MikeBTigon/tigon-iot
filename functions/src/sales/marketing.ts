@@ -339,7 +339,8 @@ const submitReferral: PublicHandler = async (req) => {
   if (!name) throw new PublicError(400, 'Please enter your name.');
   if (!phone) throw new PublicError(400, 'Please enter a 10-digit phone number.');
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new PublicError(400, 'That email doesn\'t look right.');
-  if (b.consent !== true) throw new PublicError(400, 'Please tick the box so we can contact you.');
+  // Consent is optional ("Consent is not required to buy"): without it we call, never text.
+  const consented = b.consent === true;
   const s = await loadSalesSettings();
   const refSnap = c ? await db().collection(C.referrals).doc(c).get() : null;
   if (!refSnap?.exists || !s.referral.enabled) throw new PublicError(404, 'This referral link is not active.');
@@ -348,7 +349,7 @@ const submitReferral: PublicHandler = async (req) => {
   await phoneDailyCap('referral', phone);
   const people = await loadPeople();
   const now = Date.now();
-  const consent = consentRecord(b, 'referral form', req.ip, now);
+  const consent = consented ? consentRecord(b, 'referral form', req.ip, now) : {};
 
   // Owner: the salesperson who sold to the referrer, else the store's manager.
   let ownerUid = '';

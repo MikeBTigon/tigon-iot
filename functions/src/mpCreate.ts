@@ -888,8 +888,13 @@ export async function runImport(integrationId: string, trigger: string, deadline
       const payloadHash = createHash('sha1').update(payload).digest('hex');
       const prev = byId.get(docId);
       if (!item.inStock) counts.hidden++;
+      const active = item.inStock && prev?.get('soldLocally') !== true;
       if (prev?.get('payloadHash') === payloadHash) {
         counts.unchanged++;
+        if (prev.get('active') !== active) {
+          writer.set(prev.ref, {active}, {merge: true});
+          if (++ops >= 400) await flush();
+        }
         continue;
       }
       const data: Json = {
@@ -903,6 +908,8 @@ export async function runImport(integrationId: string, trigger: string, deadline
         source,
         createdBy: 'import',
         photoUrls: item.photos.slice(0, 20),
+        // The app loads only active carts (in stock, not sold in the app).
+        active,
       };
       if (!prev) {
         Object.assign(data, {createdAt: started, postedBy: {}, postedAccounts: {}});

@@ -21,7 +21,7 @@ const WhShell: React.FC<{
   else if (!allowed) {
     body = (
       <Alert severity="info">
-        Webhook Flows is for {admin ? 'admins' : 'managers and admins'}. Ask an admin to change your role in MP Assistant → Profiles.
+        Webhook Flows is for {admin ? 'admins' : 'managers and admins'}. Ask an admin to change your role in Team & admin → Accounts.
       </Alert>
     );
   }
