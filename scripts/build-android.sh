@@ -39,6 +39,22 @@ if [ -z "${TIGON_KEYSTORE_PATH:-}" ] || [ ! -s "${TIGON_KEYSTORE_PATH}" ] || [ -
   exit 1
 fi
 export TIGON_KEY_ALIAS="${TIGON_KEY_ALIAS:-tigon}"
+# A pasted alias may carry spaces or quotes; when it still isn't in the keystore and the keystore holds one key, use that key.
+TIGON_KEY_ALIAS="$(printf '%s' "$TIGON_KEY_ALIAS" | tr -d "\"'\r\n" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+if command -v keytool >/dev/null 2>&1; then
+  KS_ALIASES="$(keytool -list -keystore "$TIGON_KEYSTORE_PATH" -storepass "$TIGON_STORE_PASSWORD" 2>/dev/null \
+    | grep -E 'PrivateKeyEntry' | cut -d, -f1 || true)"
+  if [ -n "$KS_ALIASES" ] && ! printf '%s\n' "$KS_ALIASES" | grep -qixF "$TIGON_KEY_ALIAS"; then
+    if [ "$(printf '%s\n' "$KS_ALIASES" | wc -l)" -eq 1 ]; then
+      echo "::warning::Key alias from ANDROID_KEY_ALIAS isn't in the keystore; using its only key, \"$KS_ALIASES\"." >&2
+      TIGON_KEY_ALIAS="$KS_ALIASES"
+    else
+      echo "::error::Key alias from ANDROID_KEY_ALIAS isn't in the keystore. Keys in it: $(printf '%s' "$KS_ALIASES" | tr '\n' ' ')" >&2
+      exit 1
+    fi
+  fi
+fi
+export TIGON_KEY_ALIAS
 
 npx cap sync android
 if [ -n "${GOOGLE_SERVICES_JSON:-}" ]; then
