@@ -348,30 +348,37 @@ function hasNewBattery(cart: Cart): boolean {
 
 const isAllTerrain = (cart: Cart) => /all[\s-]?terrain|off[\s-]?road|\bA\/?T\b/i.test(cart.tireType || '');
 
+const isLeadAcid = (batteryType: string) => /lead|acid|flooded|agm|trojan|u\.?s\.? battery/i.test(batteryType || '');
+
 /**
- * Title 1: what a buyer types in Marketplace search, built from the cart itself ("2+2 Lifted Golf Cart",
- * "All Terrain Electric Cart", "New Battery Golf Cart", "Street Legal Electric Cart", "LSV Golf Cart").
- * The most specific phrases come first; each variation picks among the top few.
+ * Title 1: what a buyer types in Marketplace search, built from this cart's own facts so two carts only share a
+ * title when they really match: LSV (street legal), Lifted, All Terrain, the battery (New Battery / Lithium /
+ * Lead Acid / Gas) and the seats ("4 Seater", "6 Passenger"; the DMS can't tell 2+2 from forward-facing).
+ * The first entry is the most specific; the rest are shorter or re-worded versions for the other variations.
  */
 export function searchTitles(cart: Cart): string[] {
-  const power = cart.isElectric ? 'Electric' : 'Gas';
   const p = cart.passengers;
-  const out: string[] = [];
-  if (cart.isLifted && p === 4) out.push('2+2 Lifted Golf Cart');
-  if (cart.isLifted && p >= 6) out.push(`${p} Passenger Lifted Golf Cart`);
-  if (cart.isLifted && isAllTerrain(cart)) out.push('Lifted All Terrain Golf Cart');
-  if (cart.isStreetLegal) out.push(`Street Legal ${power} Cart`, 'LSV Golf Cart', 'Street Legal Golf Cart');
-  if (cart.isLifted) out.push(`Lifted ${power} Golf Cart`, 'Lifted Golf Cart');
-  if (isAllTerrain(cart)) out.push(`All Terrain ${power} Cart`);
-  if (hasNewBattery(cart)) out.push(isLithium(cart.batteryType) ? 'New Lithium Battery Golf Cart' : 'New Battery Golf Cart');
-  else if (cart.isElectric && isLithium(cart.batteryType)) out.push('Lithium Golf Cart');
-  if (!cart.isElectric) out.push('Gas Golf Cart');
-  if (p === 4) out.push('2+2 Golf Cart', '4 Seater Golf Cart');
-  else if (p >= 6) out.push(`${p} Passenger Golf Cart`);
-  else if (p === 2) out.push('2 Seater Golf Cart');
-  out.push(`${power} Golf Cart`);
-  if (!cart.isUsed) out.unshift(`New ${out[0]}`.replace(/^New New /, 'New '));
-  return [...new Set(out)];
+  const lithium = cart.isElectric && isLithium(cart.batteryType);
+  const battery = !cart.isElectric ? 'Gas'
+    : hasNewBattery(cart) ? (lithium ? 'New Lithium Battery' : 'New Battery')
+      : lithium ? 'Lithium' : isLeadAcid(cart.batteryType) ? 'Lead Acid' : 'Electric';
+  const seats = p >= 6 ? `${p} Passenger` : p === 4 ? '4 Seater' : p === 2 ? '2 Seater' : p ? `${p} Passenger` : '';
+  const seatsAlt = p >= 5 ? `${p} Seater` : p ? `${p} Passenger` : '';
+  const lsv = cart.isStreetLegal;
+  const style = [cart.isLifted ? 'Lifted' : '', isAllTerrain(cart) ? 'All Terrain' : ''].filter(Boolean);
+  const isNew = !cart.isUsed;
+  const t = (...parts: string[]) => parts.filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+  const noun = lsv ? 'LSV' : 'Golf Cart';
+  // Most specific: style (up to 2) + battery (when there's room) + seats + LSV / Golf Cart.
+  const main = style.length >= 2 ? t(isNew ? 'New' : '', ...style, seats, noun) : t(isNew ? 'New' : '', ...style, battery, seats, noun);
+  const out = [
+    main,
+    t(...style, battery, seatsAlt, lsv ? 'Street Legal Golf Cart' : 'Cart'),
+    lsv ? t(isNew ? 'New' : '', 'Street Legal', battery, 'Golf Cart') : t(isNew ? 'New' : '', battery, seats, 'Golf Cart'),
+    style.length ? t(...style, 'Golf Cart') : t(battery, 'Golf Cart'),
+    t(seats, noun),
+  ];
+  return [...new Set(out.filter((x) => x && x !== noun))];
 }
 
 /** Title 2: make and model, e.g. "Club Car Tempo", "Denago Nomad" (a description of the cart when the model is "Other"). */

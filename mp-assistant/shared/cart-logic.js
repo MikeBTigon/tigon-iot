@@ -350,25 +350,27 @@ var TigonCartLogic = (() => {
     return cart.isUsed && cart.isElectric && !!y && y >= (/* @__PURE__ */ new Date()).getFullYear() - 1;
   }
   var isAllTerrain = (cart) => /all[\s-]?terrain|off[\s-]?road|\bA\/?T\b/i.test(cart.tireType || "");
+  var isLeadAcid = (batteryType) => /lead|acid|flooded|agm|trojan|u\.?s\.? battery/i.test(batteryType || "");
   function searchTitles(cart) {
-    const power = cart.isElectric ? "Electric" : "Gas";
     const p = cart.passengers;
-    const out = [];
-    if (cart.isLifted && p === 4) out.push("2+2 Lifted Golf Cart");
-    if (cart.isLifted && p >= 6) out.push(`${p} Passenger Lifted Golf Cart`);
-    if (cart.isLifted && isAllTerrain(cart)) out.push("Lifted All Terrain Golf Cart");
-    if (cart.isStreetLegal) out.push(`Street Legal ${power} Cart`, "LSV Golf Cart", "Street Legal Golf Cart");
-    if (cart.isLifted) out.push(`Lifted ${power} Golf Cart`, "Lifted Golf Cart");
-    if (isAllTerrain(cart)) out.push(`All Terrain ${power} Cart`);
-    if (hasNewBattery(cart)) out.push(isLithium(cart.batteryType) ? "New Lithium Battery Golf Cart" : "New Battery Golf Cart");
-    else if (cart.isElectric && isLithium(cart.batteryType)) out.push("Lithium Golf Cart");
-    if (!cart.isElectric) out.push("Gas Golf Cart");
-    if (p === 4) out.push("2+2 Golf Cart", "4 Seater Golf Cart");
-    else if (p >= 6) out.push(`${p} Passenger Golf Cart`);
-    else if (p === 2) out.push("2 Seater Golf Cart");
-    out.push(`${power} Golf Cart`);
-    if (!cart.isUsed) out.unshift(`New ${out[0]}`.replace(/^New New /, "New "));
-    return [...new Set(out)];
+    const lithium = cart.isElectric && isLithium(cart.batteryType);
+    const battery = !cart.isElectric ? "Gas" : hasNewBattery(cart) ? lithium ? "New Lithium Battery" : "New Battery" : lithium ? "Lithium" : isLeadAcid(cart.batteryType) ? "Lead Acid" : "Electric";
+    const seats = p >= 6 ? `${p} Passenger` : p === 4 ? "4 Seater" : p === 2 ? "2 Seater" : p ? `${p} Passenger` : "";
+    const seatsAlt = p >= 5 ? `${p} Seater` : p ? `${p} Passenger` : "";
+    const lsv = cart.isStreetLegal;
+    const style = [cart.isLifted ? "Lifted" : "", isAllTerrain(cart) ? "All Terrain" : ""].filter(Boolean);
+    const isNew = !cart.isUsed;
+    const t = (...parts) => parts.filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
+    const noun = lsv ? "LSV" : "Golf Cart";
+    const main = style.length >= 2 ? t(isNew ? "New" : "", ...style, seats, noun) : t(isNew ? "New" : "", ...style, battery, seats, noun);
+    const out = [
+      main,
+      t(...style, battery, seatsAlt, lsv ? "Street Legal Golf Cart" : "Cart"),
+      lsv ? t(isNew ? "New" : "", "Street Legal", battery, "Golf Cart") : t(isNew ? "New" : "", battery, seats, "Golf Cart"),
+      style.length ? t(...style, "Golf Cart") : t(battery, "Golf Cart"),
+      t(seats, noun)
+    ];
+    return [...new Set(out.filter((x) => x && x !== noun))];
   }
   function modelTitle(cart) {
     return [displayMake(cart), displayModel(cart)].filter(Boolean).join(" ") || cartKind(cart);
