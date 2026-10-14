@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Box, Button, ButtonGroup, Card, CardActionArea, CardContent, Chip, Menu, MenuItem, Snackbar, Typography } from '@mui/material';
+import { Box, Button, ButtonGroup, Card, CardActionArea, CardContent, Chip, Dialog, DialogActions, DialogContent, DialogTitle, Menu, MenuItem, Snackbar, Typography } from '@mui/material';
 import { ArrowDropDown, Bolt, CheckCircle, Download, Warning } from '@mui/icons-material';
 import { cartName, cartTitle } from '../cartLogic';
 import { formatPrice, hasPhotoIssue, isPostedBy, postedAccountCount, workingPhotos } from '../cartUtils';
@@ -8,7 +8,8 @@ import { locationName } from '../constants';
 import { useMp } from '../MpDataContext';
 import { saveAllPhotos } from '../photos';
 import { openFacebookAssisted, quickFbList } from '../quickList';
-import { useAutoMarkPosted } from '../useAutoMarkPosted';
+import { rememberPostingAccount, useAutoMarkPosted } from '../useAutoMarkPosted';
+import PostedOnTracker from './PostedOnTracker';
 import { notify } from '../../ui/notify';
 import { logEvent } from '../../native/deviceSession';
 import type { MpCart } from '../types';
@@ -23,6 +24,7 @@ const CartCard: React.FC<{ cart: MpCart }> = ({ cart }) => {
   const [menu, setMenu] = useState<HTMLElement | null>(null);
   const [note, setNote] = useState('');
   const autoMark = useAutoMarkPosted();
+  const [pickOpen, setPickOpen] = useState(false);
   const uid = userKeys[0] || '';
   const run = async (fn: () => Promise<string>, mark = false) => {
     setMenu(null);
@@ -36,7 +38,11 @@ const CartCard: React.FC<{ cart: MpCart }> = ({ cart }) => {
           label: 'Undo',
           run: () => { void marked.undo().then(() => notify('Undone — not marked as posted.', 'info')); },
         });
-      } else setNote(msg);
+      } else {
+        setNote(msg);
+        // Account not known: tick it in the "Posted on" checklist.
+        if (marked?.pick) setPickOpen(true);
+      }
       logEvent(uid, 'listing_prepared', { cartId: cart.docId });
       logEvent(uid, 'marketplace_opened', { cartId: cart.docId });
     } catch (e) {
@@ -87,6 +93,20 @@ const CartCard: React.FC<{ cart: MpCart }> = ({ cart }) => {
         )}
       </Box>
       <Snackbar open={!!note} autoHideDuration={6000} onClose={() => setNote('')} message={note} />
+      <Dialog open={pickOpen} onClose={() => setPickOpen(false)} fullWidth maxWidth="sm">
+        <DialogTitle>Which account did you post it on?</DialogTitle>
+        <DialogContent sx={{ px: { xs: 1, sm: 3 } }}>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+            Tick the account(s), then Done. Next time the app remembers your account and ticks it for you.
+          </Typography>
+          <PostedOnTracker cart={cart} onSaved={(added) => {
+            if (added.length === 1) rememberPostingAccount(added[0]);
+            setPickOpen(false);
+            if (added.length) notify(`Marked as posted on ${added.length} account${added.length === 1 ? '' : 's'}.`, 'success');
+          }} />
+        </DialogContent>
+        <DialogActions><Button onClick={() => setPickOpen(false)}>Not now</Button></DialogActions>
+      </Dialog>
     </Card>
   );
 };

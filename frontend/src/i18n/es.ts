@@ -58,6 +58,7 @@ const es: Resource = {
     websiteForms: 'Formularios web',
     teamAdmin: 'Equipo y administración',
     suggested: 'Sugeridos para publicar',
+    posted: 'Publicados',
     financingCalculator: 'Calculadora de financiamiento',
     download: 'Descargar la app',
     requestChange: 'Pedir un cambio',

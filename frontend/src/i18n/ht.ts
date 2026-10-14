@@ -59,6 +59,7 @@ const ht: Resource = {
     websiteForms: 'Fòm sit entènèt',
     teamAdmin: 'Ekip ak administrasyon',
     suggested: 'Sijere pou pibliye',
+    posted: 'Pibliye',
     financingCalculator: 'Kalkilatris finansman',
     download: 'Telechaje app la',
     requestChange: 'Mande yon chanjman',

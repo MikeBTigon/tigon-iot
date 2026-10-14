@@ -58,6 +58,7 @@ export const MP_NAV: NavGroup[] = [
   {
     label: 'Post & share', key: 'nav.post', items: [
       { label: 'Suggested to post', path: '/mp', min: 'sales', key: 'nav.suggested', keywords: 'mp assistant marketplace facebook home repost' },
+      { label: 'Posted', path: '/mp/posted', min: 'sales', key: 'nav.posted', keywords: 'posted carts accounts who posted facebook marketplace listed' },
       { label: 'Queue', path: '/mp/queue', min: 'sales', key: 'nav.queue', keywords: 'posting facebook marketplace' },
       { label: 'Calendar', path: '/mp/calendar', min: 'sales', key: 'nav.calendar', keywords: 'schedule' },
       { label: 'Storefront', path: '/mp/storefront', min: 'sales', key: 'nav.storefront', keywords: 'website shop page' },

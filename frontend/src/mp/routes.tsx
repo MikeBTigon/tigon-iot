@@ -20,6 +20,7 @@ const MpAccounts = lazy(() => import('./pages/MpAccounts'));
 const MpCartDetail = lazy(() => import('./pages/MpCartDetail'));
 const MpFinance = lazy(() => import('./pages/MpFinance'));
 const MpQueue = lazy(() => import('./pages/MpQueue'));
+const MpPosted = lazy(() => import('./pages/MpPosted'));
 const MpAnalytics = lazy(() => import('./pages/MpAnalytics'));
 const MpPrepare = lazy(() => import('./pages/MpPrepare'));
 
@@ -37,6 +38,7 @@ export const MP_ROUTES: Array<{ path: string; element: ReactNode }> = [
   { path: '/mp/accounts', element: page(<MpAccounts />) },
   { path: '/mp/cart/:id', element: page(<MpCartDetail />) },
   { path: '/mp/queue', element: page(<MpQueue />) },
+  { path: '/mp/posted', element: page(<MpPosted />) },
   { path: '/mp/analytics', element: page(<MpAnalytics />) },
   { path: '/mp/post/:queueId', element: page(<MpPrepare />) },
   { path: '/mp/prepare/:cartId', element: page(<MpPrepare />) },

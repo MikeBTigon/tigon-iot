@@ -58,6 +58,7 @@ const fr: Resource = {
     websiteForms: 'Formulaires web',
     teamAdmin: 'Équipe et administration',
     suggested: 'Suggérées à publier',
+    posted: 'Publiés',
     financingCalculator: 'Calculatrice de financement',
     download: 'Télécharger l’app',
     requestChange: 'Demander un changement',

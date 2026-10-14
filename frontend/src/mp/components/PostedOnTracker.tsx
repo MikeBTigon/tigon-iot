@@ -5,7 +5,8 @@ import { groupAccounts, timeAgo } from '../cartUtils';
 import type { MpCart } from '../types';
 
 /** Multi-select checklist of Facebook accounts; "Done" commits all changes at once. */
-const PostedOnTracker: React.FC<{ cart: MpCart }> = ({ cart }) => {
+/** `onSaved` runs after Done with the accounts that were ticked (used by Quick FB List's "which account?" dialog). */
+const PostedOnTracker: React.FC<{ cart: MpCart; onSaved?: (added: string[]) => void }> = ({ cart, onSaved }) => {
   const { accounts, profile, setPostedAccounts, userName } = useMp();
   const canPost = !!profile;
   const [pending, setPending] = useState<Record<string, boolean>>({});
@@ -33,6 +34,7 @@ const PostedOnTracker: React.FC<{ cart: MpCart }> = ({ cart }) => {
       const remove = Object.keys(pending).filter((id) => !pending[id]);
       await setPostedAccounts(cart, add, remove);
       setPending({});
+      onSaved?.(add);
     } catch (e) {
       console.error(e);
       setError('Could not save. Check your connection and try again.');

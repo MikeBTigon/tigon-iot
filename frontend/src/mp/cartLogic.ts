@@ -340,36 +340,51 @@ function features(cart: Cart): string[] {
   return lines;
 }
 
+/** Battery from this year or last on a used cart counts as a "new battery". */
+function hasNewBattery(cart: Cart): boolean {
+  const y = parseInt((cart.batteryYear || '').match(/\d{4}/)?.[0] || '', 10);
+  return cart.isUsed && cart.isElectric && !!y && y >= new Date().getFullYear() - 1;
+}
+
+const isAllTerrain = (cart: Cart) => /all[\s-]?terrain|off[\s-]?road|\bA\/?T\b/i.test(cart.tireType || '');
+
+/**
+ * Title 1: what a buyer types in Marketplace search, built from the cart itself ("2+2 Lifted Golf Cart",
+ * "All Terrain Electric Cart", "New Battery Golf Cart", "Street Legal Electric Cart", "LSV Golf Cart").
+ * The most specific phrases come first; each variation picks among the top few.
+ */
+export function searchTitles(cart: Cart): string[] {
+  const power = cart.isElectric ? 'Electric' : 'Gas';
+  const p = cart.passengers;
+  const out: string[] = [];
+  if (cart.isLifted && p === 4) out.push('2+2 Lifted Golf Cart');
+  if (cart.isLifted && p >= 6) out.push(`${p} Passenger Lifted Golf Cart`);
+  if (cart.isLifted && isAllTerrain(cart)) out.push('Lifted All Terrain Golf Cart');
+  if (cart.isStreetLegal) out.push(`Street Legal ${power} Cart`, 'LSV Golf Cart', 'Street Legal Golf Cart');
+  if (cart.isLifted) out.push(`Lifted ${power} Golf Cart`, 'Lifted Golf Cart');
+  if (isAllTerrain(cart)) out.push(`All Terrain ${power} Cart`);
+  if (hasNewBattery(cart)) out.push(isLithium(cart.batteryType) ? 'New Lithium Battery Golf Cart' : 'New Battery Golf Cart');
+  else if (cart.isElectric && isLithium(cart.batteryType)) out.push('Lithium Golf Cart');
+  if (!cart.isElectric) out.push('Gas Golf Cart');
+  if (p === 4) out.push('2+2 Golf Cart', '4 Seater Golf Cart');
+  else if (p >= 6) out.push(`${p} Passenger Golf Cart`);
+  else if (p === 2) out.push('2 Seater Golf Cart');
+  out.push(`${power} Golf Cart`);
+  if (!cart.isUsed) out.unshift(`New ${out[0]}`.replace(/^New New /, 'New '));
+  return [...new Set(out)];
+}
+
+/** Title 2: make and model, e.g. "Club Car Tempo", "Denago Nomad" (a description of the cart when the model is "Other"). */
+export function modelTitle(cart: Cart): string {
+  return [displayMake(cart), displayModel(cart)].filter(Boolean).join(' ') || cartKind(cart);
+}
+
 export function buildTitles(cart: Cart, rng: () => number): [string, string] {
-  const adjectives = cart.isUsed
-    ? ['Well Kept', 'Clean', 'Great Shape', 'Nice', 'Sharp', 'Ready to Ride']
-    : ['New', 'Brand New', 'Like New', 'New Model'];
-  const nouns: string[] = [];
-  if (cart.isStreetLegal) nouns.push('Street Legal Cart', 'Street Legal Golf Cart', 'LSV');
-  if (cart.isLifted) nouns.push('Lifted Golf Cart', 'Lifted Cart');
-  if (cart.isElectric && isLithium(cart.batteryType)) nouns.push('Lithium Cart', 'Lithium Golf Cart');
-  if (!cart.isElectric) nouns.push('Gas Golf Cart', 'Gas Cart');
-  if (cart.passengers >= 6) nouns.push(`${cart.passengers} Seater Golf Cart`);
-  else if (cart.passengers === 4) nouns.push('4 Seater Golf Cart', '4 Passenger Cart');
-  nouns.push('Golf Cart');
-
-  const a1 = pick(rng, adjectives);
-  const n1 = pick(rng, nouns);
-  let title1 = cart.isUsed || a1 !== 'New' ? `${a1} ${n1}` : `New ${n1}`;
-  title1 = title1.replace(/\bNew New\b/, 'New');
-
-  const name = cartName(cart);
-  const power = cart.isElectric ? (isLithium(cart.batteryType) ? 'Lithium' : 'Electric') : 'Gas';
-  const t2opts = [
-    `${name}${cart.color ? ' - ' + normalizeColor(cart.color).replace(/\b\w/g, (c) => c.toUpperCase()) : ''}`,
-    isPlaceholder(cart.model)
-      ? [cart.year, displayMake(cart), cartKind(cart).includes(power) ? '' : power, cartKind(cart)].filter(Boolean).join(' ')
-      : `${name} ${power}`,
-    isPlaceholder(cart.model)
-      ? `${displayMake(cart)} ${cartKind(cart)}`.trim()
-      : `${displayMake(cart) || 'Golf'} ${cart.model || 'Cart'}${cart.isLifted ? ' Lifted' : ''}${cart.passengers ? ` ${cart.passengers} Pass` : ''}`.trim(),
-  ];
-  return [title1, pick(rng, t2opts)];
+  const titles = searchTitles(cart);
+  // Mostly the most specific phrase; sometimes the 2nd or 3rd so variations differ.
+  const r = rng();
+  const i = Math.min(titles.length - 1, r < 0.55 ? 0 : r < 0.8 ? 1 : 2);
+  return [titles[i], modelTitle(cart)];
 }
 
 function warrantyLines(cart: Cart, rng: () => number): string[] {
@@ -490,5 +505,8 @@ export function generateVariations(cart: Cart, userId = ''): Listing[] {
   const formats: ListingFormat[] = threeParagraph
     ? ['paragraph', 'paragraph', 'paragraph', 'list', 'list']
     : ['list', 'list', 'list', 'paragraph', 'paragraph'];
-  return shuffle(rng, formats).map((format, i) => generateListing(cart, { seed, variant: i + 1, format }));
+  const list = shuffle(rng, formats).map((format, i) => generateListing(cart, { seed, variant: i + 1, format }));
+  // Variation 1 is what Quick FB List posts: always the most specific search phrase.
+  if (list[0]) list[0] = { ...list[0], title1: searchTitles(cart)[0] };
+  return list;
 }

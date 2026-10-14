@@ -59,6 +59,7 @@ const en = {
     websiteForms: 'Website forms',
     teamAdmin: 'Team & admin',
     suggested: 'Suggested to post',
+    posted: 'Posted',
     financingCalculator: 'Financing calculator',
     download: 'Download app',
     requestChange: 'Request a change',

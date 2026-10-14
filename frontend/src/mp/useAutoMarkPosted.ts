@@ -1,6 +1,7 @@
 // Quick FB List auto-marks the cart as posted on the Facebook account being used:
 //   the queue item's account → this phone's account (Devices page) → the account last marked on this computer.
-// With none known it marks the cart as posted by this person. Every mark can be undone.
+// With none known it doesn't guess: it asks (pick: true) so the person ticks the account in the "Posted on" checklist.
+// Every mark can be undone.
 import { useCallback, useEffect, useState } from 'react';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
@@ -39,9 +40,9 @@ export function usePostingAccountId(): string {
 }
 
 export function useAutoMarkPosted() {
-  const { accounts, setPosted, setPostedAccounts, userKeys } = useMp();
+  const { accounts, setPostedAccounts } = useMp();
   return useCallback(
-    async (cart: MpCart, queueAccountId = ''): Promise<{ note: string; undo: () => Promise<void> }> => {
+    async (cart: MpCart, queueAccountId = ''): Promise<{ note: string; undo: () => Promise<void>; pick?: boolean }> => {
       const candidates = [queueAccountId, await phoneAccount(), readLocal(LAST_ACCOUNT_KEY) || ''];
       const account = candidates.map((id) => accounts.find((a) => a.id === id)).find(Boolean);
       if (account) {
@@ -49,11 +50,9 @@ export function useAutoMarkPosted() {
         await setPostedAccounts(cart, [account.id], []);
         return { note: `Marked as posted on ${account.name}.`, undo: () => setPostedAccounts(cart, [], [account.id]) };
       }
-      const already = userKeys.some((k) => cart.postedBy[k]);
-      if (already) return { note: '', undo: async () => {} };
-      await setPosted(cart, true);
-      return { note: 'Marked as posted.', undo: () => setPosted(cart, false) };
+      // No account known: open the checklist instead of marking only the card.
+      return { note: '', undo: async () => {}, pick: true };
     },
-    [accounts, setPosted, setPostedAccounts, userKeys],
+    [accounts, setPostedAccounts],
   );
 }

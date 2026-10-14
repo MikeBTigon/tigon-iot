@@ -151,6 +151,8 @@ const MpPrepare: React.FC = () => {
       const marked = await autoMark(cart, item?.accountId || '').catch(() => null);
       setMessage([msg, marked?.note].filter(Boolean).join(' '));
       setUndo(marked?.note ? () => marked.undo : null);
+      // Account not known: open "Which account did you post on?" to tick it.
+      if (marked?.pick) setConfirmOpen(true);
       return;
     }
     await copyText(listing.description);
