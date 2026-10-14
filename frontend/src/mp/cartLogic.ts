@@ -348,12 +348,25 @@ function hasNewBattery(cart: Cart): boolean {
 
 const isAllTerrain = (cart: Cart) => /all[\s-]?terrain|off[\s-]?road|\bA\/?T\b/i.test(cart.tireType || '');
 
+/**
+ * Seat layout when the model name says it ("D5 Ranger 4+2", "Classic 2+2", "… Forward Facing"): '2+2', '4+2',
+ * 'forward', or '' when the name doesn't say (titles then use the plain seat count).
+ */
+export function seatLayout(cart: Pick<Cart, 'model'>): '2+2' | '4+2' | 'forward' | '' {
+  const m = (cart.model || '').toLowerCase();
+  if (/\b4\s*\+\s*2\b/.test(m)) return '4+2';
+  if (/\b2\s*\+\s*2\b/.test(m)) return '2+2';
+  if (/\bforward(\s*-?\s*facing)?\b|\bfwd\s*facing\b/.test(m)) return 'forward';
+  return '';
+}
+
 const isLeadAcid = (batteryType: string) => /lead|acid|flooded|agm|trojan|u\.?s\.? battery/i.test(batteryType || '');
 
 /**
  * Title 1: what a buyer types in Marketplace search, built from this cart's own facts so two carts only share a
  * title when they really match: LSV (street legal), Lifted, All Terrain, the battery (New Battery / Lithium /
- * Lead Acid / Gas) and the seats ("4 Seater", "6 Passenger"; the DMS can't tell 2+2 from forward-facing).
+ * Lead Acid / Gas) and the seats: "2+2" / "4+2" / "Forward Facing …" when the model name says so, else
+ * "4 Seater" / "6 Passenger" (the DMS seat count alone can't tell 2+2 from forward-facing).
  * The first entry is the most specific; the rest are shorter or re-worded versions for the other variations.
  */
 export function searchTitles(cart: Cart): string[] {
@@ -362,8 +375,11 @@ export function searchTitles(cart: Cart): string[] {
   const battery = !cart.isElectric ? 'Gas'
     : hasNewBattery(cart) ? (lithium ? 'New Lithium Battery' : 'New Battery')
       : lithium ? 'Lithium' : isLeadAcid(cart.batteryType) ? 'Lead Acid' : 'Electric';
-  const seats = p >= 6 ? `${p} Passenger` : p === 4 ? '4 Seater' : p === 2 ? '2 Seater' : p ? `${p} Passenger` : '';
-  const seatsAlt = p >= 5 ? `${p} Seater` : p ? `${p} Passenger` : '';
+  // The model name can say the layout (2+2, 4+2, forward facing); otherwise the plain seat count.
+  const layout = seatLayout(cart);
+  const plain = p >= 6 ? `${p} Passenger` : p === 4 ? '4 Seater' : p === 2 ? '2 Seater' : p ? `${p} Passenger` : '';
+  const seats = layout === '2+2' || layout === '4+2' ? layout : layout === 'forward' && p ? `Forward Facing ${plain}` : plain;
+  const seatsAlt = layout === '2+2' || layout === '4+2' ? `${layout} Seat` : p >= 5 ? `${p} Seater` : p ? `${p} Passenger` : '';
   const lsv = cart.isStreetLegal;
   const style = [cart.isLifted ? 'Lifted' : '', isAllTerrain(cart) ? 'All Terrain' : ''].filter(Boolean);
   const isNew = !cart.isUsed;

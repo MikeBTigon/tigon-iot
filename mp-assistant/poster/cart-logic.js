@@ -46,6 +46,7 @@ var TigonCartLogic = (() => {
     photoUrl: () => photoUrl,
     resolveWarranty: () => resolveWarranty,
     searchTitles: () => searchTitles,
+    seatLayout: () => seatLayout,
     seededRandom: () => seededRandom,
     userSeed: () => userSeed
   });
@@ -350,13 +351,22 @@ var TigonCartLogic = (() => {
     return cart.isUsed && cart.isElectric && !!y && y >= (/* @__PURE__ */ new Date()).getFullYear() - 1;
   }
   var isAllTerrain = (cart) => /all[\s-]?terrain|off[\s-]?road|\bA\/?T\b/i.test(cart.tireType || "");
+  function seatLayout(cart) {
+    const m = (cart.model || "").toLowerCase();
+    if (/\b4\s*\+\s*2\b/.test(m)) return "4+2";
+    if (/\b2\s*\+\s*2\b/.test(m)) return "2+2";
+    if (/\bforward(\s*-?\s*facing)?\b|\bfwd\s*facing\b/.test(m)) return "forward";
+    return "";
+  }
   var isLeadAcid = (batteryType) => /lead|acid|flooded|agm|trojan|u\.?s\.? battery/i.test(batteryType || "");
   function searchTitles(cart) {
     const p = cart.passengers;
     const lithium = cart.isElectric && isLithium(cart.batteryType);
     const battery = !cart.isElectric ? "Gas" : hasNewBattery(cart) ? lithium ? "New Lithium Battery" : "New Battery" : lithium ? "Lithium" : isLeadAcid(cart.batteryType) ? "Lead Acid" : "Electric";
-    const seats = p >= 6 ? `${p} Passenger` : p === 4 ? "4 Seater" : p === 2 ? "2 Seater" : p ? `${p} Passenger` : "";
-    const seatsAlt = p >= 5 ? `${p} Seater` : p ? `${p} Passenger` : "";
+    const layout = seatLayout(cart);
+    const plain = p >= 6 ? `${p} Passenger` : p === 4 ? "4 Seater" : p === 2 ? "2 Seater" : p ? `${p} Passenger` : "";
+    const seats = layout === "2+2" || layout === "4+2" ? layout : layout === "forward" && p ? `Forward Facing ${plain}` : plain;
+    const seatsAlt = layout === "2+2" || layout === "4+2" ? `${layout} Seat` : p >= 5 ? `${p} Seater` : p ? `${p} Passenger` : "";
     const lsv = cart.isStreetLegal;
     const style = [cart.isLifted ? "Lifted" : "", isAllTerrain(cart) ? "All Terrain" : ""].filter(Boolean);
     const isNew = !cart.isUsed;
